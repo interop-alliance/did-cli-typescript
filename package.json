@@ -17,6 +17,8 @@
     "test": "node --test --import tsx --enable-source-maps 'src/**/*.test.ts'"
   },
   "dependencies": {
+    "@digitalcredentials/bnid": "^3.0.1",
+    "@digitalcredentials/ed25519-multikey": "^1.4.0",
     "commander": "^14.0.3"
   },
   "engines": {
