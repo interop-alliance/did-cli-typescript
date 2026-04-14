@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+# Editor files
+*~
+*.sw[nop]
+/.vscode
+
+# MacOS
+.DS_Store
