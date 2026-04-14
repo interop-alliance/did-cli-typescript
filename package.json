@@ -10,13 +10,22 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "fix": "eslint --fix src && npm run format",
+    "format": "prettier --write src",
+    "lint": "eslint src",
     "start": "node --enable-source-maps dist/index.js"
   },
   "dependencies": {
-    "commander": "^12.0.0"
+    "commander": "^14.0.3"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.0.0"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.2",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.58.2"
   }
 }
