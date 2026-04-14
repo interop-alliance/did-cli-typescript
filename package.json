@@ -13,7 +13,8 @@
     "fix": "eslint --fix src && npm run format",
     "format": "prettier --write src",
     "lint": "eslint src",
-    "start": "node --enable-source-maps dist/index.js"
+    "start": "node --enable-source-maps dist/index.js",
+    "test": "node --test --import tsx --enable-source-maps 'test/**/*.test.ts'"
   },
   "dependencies": {
     "commander": "^14.0.3"
