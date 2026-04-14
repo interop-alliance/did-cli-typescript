@@ -5,6 +5,7 @@ export function makeZcapCommand(): Command {
 
   zcap.command('create')
     .description('Create a new zcap')
+    .option('--save', 'save the zcap to local wallet storage (~/.wallet/zcaps/)')
     .action(() => {
       console.log('Creating zcap...')
       // TODO: implement

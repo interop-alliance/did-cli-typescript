@@ -16,8 +16,14 @@ declare module '@digitalcredentials/ed25519-multikey' {
     seed?: Uint8Array
   }
 
+  interface ExportedKeyPair {
+    id?: string
+    [key: string]: unknown
+  }
+
   interface KeyPair {
-    export(options: { publicKey: boolean; secretKey: boolean }): Promise<object>
+    publicKeyMultibase: string
+    export(options: { publicKey: boolean; secretKey: boolean }): Promise<ExportedKeyPair>
   }
 
   export function generate(options?: GenerateOptions): Promise<KeyPair>

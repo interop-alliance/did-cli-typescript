@@ -5,6 +5,7 @@ export function makeIdCommand(): Command {
 
   id.command('create <method>')
     .description('Create a new DID (method: key, web, webvh)')
+    .option('--save', 'save the DID document to local wallet storage (~/.wallet/dids/)')
     .action((method: string) => {
       switch (method) {
         case 'key':
