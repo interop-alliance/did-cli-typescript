@@ -16,8 +16,11 @@
 
 ## Usage
 
+Help is available with the `--help/-h` command line option:
+
 ```
-./did <command>
+./did -h
+./did COMMAND -h
 ```
 
 ## Contribute
