@@ -1,14 +1,3 @@
-declare module '@digitalcredentials/bnid' {
-  interface DecodeSecretKeySeedOptions {
-    secretKeySeed: string
-    multibase?: boolean
-    multihash?: boolean
-    expectedSize?: number
-  }
-
-  export function decodeSecretKeySeed(options: DecodeSecretKeySeedOptions): Uint8Array
-}
-
 declare module '@digitalcredentials/ed25519-multikey' {
   interface GenerateOptions {
     id?: string
