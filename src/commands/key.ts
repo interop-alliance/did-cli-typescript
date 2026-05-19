@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { decodeSecretKeySeed } from '@digitalcredentials/bnid'
+import { decodeSecretKeySeed, generateSecretKeySeed } from '@digitalcredentials/bnid'
 import * as Ed25519Multikey from '@digitalcredentials/ed25519-multikey'
 import { saveToCollection } from '../storage.js'
 
@@ -10,10 +10,14 @@ export function makeKeyCommand(): Command {
     .description('Create a new key')
     .option('-t, --type <type>', 'key type (supported: ed25519)', 'ed25519')
     .option('--save', 'save the key to local wallet storage (~/.wallet/keys/)')
-    .action(async (options: { type: string; save?: boolean }) => {
+    .option('--with-seed', 'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)')
+    .action(async (options: { type: string; save?: boolean; withSeed?: boolean }) => {
       switch (options.type) {
         case 'ed25519': {
-          const secretKeySeed = process.env.SECRET_KEY_SEED
+          const envSeed = process.env.SECRET_KEY_SEED
+          const secretKeySeed = options.withSeed
+            ? (envSeed ?? await generateSecretKeySeed())
+            : envSeed
           const seedBytes = secretKeySeed
             ? decodeSecretKeySeed({ secretKeySeed })
             : undefined
@@ -26,7 +30,10 @@ export function makeKeyCommand(): Command {
             const filePath = await saveToCollection('keys', storageId, exported)
             console.error(`Key saved to ${filePath}`)
           }
-          console.log(JSON.stringify(exported, null, 2))
+          const output = options.withSeed
+            ? { secretKeySeed, keyPair: exported }
+            : exported
+          console.log(JSON.stringify(output, null, 2))
           break
         }
         default:

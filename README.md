@@ -33,11 +33,33 @@ Generate a random Ed25519 key pair (ed25519 is the default type):
 ./did key create
 ```
 
+If you'd like to also generate a secret key seed (to help deterministically
+generate the same key pair in the future), pass in the `--with-seed` flag:
+
+```
+./did key create --with-seed
+{
+  "secretKeySeed": "z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv",
+  "keyPair": {
+    "@context": "https://w3id.org/security/multikey/v1",
+    "type": "Multikey",
+    "publicKeyMultibase": "z6MkrLBubwzwEvwmsyEKd2kJ6pt91E6MHdf3EeQMnCsdX2hM",
+    "secretKeyMultibase": "zruzykbtvWUgV8Tp1LKVEuTmywLEa75qHsvWRVarVhdgHiCgiMYTSDXTavJVh47Cwes4mKgdAY5PTizbRvHXcA7XcLF"
+  }
+}
+```
+
 Generate a deterministic key pair by setting the `SECRET_KEY_SEED` environment
 variable to a multibase-encoded seed (e.g. from `@digitalcredentials/bnid`):
 
 ```
-SECRET_KEY_SEED=z1Aaj5A4UCsd... ./did key create
+SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./did key create
+{
+  "@context": "https://w3id.org/security/multikey/v1",
+  "type": "Multikey",
+  "publicKeyMultibase": "z6MkrLBubwzwEvwmsyEKd2kJ6pt91E6MHdf3EeQMnCsdX2hM",
+  "secretKeyMultibase": "zruzykbtvWUgV8Tp1LKVEuTmywLEa75qHsvWRVarVhdgHiCgiMYTSDXTavJVh47Cwes4mKgdAY5PTizbRvHXcA7XcLF"
+}
 ```
 
 Specify an explicit key type with `--type` (defaults to `ed25519`):

@@ -44,6 +44,43 @@ describe('did key', () => {
       assert.equal(errors.length, 0)
     })
 
+    it('--with-seed wraps output with secretKeySeed and keyPair', async () => {
+      await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      const parsed = JSON.parse(logs[0])
+      assert.ok(parsed.secretKeySeed, 'secretKeySeed should be present')
+      assert.match(parsed.secretKeySeed, /^z1A/, 'secretKeySeed should be base58btc-encoded')
+      assert.equal(parsed.keyPair.type, 'Multikey')
+      assert.ok(parsed.keyPair.publicKeyMultibase)
+      assert.ok(parsed.keyPair.secretKeyMultibase)
+    })
+
+    it('--with-seed uses SECRET_KEY_SEED env var when set', async () => {
+      const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      process.env.SECRET_KEY_SEED = seed
+      try {
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.secretKeySeed, seed)
+      } finally {
+        delete process.env.SECRET_KEY_SEED
+      }
+    })
+
+    it('--with-seed produces the same key for the same seed', async () => {
+      const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      process.env.SECRET_KEY_SEED = seed
+      try {
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        const first = JSON.parse(logs[0])
+        logs.length = 0
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        const second = JSON.parse(logs[0])
+        assert.equal(first.keyPair.publicKeyMultibase, second.keyPair.publicKeyMultibase)
+      } finally {
+        delete process.env.SECRET_KEY_SEED
+      }
+    })
+
     it('saves key to wallet with --save', async () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.WALLET_DIR = walletDir
