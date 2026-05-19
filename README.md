@@ -80,6 +80,62 @@ multibase encoding:
 }
 ```
 
+### DID Management
+
+#### Create a DID
+
+Generate a random Ed25519 `did:key` DID (method defaults to `key`):
+
+```
+./did id create
+{
+  "id": "did:key:z6Mkr...",
+  "didDocument": { ... }
+}
+```
+
+Or pass the method explicitly:
+
+```
+./did id create key
+```
+
+To also include the secret key seed in the output (useful for re-deriving the
+same DID later), pass `--with-seed`:
+
+```
+./did id create --with-seed
+{
+  "id": "did:key:z6MkrLBubwzwEvwmsyEKd2kJ6pt91E6MHdf3EeQMnCsdX2hM",
+  "secretKeySeed": "z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv",
+  "didDocument": {
+    "@context": [ ... ],
+    "id": "did:key:z6MkrLBubwzwEvwmsyEKd2kJ6pt91E6MHdf3EeQMnCsdX2hM",
+    "verificationMethod": [ ... ],
+    ...
+  }
+}
+```
+
+Generate a deterministic DID by setting the `SECRET_KEY_SEED` environment
+variable to a multibase-encoded seed (e.g. from `@digitalcredentials/bnid`):
+
+```
+SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./did id create
+```
+
+Save the DID document and key material to local storage with `--save`
+(written to `~/.dids/` by default, or `$DIDS_DIR` if set):
+
+```
+./did id create --save
+DID saved to /home/user/.dids/key/did:key:z6Mkr....json
+{
+  "id": "did:key:z6Mkr...",
+  "didDocument": { ... }
+}
+```
+
 ## Contribute
 
 PRs accepted.

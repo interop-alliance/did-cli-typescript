@@ -18,7 +18,10 @@
   },
   "dependencies": {
     "@digitalcredentials/bnid": "^4.0.0",
+    "@digitalcredentials/did-method-key": "^3.0.0",
     "@digitalcredentials/ed25519-multikey": "^1.4.0",
+    "@digitalcredentials/ed25519-verification-key-2020": "^5.0.0",
+    "@digitalcredentials/ssi": "^",
     "commander": "^14.0.3"
   },
   "engines": {
