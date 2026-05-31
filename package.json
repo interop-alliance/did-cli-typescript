@@ -17,15 +17,14 @@
     "test": "node --test --import tsx --enable-source-maps 'src/**/*.test.ts'"
   },
   "dependencies": {
-    "@digitalcredentials/bnid": "^4.0.0",
-    "@digitalcredentials/did-method-key": "^3.0.0",
-    "@digitalcredentials/ed25519-multikey": "^1.4.0",
-    "@digitalcredentials/ed25519-verification-key-2020": "^5.0.0",
+    "@digitalcredentials/bnid": "^5.0.0",
     "@digitalcredentials/ssi": "^5.4.2",
+    "@interop/did-method-key": "^6.2.1",
+    "@interop/ed25519-verification-key": "^6.2.0",
     "commander": "^14.0.3"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
