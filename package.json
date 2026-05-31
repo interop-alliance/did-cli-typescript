@@ -21,7 +21,7 @@
     "@digitalcredentials/ssi": "^5.4.2",
     "@interop/did-method-key": "^6.2.1",
     "@interop/ed25519-verification-key": "^6.2.0",
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "engines": {
     "node": ">=24"
