@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { decodeSecretKeySeed, generateSecretKeySeed } from '@digitalcredentials/bnid'
-import * as Ed25519Multikey from '@digitalcredentials/ed25519-multikey'
+import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { saveToCollection } from '../storage.js'
 
 export function makeKeyCommand(): Command {
@@ -21,8 +21,8 @@ export function makeKeyCommand(): Command {
           const seedBytes = secretKeySeed
             ? decodeSecretKeySeed({ secretKeySeed })
             : undefined
-          const keyPair = await Ed25519Multikey.generate({ seed: seedBytes })
-          const exported = await keyPair.export({ publicKey: true, secretKey: true })
+          const keyPair = await Ed25519VerificationKey.generate({ seed: seedBytes })
+          const exported = keyPair.export({ publicKey: true, secretKey: true })
           if (options.save) {
             const date = new Date().toISOString().slice(0, 10)
             const rawId = exported.id ?? keyPair.publicKeyMultibase

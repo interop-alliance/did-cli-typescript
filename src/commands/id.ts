@@ -1,8 +1,7 @@
 import { Command } from 'commander'
 import { decodeSecretKeySeed, generateSecretKeySeed } from '@digitalcredentials/bnid'
-import * as Ed25519Multikey from '@digitalcredentials/ed25519-multikey'
-import { Ed25519VerificationKey2020 } from '@digitalcredentials/ed25519-verification-key-2020'
-import { driver } from '@digitalcredentials/did-method-key'
+import { driver } from '@interop/did-method-key'
+import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { saveToDids } from '../storage.js'
 
 export function makeIdCommand(): Command {
@@ -25,18 +24,15 @@ export function makeIdCommand(): Command {
               const seedBytes = secretKeySeed
                 ? decodeSecretKeySeed({ secretKeySeed })
                 : undefined
-              const keyPair = await Ed25519Multikey.generate({ seed: seedBytes })
+              const keyPair = await Ed25519VerificationKey.generate({ seed: seedBytes })
 
               const didDriver = driver()
-              didDriver.use({
-                multibaseMultikeyHeader: 'z6Mk',
-                fromMultibase: Ed25519VerificationKey2020.from,
-              })
+              didDriver.use({ keyPairClass: Ed25519VerificationKey })
               const { didDocument } = await didDriver.fromKeyPair({ verificationKeyPair: keyPair })
 
               if (options.save) {
                 const did = didDocument.id as string
-                const exported = await keyPair.export({ publicKey: true, secretKey: true })
+                const exported = keyPair.export({ publicKey: true, secretKey: true })
                 const docPath = await saveToDids({ method: 'key', did, data: didDocument })
                 await saveToDids({ method: 'key', did, suffix: 'keys', data: exported })
                 console.error(`DID saved to ${docPath}`)
