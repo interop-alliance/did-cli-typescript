@@ -1,0 +1,7 @@
+minimumReleaseAgeExclude:
+  - '@interop/data-integrity-core@6.1.0'
+  - '@interop/did-io@4.0.1'
+  - '@interop/did-method-key@7.1.0'
+  - '@interop/ed25519-verification-key@7.0.1'
+allowBuilds:
+  esbuild: true
