@@ -17,8 +17,9 @@ export default defineConfig([
       ecmaVersion: 2022,
       globals: globals.node,
       parserOptions: {
-        // added — needed for type-aware lint rules
-        project: ['./tsconfig.json']
+        // added — needed for type-aware lint rules. Uses a dedicated config
+        // that includes test files (the build tsconfig excludes them).
+        project: ['./tsconfig.eslint.json']
       }
     },
     rules: {

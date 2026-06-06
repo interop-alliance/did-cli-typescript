@@ -18,8 +18,10 @@
   },
   "dependencies": {
     "@digitalcredentials/bnid": "^5.0.0",
-    "@interop/did-method-key": "^7.1.0",
+    "@digitalcredentials/issuer-registry-client": "^4.0.0",
+    "@interop/did-method-key": "^7.1.1",
     "@interop/ed25519-verification-key": "^7.0.1",
+    "@interop/verifier-core": "^3.0.1",
     "commander": "^15.0.0"
   },
   "engines": {

@@ -136,6 +136,50 @@ DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 }
 ```
 
+### Verifiable Credentials
+
+#### Verify a credential
+
+Run full verification on a Verifiable Credential (JSON). Beyond the
+cryptographic signature check, this also verifies expiration, revocation /
+status, and whether the issuer DID is recognized in any trusted registry
+(via `@interop/verifier-core` and `@digitalcredentials/issuer-registry-client`).
+
+The credential is read from a file argument or, if none is given, from stdin:
+
+```
+./did vc verify credential.json
+cat credential.json | ./did vc verify
+```
+
+By default it prints the full `@interop/verifier-core` verification result
+(top-level `verified`, a per-suite `summary`, and the flat `results` of every
+check). Pass `--summary` for a compact, human-friendly object instead:
+
+```
+./did vc verify credential.json --summary
+{
+  "verified": true,
+  "checks": {
+    "signature": true,
+    "revoked": false,
+    "issuerRecognized": true
+  },
+  "matchingIssuers": [ ... ]
+}
+```
+
+A check is omitted from `checks` when it was skipped (for example `expired` is
+absent when the credential has no expiration date).
+
+The exit code is scriptable: `0` when the credential verified, `1` when it did
+not, and `2` on a read/parse error or a structurally malformed credential.
+
+The trusted registry list is fetched from the DCC
+[known-did-registries](https://digitalcredentials.github.io/dcc-known-registries/known-did-registries.json)
+at runtime, falling back to a bundled list of DCC registries when the network
+is unavailable.
+
 ## Contribute
 
 PRs accepted.

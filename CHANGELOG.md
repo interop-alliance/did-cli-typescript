@@ -2,6 +2,15 @@
 
 ## 0.1.0 - TBD
 
+### Added
+
+- Add `vc verify` command: reads a Verifiable Credential as JSON from a file or
+  stdin and runs full verification via `@interop/verifier-core` plus
+  `@digitalcredentials/issuer-registry-client` (cryptographic signature,
+  expiration, revocation / status, and issuer registry recognition). Prints the
+  full verifier-core result by default, or a compact object with `--summary`,
+  and exits `0` / `1` / `2` for verified / not-verified / read error.
+
 ### Changed
 
 - Update to latest refactored `@interop/*` deps (`did-method-key@7.1.0`,
