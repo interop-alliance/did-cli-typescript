@@ -13,7 +13,9 @@ describe('did vc verify', () => {
   beforeEach(() => {
     logs = []
     errors = []
-    mock.method(console, 'log', (...args: unknown[]) => logs.push(args.join(' ')))
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
     mock.method(console, 'error', (...args: unknown[]) =>
       errors.push(args.join(' '))
     )
@@ -38,10 +40,7 @@ describe('did vc verify', () => {
   })
 
   it('returns exit code 2 when the file does not exist', async () => {
-    const code = await runVerify(
-      join(tmpdir(), 'does-not-exist-xyz.json'),
-      {}
-    )
+    const code = await runVerify(join(tmpdir(), 'does-not-exist-xyz.json'), {})
     assert.equal(code, 2)
     assert.ok(errors[0].startsWith('Could not read credential:'))
   })

@@ -92,12 +92,14 @@ export function makeVcCommand(): Command {
   vc.command('verify [file]')
     .description('Verify a Verifiable Credential (JSON from a file or stdin)')
     .option('--summary', 'print a compact summary instead of the full result')
-    .action(async (file: string | undefined, options: { summary?: boolean }) => {
-      const code = await runVerify(file, options)
-      if (code !== 0) {
-        process.exit(code)
+    .action(
+      async (file: string | undefined, options: { summary?: boolean }) => {
+        const code = await runVerify(file, options)
+        if (code !== 0) {
+          process.exit(code)
+        }
       }
-    })
+    )
 
   return vc
 }

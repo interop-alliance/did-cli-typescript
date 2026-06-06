@@ -9,7 +9,7 @@ function getWalletDir(): string {
 export async function saveToCollection(
   collection: string,
   storageId: string,
-  data: object,
+  data: object
 ): Promise<string> {
   const dir = join(getWalletDir(), collection)
   await mkdir(dir, { recursive: true })
@@ -34,7 +34,7 @@ export async function saveToDids({
   method,
   did,
   suffix,
-  data,
+  data
 }: {
   method: string
   did: string
