@@ -10,7 +10,11 @@ import { issuerDetailsSuite } from './issuerDetailsSuite.js'
 const check = issuerDetailsSuite.checks[0]
 
 const registries: EntityIdentityRegistry[] = [
-  { type: 'dcc-legacy', name: 'Test Registry', url: 'https://example.test/r.json' }
+  {
+    type: 'dcc-legacy',
+    name: 'Test Registry',
+    url: 'https://example.test/r.json'
+  }
 ]
 
 /**

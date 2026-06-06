@@ -14,9 +14,15 @@ describe('did id', () => {
     logs = []
     errors = []
     exitCode = undefined
-    mock.method(console, 'log', (...args: unknown[]) => logs.push(args.join(' ')))
-    mock.method(console, 'error', (...args: unknown[]) => errors.push(args.join(' ')))
-    mock.method(process, 'exit', (code: number) => { exitCode = code })
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
+    mock.method(console, 'error', (...args: unknown[]) =>
+      errors.push(args.join(' '))
+    )
+    mock.method(process, 'exit', (code: number) => {
+      exitCode = code
+    })
   })
 
   afterEach(() => {
@@ -29,7 +35,10 @@ describe('did id', () => {
     it('defaults to did:key when no method is given', async () => {
       await makeIdCommand().parseAsync(['create'], { from: 'user' })
       const parsed = JSON.parse(logs[0])
-      assert.ok(parsed.id.startsWith('did:key:'), `expected did:key: prefix, got: ${parsed.id}`)
+      assert.ok(
+        parsed.id.startsWith('did:key:'),
+        `expected did:key: prefix, got: ${parsed.id}`
+      )
     })
 
     it('creates a did:key with explicit method arg', async () => {
@@ -53,26 +62,39 @@ describe('did id', () => {
     })
 
     it('--with-seed includes secretKeySeed in output', async () => {
-      await makeIdCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      await makeIdCommand().parseAsync(['create', '--with-seed'], {
+        from: 'user'
+      })
       const parsed = JSON.parse(logs[0])
       assert.ok(parsed.secretKeySeed)
-      assert.match(parsed.secretKeySeed, /^z/, 'secretKeySeed should be base58btc-encoded')
+      assert.match(
+        parsed.secretKeySeed,
+        /^z/,
+        'secretKeySeed should be base58btc-encoded'
+      )
     })
 
     it('--with-seed uses SECRET_KEY_SEED env var when set', async () => {
       const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
       process.env.SECRET_KEY_SEED = seed
-      await makeIdCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      await makeIdCommand().parseAsync(['create', '--with-seed'], {
+        from: 'user'
+      })
       const parsed = JSON.parse(logs[0])
       assert.equal(parsed.secretKeySeed, seed)
     })
 
     it('--with-seed produces the same DID for the same seed', async () => {
-      process.env.SECRET_KEY_SEED = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
-      await makeIdCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      process.env.SECRET_KEY_SEED =
+        'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      await makeIdCommand().parseAsync(['create', '--with-seed'], {
+        from: 'user'
+      })
       const first = JSON.parse(logs[0])
       logs.length = 0
-      await makeIdCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      await makeIdCommand().parseAsync(['create', '--with-seed'], {
+        from: 'user'
+      })
       const second = JSON.parse(logs[0])
       assert.equal(first.id, second.id)
     })
@@ -126,7 +148,9 @@ describe('did id', () => {
     })
 
     it('respects --output flag', () => {
-      makeIdCommand().parse(['resolve', 'did:key:z123', '--output', 'json'], { from: 'user' })
+      makeIdCommand().parse(['resolve', 'did:key:z123', '--output', 'json'], {
+        from: 'user'
+      })
       assert.ok(logs[0].includes('json'))
     })
   })

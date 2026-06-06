@@ -10,10 +10,7 @@
  * `--summary` flag. All knowledge of the verifier-core contract is isolated to
  * this file.
  */
-import {
-  verifyCredential,
-  ProblemTypes
-} from '@interop/verifier-core'
+import { verifyCredential, ProblemTypes } from '@interop/verifier-core'
 import type {
   CredentialVerificationResult,
   CheckResult,

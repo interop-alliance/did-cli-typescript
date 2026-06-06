@@ -106,7 +106,10 @@ describe('toSummary', () => {
       makeResult({
         verified: false,
         results: [
-          failureCheck('status.bitstring', ProblemTypes.CREDENTIAL_REVOKED_OR_SUSPENDED)
+          failureCheck(
+            'status.bitstring',
+            ProblemTypes.CREDENTIAL_REVOKED_OR_SUSPENDED
+          )
         ]
       })
     )

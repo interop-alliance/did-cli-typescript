@@ -7,7 +7,9 @@ describe('did zcap', () => {
 
   beforeEach(() => {
     logs = []
-    mock.method(console, 'log', (...args: unknown[]) => logs.push(args.join(' ')))
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
   })
 
   it('routes create', () => {

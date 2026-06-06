@@ -14,9 +14,15 @@ describe('did key', () => {
     logs = []
     errors = []
     exitCode = undefined
-    mock.method(console, 'log', (...args: unknown[]) => logs.push(args.join(' ')))
-    mock.method(console, 'error', (...args: unknown[]) => errors.push(args.join(' ')))
-    mock.method(process, 'exit', (code: number) => { exitCode = code })
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
+    mock.method(console, 'error', (...args: unknown[]) =>
+      errors.push(args.join(' '))
+    )
+    mock.method(process, 'exit', (code: number) => {
+      exitCode = code
+    })
   })
 
   afterEach(() => {
@@ -34,7 +40,9 @@ describe('did key', () => {
     })
 
     it('exits with error for unknown key type', async () => {
-      await makeKeyCommand().parseAsync(['create', '--type', 'rsa'], { from: 'user' })
+      await makeKeyCommand().parseAsync(['create', '--type', 'rsa'], {
+        from: 'user'
+      })
       assert.equal(exitCode, 1)
       assert.ok(errors[0].includes('rsa'))
     })
@@ -45,10 +53,16 @@ describe('did key', () => {
     })
 
     it('--with-seed wraps output with secretKeySeed and keyPair', async () => {
-      await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+      await makeKeyCommand().parseAsync(['create', '--with-seed'], {
+        from: 'user'
+      })
       const parsed = JSON.parse(logs[0])
       assert.ok(parsed.secretKeySeed, 'secretKeySeed should be present')
-      assert.match(parsed.secretKeySeed, /^z1A/, 'secretKeySeed should be base58btc-encoded')
+      assert.match(
+        parsed.secretKeySeed,
+        /^z1A/,
+        'secretKeySeed should be base58btc-encoded'
+      )
       assert.equal(parsed.keyPair.type, 'Multikey')
       assert.ok(parsed.keyPair.publicKeyMultibase)
       assert.ok(parsed.keyPair.secretKeyMultibase)
@@ -58,7 +72,9 @@ describe('did key', () => {
       const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
       process.env.SECRET_KEY_SEED = seed
       try {
-        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], {
+          from: 'user'
+        })
         const parsed = JSON.parse(logs[0])
         assert.equal(parsed.secretKeySeed, seed)
       } finally {
@@ -70,12 +86,19 @@ describe('did key', () => {
       const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
       process.env.SECRET_KEY_SEED = seed
       try {
-        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], {
+          from: 'user'
+        })
         const first = JSON.parse(logs[0])
         logs.length = 0
-        await makeKeyCommand().parseAsync(['create', '--with-seed'], { from: 'user' })
+        await makeKeyCommand().parseAsync(['create', '--with-seed'], {
+          from: 'user'
+        })
         const second = JSON.parse(logs[0])
-        assert.equal(first.keyPair.publicKeyMultibase, second.keyPair.publicKeyMultibase)
+        assert.equal(
+          first.keyPair.publicKeyMultibase,
+          second.keyPair.publicKeyMultibase
+        )
       } finally {
         delete process.env.SECRET_KEY_SEED
       }
@@ -85,7 +108,9 @@ describe('did key', () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.WALLET_DIR = walletDir
       try {
-        await makeKeyCommand().parseAsync(['create', '--save'], { from: 'user' })
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
 
         // stderr reports the saved path
         assert.equal(errors.length, 1)
@@ -115,20 +140,23 @@ describe('did key', () => {
   describe('list', () => {
     it('routes list', () => {
       makeKeyCommand().parse(['list'], { from: 'user' })
-      assert.ok(logs[0].includes('Listing keys'))
+      assert.ok(errors[0].includes('Listing keys'))
     })
   })
 
   describe('export', () => {
     it('routes export with default format', () => {
       makeKeyCommand().parse(['export', 'key-id-123'], { from: 'user' })
-      assert.ok(logs[0].includes('key-id-123'))
-      assert.ok(logs[0].includes('jwk'))
+      assert.ok(errors[0].includes('key-id-123'))
+      assert.ok(errors[0].includes('jwk'))
     })
 
     it('respects --format flag', () => {
-      makeKeyCommand().parse(['export', 'key-id-123', '--format', 'multibase'], { from: 'user' })
-      assert.ok(logs[0].includes('multibase'))
+      makeKeyCommand().parse(
+        ['export', 'key-id-123', '--format', 'multibase'],
+        { from: 'user' }
+      )
+      assert.ok(errors[0].includes('multibase'))
     })
   })
 })

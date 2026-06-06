@@ -1,31 +1,40 @@
 import { Command } from 'commander'
 
 export function makeZcapCommand(): Command {
-  const zcap = new Command('zcap').description('Manage authorization capabilities')
+  const zcap = new Command('zcap').description(
+    'Manage authorization capabilities'
+  )
 
-  zcap.command('create')
+  zcap
+    .command('create')
     .description('Create a new zcap')
-    .option('--save', 'save the zcap to local wallet storage (~/.wallet/zcaps/)')
+    .option(
+      '--save',
+      'save the zcap to local wallet storage (~/.wallet/zcaps/)'
+    )
     .action(() => {
       console.log('Creating zcap...')
       // TODO: implement
     })
 
-  zcap.command('delegate')
+  zcap
+    .command('delegate')
     .description('Delegate a zcap')
     .action(() => {
       console.log('Delegating zcap...')
       // TODO: implement
     })
 
-  zcap.command('list')
+  zcap
+    .command('list')
     .description('List locally stored zcaps')
     .action(() => {
       console.log('Listing zcaps...')
       // TODO: implement
     })
 
-  zcap.command('revoke <id>')
+  zcap
+    .command('revoke <id>')
     .description('Revoke a zcap by ID')
     .action((zcapId: string) => {
       console.log(`Revoking zcap ${zcapId}...`)
