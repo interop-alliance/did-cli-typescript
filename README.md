@@ -223,6 +223,46 @@ The trusted registry list is fetched from the DCC
 at runtime, falling back to a bundled list of DCC registries when the network
 is unavailable.
 
+#### Issue a credential
+
+Issue (sign) an unsigned Verifiable Credential with a locally-stored DID, acting
+as a command-line wallet and issuer. The credential is read from a file argument
+or, if none is given, from stdin, and the issued credential is printed to
+stdout. If the input already carries a proof, issuing appends an additional one.
+
+The DID to issue with is required (`--did`); it must have been saved locally (see
+`did id create --save`):
+
+```
+./did vc issue credential.json --did did:key:z6Mk...
+cat credential.json | ./did vc issue --did did:key:z6Mk...
+```
+
+The credential's `issuer` is set to the signing DID when the input has none.
+When the input already names an `issuer`, it must match the signing DID,
+otherwise issuance is aborted -- a credential cannot be issued by a DID other
+than the one named as its issuer.
+
+By default the first key in the DID's `assertionMethod` relationship is used.
+Pass `--key` to choose a specific verification method; it must be authorized by
+the DID's `assertionMethod` array, otherwise issuance fails:
+
+```
+./did vc issue credential.json --did did:key:z6Mk... --key did:key:z6Mk...#z6Mk...
+```
+
+The signature suite defaults to `eddsa-rdfc-2022` (a W3C Data Integrity proof).
+Pass `--suite Ed25519Signature2020` for the classic Ed25519Signature2020 proof:
+
+```
+./did vc issue credential.json --did did:key:z6Mk... --suite Ed25519Signature2020
+```
+
+The exit code is scriptable: `0` when the credential was issued, `1` on an
+issuance error (an unauthorized key, an unknown suite, a missing DID / key
+file, or an issuer that does not match the signing DID), and `2` on a
+read/parse error.
+
 ## Contribute
 
 PRs accepted.

@@ -12,6 +12,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { Command } from 'commander'
+import { issueCredential } from '../vc/issue.js'
 import { loadKnownRegistries } from '../vc/registries.js'
 import {
   findParseFailure,
@@ -86,6 +87,47 @@ export async function runVerify(
   return result.verified ? 0 : 1
 }
 
+/**
+ * Reads, issues (signs), and prints a credential, returning the process exit
+ * code: `0` when issued, `1` on an issuance error (an unauthorized key, a
+ * missing DID or key file, an unknown suite, an issuer that does not match the
+ * signing DID, or a signing failure), and `2` on a read/parse error. Kept
+ * separate from the command action so the exit-code logic is directly testable
+ * without stubbing `process.exit`.
+ *
+ * @param file {string | undefined}   Path to read, or undefined for stdin.
+ * @param options {object}
+ * @param options.did {string}   The id of the stored DID to issue (sign) with.
+ * @param [options.key] {string}   The verification method id to use.
+ * @param [options.suite] {string}   The signature suite to use.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runIssue(
+  file: string | undefined,
+  options: { did: string; key?: string; suite?: string }
+): Promise<number> {
+  const credential = await readCredentialJson(file)
+  if (credential === undefined) {
+    return 2
+  }
+
+  try {
+    const signed = await issueCredential({
+      credential,
+      did: options.did,
+      keyId: options.key,
+      suite: options.suite
+    })
+    console.log(JSON.stringify(signed, null, 2))
+    return 0
+  } catch (err) {
+    console.error(
+      `Could not issue credential: ${err instanceof Error ? err.message : String(err)}`
+    )
+    return 1
+  }
+}
+
 export function makeVcCommand(): Command {
   const vc = new Command('vc').description('Manage Verifiable Credentials')
 
@@ -95,6 +137,32 @@ export function makeVcCommand(): Command {
     .action(
       async (file: string | undefined, options: { summary?: boolean }) => {
         const code = await runVerify(file, options)
+        if (code !== 0) {
+          process.exit(code)
+        }
+      }
+    )
+
+  vc.command('issue [file]')
+    .description(
+      'Issue (sign) an unsigned Verifiable Credential (JSON from a file or stdin)'
+    )
+    .requiredOption('--did <did>', 'id of the stored DID to issue (sign) with')
+    .option(
+      '--key <keyId>',
+      'verification method id to use (default: first assertionMethod key)'
+    )
+    .option(
+      '--suite <suite>',
+      'signature suite (eddsa-rdfc-2022 | Ed25519Signature2020)',
+      'eddsa-rdfc-2022'
+    )
+    .action(
+      async (
+        file: string | undefined,
+        options: { did: string; key?: string; suite?: string }
+      ) => {
+        const code = await runIssue(file, options)
         if (code !== 0) {
           process.exit(code)
         }
