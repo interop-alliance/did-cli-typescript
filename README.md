@@ -393,6 +393,28 @@ override it:
   --url https://example.com/documents --allow read --expires 2027-01-01T00:00:00Z
 ```
 
+#### List capabilities
+
+List the ids of the capabilities saved in local wallet storage (via
+`zcap create --save` or `zcap delegate --save`), one per line:
+
+```
+./did zcap list
+urn:zcap:root:https%3A%2F%2Fexample.com%2Fa
+urn:zcap:root:https%3A%2F%2Fexample.com%2Fb
+```
+
+If no capabilities are stored, nothing is printed. Pass `--json` to output the
+ids as a JSON array instead:
+
+```
+./did zcap list --json
+[
+  "urn:zcap:root:https%3A%2F%2Fexample.com%2Fa",
+  "urn:zcap:root:https%3A%2F%2Fexample.com%2Fb"
+]
+```
+
 ## Contribute
 
 PRs accepted.
