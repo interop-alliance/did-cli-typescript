@@ -80,6 +80,28 @@ multibase encoding:
 }
 ```
 
+#### List key pairs
+
+List the fingerprints (multibase-encoded public keys) of the key pairs saved in
+local wallet storage (via `key create --save`), one per line:
+
+```
+./did key list
+z6Mkr...
+z6Mks...
+```
+
+If no keys are stored, nothing is printed. Pass `--json` to output the
+fingerprints as a JSON array instead:
+
+```
+./did key list --json
+[
+  "z6Mkr...",
+  "z6Mks..."
+]
+```
+
 ### DID Management
 
 #### Create a DID
