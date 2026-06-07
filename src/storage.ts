@@ -65,6 +65,43 @@ function getDidsDir(): string {
 }
 
 /**
+ * List the DIDs saved in local storage, across all method subdirectories.
+ *
+ * Each saved DID is stored as `<did>.json` (the DID document) alongside a
+ * `<did>.keys.json` key file; only the former is reported, and the DID is its
+ * file name without the `.json` extension. Returns an empty array if no DIDs
+ * have been saved yet.
+ *
+ * @returns {Promise<string[]>}
+ */
+export async function listDids(): Promise<string[]> {
+  const baseDir = getDidsDir()
+  let methodEntries
+  try {
+    methodEntries = await readdir(baseDir, { withFileTypes: true })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
+    throw err
+  }
+  const dids: string[] = []
+  for (const methodEntry of methodEntries) {
+    if (!methodEntry.isDirectory()) {
+      continue
+    }
+    const fileNames = await readdir(join(baseDir, methodEntry.name))
+    for (const fileName of fileNames) {
+      if (!fileName.endsWith('.json') || fileName.endsWith('.keys.json')) {
+        continue
+      }
+      dids.push(fileName.slice(0, -'.json'.length))
+    }
+  }
+  return dids.sort()
+}
+
+/**
  * @param options {object}
  * @param options.method {string}
  * @param options.did {string}
