@@ -7,7 +7,8 @@
  * existing `--capability`. Both print `{ rootCapability|delegatedCapability,
  * encoded }` to stdout (the `encoded` field is the multibase base58btc form);
  * diagnostics and errors go to stderr. `--save` writes the capability to local
- * wallet storage (`~/.wallet/zcaps/`). `list` and `revoke` remain stubs.
+ * wallet storage (`~/.wallet/zcaps/`). `list` reads back the ids of saved
+ * zcaps from that storage; `revoke` remains a stub.
  *
  * The delegation signing key is sourced from a stored DID (`--did`) or, as a
  * fallback, the `ZCAP_CONTROLLER_KEY_SEED` env var together with `--controller`.
@@ -20,7 +21,11 @@ import type { IZcap } from '@interop/data-integrity-core/zcap'
 import { createCapability } from '../zcap/create.js'
 import { delegateCapability } from '../zcap/delegate.js'
 import { decodeCapability } from '../zcap/encoding.js'
-import { saveToCollection } from '../storage.js'
+import {
+  listCollection,
+  loadFromCollection,
+  saveToCollection
+} from '../storage.js'
 
 /**
  * Derives a filesystem-safe storage id from a capability id (the `urn:...`
@@ -235,9 +240,27 @@ export function makeZcapCommand(): Command {
   zcap
     .command('list')
     .description('List locally stored zcaps')
-    .action(() => {
-      console.log('Listing zcaps...')
-      // TODO: implement
+    .option('--json', 'output the list of zcap IDs as a JSON array')
+    .action(async (options: { json?: boolean }) => {
+      const storageIds = await listCollection('zcaps')
+      const zcapIds: string[] = []
+      for (const storageId of storageIds) {
+        const zcap = await loadFromCollection<{ id?: string }>(
+          'zcaps',
+          storageId
+        )
+        if (zcap.id) {
+          zcapIds.push(zcap.id)
+        }
+      }
+      zcapIds.sort()
+      if (options.json) {
+        console.log(JSON.stringify(zcapIds, null, 2))
+        return
+      }
+      for (const zcapId of zcapIds) {
+        console.log(zcapId)
+      }
     })
 
   zcap

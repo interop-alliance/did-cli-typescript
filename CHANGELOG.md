@@ -42,6 +42,10 @@
 - Implement `id list` command: prints the DIDs saved in local storage across all
   method subdirectories (one per line to stdout, nothing if empty), or as a JSON
   array with `--json`. Adds a `listDids()` storage helper.
+- Implement `zcap list` command: prints the ids (the `urn:zcap:...` values) of
+  capabilities saved in local wallet storage (`~/.wallet/zcaps/`), one per line
+  to stdout (nothing if empty), or as a JSON array with `--json`. Reuses the
+  `listCollection()` and `loadFromCollection()` storage helpers.
 - Add `vc verify` command: reads a Verifiable Credential as JSON from a file or
   stdin and runs full verification via `@interop/verifier-core` plus
   `@digitalcredentials/issuer-registry-client` (cryptographic signature,

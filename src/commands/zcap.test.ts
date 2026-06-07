@@ -219,12 +219,87 @@ describe('did zcap', () => {
     })
   })
 
-  describe('stubs', () => {
-    it('routes list', () => {
-      makeZcapCommand().parse(['list'], { from: 'user' })
-      assert.ok(logs[0].includes('Listing zcaps'))
+  describe('list', () => {
+    it('prints nothing when no zcaps are stored', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeZcapCommand().parseAsync(['list'], { from: 'user' })
+        assert.equal(logs.length, 0)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
     })
 
+    it('prints nothing when the wallet has never been created', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      await rm(walletDir, { recursive: true })
+      process.env.WALLET_DIR = walletDir
+      await makeZcapCommand().parseAsync(['list'], { from: 'user' })
+      assert.equal(logs.length, 0)
+    })
+
+    it('prints capability ids, one per line, sorted', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        for (const url of ['https://example.com/b', 'https://example.com/a']) {
+          await makeZcapCommand().parseAsync(
+            [
+              'create',
+              '--controller',
+              'did:key:z6MkController',
+              '--url',
+              url,
+              '--save'
+            ],
+            { from: 'user' }
+          )
+        }
+        logs.length = 0
+        errors.length = 0
+
+        await makeZcapCommand().parseAsync(['list'], { from: 'user' })
+
+        assert.deepEqual(logs, [
+          'urn:zcap:root:https%3A%2F%2Fexample.com%2Fa',
+          'urn:zcap:root:https%3A%2F%2Fexample.com%2Fb'
+        ])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('--json outputs the capability ids as a JSON array', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeZcapCommand().parseAsync(
+          [
+            'create',
+            '--controller',
+            'did:key:z6MkController',
+            '--url',
+            'https://example.com/api',
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeZcapCommand().parseAsync(['list', '--json'], { from: 'user' })
+
+        assert.deepEqual(JSON.parse(logs[0]), [
+          'urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi'
+        ])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('stubs', () => {
     it('routes revoke', () => {
       makeZcapCommand().parse(['revoke', 'zcap-id-123'], { from: 'user' })
       assert.ok(logs[0].includes('zcap-id-123'))
