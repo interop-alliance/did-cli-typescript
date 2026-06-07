@@ -1,9 +1,29 @@
 # History
 
-## 0.1.0 - TBD
+## 0.2.0 - TBD
 
 ### Added
 
+- Implement `zcap create` command: builds an unsigned root Authorization
+  Capability (zcap) for an invocation target via `@interop/zcap`'s
+  `createRootCapability`, printing `{ rootCapability, encoded }` to stdout (the
+  `encoded` field is the capability JSON as a multibase base58btc string). Takes
+  a required `--controller` (the controller DID) and `--url` (the
+  `invocationTarget`); `--save` writes the capability to local wallet storage
+  (`~/.wallet/zcaps/`). Exits `0` / `1` for success / error.
+- Implement `zcap delegate` command: signs a delegated capability via
+  `@interop/ezcap`'s `ZcapClient`, printing `{ delegatedCapability, encoded }`
+  to stdout. Supports a first-level delegation from the root capability for a
+  `--url`, or a further (attenuated) delegation of an existing `--capability`
+  (a multibase string or a JSON file path), narrowed with `--invocation-target`.
+  Takes a required `--delegatee` (the delegated capability's controller),
+  optional `--allow <action...>` (defaults to inheriting the parent's actions),
+  and either `--ttl` (duration, default `1y`) or an `--expires` ISO 8601
+  override. The signing key is sourced from a stored DID (`--did`) or, as a
+  fallback, the `ZCAP_CONTROLLER_KEY_SEED` env var together with `--controller`
+  (the seed-derived `did:key` is verified against `--controller`). `--save`
+  writes the capability to `~/.wallet/zcaps/`. Exits `0` / `1` for success /
+  error.
 - Implement `vc issue` command: reads an unsigned Verifiable Credential as JSON
   from a file or stdin and issues (signs) it with a locally-stored DID via
   `@interop/vc`, printing the issued credential to stdout (appending a proof if
@@ -31,13 +51,18 @@
 
 ### Changed
 
-- Update to latest refactored `@interop/*` deps (`did-method-key@7.1.0`,
-  `ed25519-verification-key@7.0.1`, which pull in `did-io@4.0.1` and
-  `data-integrity-core@6.1.0`).
 - Bump `@interop/verifier-core` to `^3.1.0`, which reports an explicit
   `ISSUER_PROOF_MISMATCH` problem (title `Issuer / Proof Mismatch`) when a
   credential's `issuer` does not match the controller of its proof's
   verification method, instead of a generic `INVALID_SIGNATURE`.
+
+## 0.1.0 - 2026-06-01
+
+### Changed
+
+- Update to latest refactored `@interop/*` deps (`did-method-key@7.1.0`,
+  `ed25519-verification-key@7.0.1`, which pull in `did-io@4.0.1` and
+  `data-integrity-core@6.1.0`).
 
 ### Removed
 
