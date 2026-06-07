@@ -102,6 +102,36 @@ export async function listDids(): Promise<string[]> {
 }
 
 /**
+ * Load and JSON-parse the DID document saved for a DID.
+ *
+ * Reads `<did>.json` from the method subdirectory of the DIDs storage dir, where
+ * the method is derived from the DID (e.g. `did:key:...` lives under `key/`).
+ *
+ * @param did {string}
+ * @returns {Promise<T>}
+ */
+export async function loadDidDocument<T = unknown>(did: string): Promise<T> {
+  const method = did.split(':')[1]
+  const filePath = join(getDidsDir(), method, `${did}.json`)
+  return JSON.parse(await readFile(filePath, 'utf8')) as T
+}
+
+/**
+ * Load and JSON-parse the exported key pair saved alongside a DID document.
+ *
+ * Reads the `<did>.keys.json` key file written by `saveToDids` with the `keys`
+ * suffix; it carries the DID's signing key material (including the secret key).
+ *
+ * @param did {string}
+ * @returns {Promise<T>}
+ */
+export async function loadDidKeys<T = unknown>(did: string): Promise<T> {
+  const method = did.split(':')[1]
+  const filePath = join(getDidsDir(), method, `${did}.keys.json`)
+  return JSON.parse(await readFile(filePath, 'utf8')) as T
+}
+
+/**
  * @param options {object}
  * @param options.method {string}
  * @param options.did {string}

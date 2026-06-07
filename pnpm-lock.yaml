@@ -14,15 +14,27 @@ importers:
       '@digitalcredentials/issuer-registry-client':
         specifier: ^4.0.0
         version: 4.0.0
+      '@interop/data-integrity-proof':
+        specifier: ^3.2.1
+        version: 3.2.1
       '@interop/did-method-key':
         specifier: ^7.1.1
         version: 7.1.1
+      '@interop/ed25519-signature':
+        specifier: ^7.0.1
+        version: 7.0.1(@interop/jsonld-signatures@11.6.7)
       '@interop/ed25519-verification-key':
         specifier: ^7.0.1
         version: 7.0.1
+      '@interop/security-document-loader':
+        specifier: ^9.2.1
+        version: 9.2.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
+      '@interop/vc':
+        specifier: ^11.0.1
+        version: 11.0.1
       '@interop/verifier-core':
-        specifier: ^3.0.1
-        version: 3.0.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
+        specifier: ^3.1.0
+        version: 3.1.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -452,8 +464,8 @@ packages:
     resolution: {integrity: sha512-jbu3xuXMA1+Nqt6QwJ2Q2pbdtKvfhUmcHwF6YGILD8tVWwiJwvp1ch2CqGyH1zmL2bvEkTa6BEjZNvuWn2ldaQ==}
     engines: {node: '>=24.0'}
 
-  '@interop/verifier-core@3.0.1':
-    resolution: {integrity: sha512-HzfmmoXrngNjnwNIJMX7ZnjTSvLuC9/1QrjTepDHstBBjLf9nbeLj7DMOyQDzp14Hdyl0J0tufkgRfJLWZM7LQ==}
+  '@interop/verifier-core@3.1.0':
+    resolution: {integrity: sha512-FBZU9fH9523JX/MxE8BBFYEsOTGsNOp1n7dtHic1n5Ku1fQWri1ypxSHbKYhzeyKKbxpLP9KMOxT3x5tkOnSag==}
     engines: {node: '>=24.0'}
 
   '@isaacs/ttlcache@1.4.1':
@@ -2097,7 +2109,7 @@ snapshots:
       '@interop/jsonld-signatures': 11.6.7
       credentials-context: 2.0.0
 
-  '@interop/verifier-core@3.0.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))':
+  '@interop/verifier-core@3.1.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))':
     dependencies:
       '@interop/data-integrity-core': 6.1.2
       '@interop/data-integrity-proof': 3.2.1

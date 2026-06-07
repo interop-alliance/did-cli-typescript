@@ -20,9 +20,13 @@
   "dependencies": {
     "@digitalcredentials/bnid": "^5.0.0",
     "@digitalcredentials/issuer-registry-client": "^4.0.0",
+    "@interop/data-integrity-proof": "^3.2.1",
     "@interop/did-method-key": "^7.1.1",
+    "@interop/ed25519-signature": "^7.0.1",
     "@interop/ed25519-verification-key": "^7.0.1",
-    "@interop/verifier-core": "^3.0.1",
+    "@interop/security-document-loader": "^9.2.1",
+    "@interop/vc": "^11.0.1",
+    "@interop/verifier-core": "^3.1.0",
     "commander": "^15.0.0"
   },
   "packageManager": "pnpm@11.5.0",

@@ -1,3 +1,5 @@
 allowBuilds:
   core-js: false
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@interop/verifier-core@3.1.0'
