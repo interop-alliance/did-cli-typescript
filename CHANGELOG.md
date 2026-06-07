@@ -4,6 +4,10 @@
 
 ### Added
 
+- Implement `key list` command: prints the fingerprints (multibase-encoded
+  public keys) of key pairs saved in local wallet storage (one per line to
+  stdout, nothing if empty), or as a JSON array with `--json`. Adds
+  `listCollection()` and `loadFromCollection()` storage helpers.
 - Add `vc verify` command: reads a Verifiable Credential as JSON from a file or
   stdin and runs full verification via `@interop/verifier-core` plus
   `@digitalcredentials/issuer-registry-client` (cryptographic signature,

@@ -4,7 +4,11 @@ import {
   generateSecretKeySeed
 } from '@digitalcredentials/bnid'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import { saveToCollection } from '../storage.js'
+import {
+  listCollection,
+  loadFromCollection,
+  saveToCollection
+} from '../storage.js'
 
 export function makeKeyCommand(): Command {
   const key = new Command('key').description('Manage cryptographic keys')
@@ -68,9 +72,27 @@ export function makeKeyCommand(): Command {
   key
     .command('list')
     .description('List locally stored keys')
-    .action(() => {
-      console.error('Listing keys...')
-      // TODO: implement
+    .option('--json', 'output the list of key IDs as a JSON array')
+    .action(async (options: { json?: boolean }) => {
+      const storageIds = await listCollection('keys')
+      const keyIds: string[] = []
+      for (const storageId of storageIds) {
+        const key = await loadFromCollection<{ publicKeyMultibase?: string }>(
+          'keys',
+          storageId
+        )
+        if (key.publicKeyMultibase) {
+          keyIds.push(key.publicKeyMultibase)
+        }
+      }
+      keyIds.sort()
+      if (options.json) {
+        console.log(JSON.stringify(keyIds, null, 2))
+        return
+      }
+      for (const keyId of keyIds) {
+        console.log(keyId)
+      }
     })
 
   key

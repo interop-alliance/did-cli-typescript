@@ -1,9 +1,21 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeKeyCommand } from './key.js'
+
+async function storedFingerprints(walletDir: string): Promise<string[]> {
+  const keysDir = join(walletDir, 'keys')
+  const fileNames = await readdir(keysDir)
+  const fingerprints = await Promise.all(
+    fileNames.map(async name => {
+      const key = JSON.parse(await readFile(join(keysDir, name), 'utf8'))
+      return key.publicKeyMultibase as string
+    })
+  )
+  return fingerprints.sort()
+}
 
 describe('did key', () => {
   let logs: string[]
@@ -138,9 +150,69 @@ describe('did key', () => {
   })
 
   describe('list', () => {
-    it('routes list', () => {
-      makeKeyCommand().parse(['list'], { from: 'user' })
-      assert.ok(errors[0].includes('Listing keys'))
+    it('prints nothing when no keys are stored', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+        assert.equal(logs.length, 0)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('prints nothing when the wallet has never been created', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      await rm(walletDir, { recursive: true })
+      process.env.WALLET_DIR = walletDir
+      await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+      assert.equal(logs.length, 0)
+    })
+
+    it('prints key fingerprints, one per line, sorted', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+
+        const expected = await storedFingerprints(walletDir)
+        assert.equal(logs.length, 2)
+        assert.deepEqual(logs, expected)
+        for (const keyId of logs) {
+          assert.match(keyId, /^z6Mk/)
+        }
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('--json outputs the key fingerprints as a JSON array', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['list', '--json'], { from: 'user' })
+
+        const parsed = JSON.parse(logs[0])
+        const expected = await storedFingerprints(walletDir)
+        assert.deepEqual(parsed, expected)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
     })
   })
 
