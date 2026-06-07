@@ -5,7 +5,7 @@ import {
 } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import { saveToDids } from '../storage.js'
+import { listDids, saveToDids } from '../storage.js'
 
 export function makeIdCommand(): Command {
   const id = new Command('id').description('Manage DIDs')
@@ -104,9 +104,16 @@ export function makeIdCommand(): Command {
 
   id.command('list')
     .description('List locally stored DIDs')
-    .action(() => {
-      console.log('Listing DIDs...')
-      // TODO: implement
+    .option('--json', 'output the list of DIDs as a JSON array')
+    .action(async (options: { json?: boolean }) => {
+      const dids = await listDids()
+      if (options.json) {
+        console.log(JSON.stringify(dids, null, 2))
+        return
+      }
+      for (const did of dids) {
+        console.log(did)
+      }
     })
 
   return id

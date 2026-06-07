@@ -1,9 +1,27 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeIdCommand } from './id.js'
+
+async function storedDids(didsDir: string): Promise<string[]> {
+  const methodEntries = await readdir(didsDir, { withFileTypes: true })
+  const dids: string[] = []
+  for (const methodEntry of methodEntries) {
+    if (!methodEntry.isDirectory()) {
+      continue
+    }
+    const fileNames = await readdir(join(didsDir, methodEntry.name))
+    for (const fileName of fileNames) {
+      if (!fileName.endsWith('.json') || fileName.endsWith('.keys.json')) {
+        continue
+      }
+      dids.push(fileName.slice(0, -'.json'.length))
+    }
+  }
+  return dids.sort()
+}
 
 describe('did id', () => {
   let logs: string[]
@@ -156,9 +174,80 @@ describe('did id', () => {
   })
 
   describe('list', () => {
-    it('routes list', () => {
-      makeIdCommand().parse(['list'], { from: 'user' })
-      assert.ok(logs[0].includes('Listing DIDs'))
+    it('prints nothing when no DIDs are stored', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeIdCommand().parseAsync(['list'], { from: 'user' })
+        assert.equal(logs.length, 0)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('prints nothing when DID storage has never been created', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      await rm(didsDir, { recursive: true })
+      process.env.DIDS_DIR = didsDir
+      await makeIdCommand().parseAsync(['list'], { from: 'user' })
+      assert.equal(logs.length, 0)
+    })
+
+    it('prints stored DIDs, one per line, sorted', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeIdCommand().parseAsync(['create', '--save'], { from: 'user' })
+        await makeIdCommand().parseAsync(['create', '--save'], { from: 'user' })
+        logs.length = 0
+        errors.length = 0
+
+        await makeIdCommand().parseAsync(['list'], { from: 'user' })
+
+        const expected = await storedDids(didsDir)
+        assert.equal(logs.length, 2)
+        assert.deepEqual(logs, expected)
+        for (const did of logs) {
+          assert.match(did, /^did:key:z6Mk/)
+        }
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('omits the .keys.json sidecar files', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeIdCommand().parseAsync(['create', '--save'], { from: 'user' })
+        logs.length = 0
+        errors.length = 0
+
+        await makeIdCommand().parseAsync(['list'], { from: 'user' })
+
+        assert.equal(logs.length, 1)
+        assert.ok(!logs[0].includes('.keys'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--json outputs the DIDs as a JSON array', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeIdCommand().parseAsync(['create', '--save'], { from: 'user' })
+        logs.length = 0
+        errors.length = 0
+
+        await makeIdCommand().parseAsync(['list', '--json'], { from: 'user' })
+
+        const parsed = JSON.parse(logs[0])
+        const expected = await storedDids(didsDir)
+        assert.deepEqual(parsed, expected)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
     })
   })
 })

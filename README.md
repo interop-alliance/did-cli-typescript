@@ -158,6 +158,27 @@ DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 }
 ```
 
+#### List DIDs
+
+List the DIDs saved in local storage (via `id create --save`), one per line:
+
+```
+./did id list
+did:key:z6Mkr...
+did:key:z6Mks...
+```
+
+If no DIDs are stored, nothing is printed. Pass `--json` to output the DIDs as
+a JSON array instead:
+
+```
+./did id list --json
+[
+  "did:key:z6Mkr...",
+  "did:key:z6Mks..."
+]
+```
+
 ### Verifiable Credentials
 
 #### Verify a credential
