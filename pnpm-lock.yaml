@@ -14,6 +14,9 @@ importers:
       '@digitalcredentials/issuer-registry-client':
         specifier: ^4.0.0
         version: 4.0.0
+      '@interop/data-integrity-core':
+        specifier: ^6.1.2
+        version: 6.1.2
       '@interop/data-integrity-proof':
         specifier: ^3.2.1
         version: 3.2.1
@@ -26,6 +29,9 @@ importers:
       '@interop/ed25519-verification-key':
         specifier: ^7.0.1
         version: 7.0.1
+      '@interop/ezcap':
+        specifier: ^7.1.1
+        version: 7.1.1
       '@interop/security-document-loader':
         specifier: ^9.2.1
         version: 9.2.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
@@ -35,6 +41,12 @@ importers:
       '@interop/verifier-core':
         specifier: ^3.1.0
         version: 3.1.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
+      '@interop/zcap':
+        specifier: ^11.0.1
+        version: 11.0.1
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -44,7 +56,7 @@ importers:
         version: 10.0.1(eslint@10.4.1)
       '@types/node':
         specifier: ^25.6.0
-        version: 25.9.1
+        version: 25.9.2
       eslint:
         specifier: ^10.2.0
         version: 10.4.1
@@ -436,9 +448,30 @@ packages:
     resolution: {integrity: sha512-CqCJlNaBMmj3sPqo1291aAObKQlJINjUnTur2aGS6rFBLWtsUQCqPxAiSLn1HythmwuB7x+al6bRnmt7ZCAAEg==}
     engines: {node: '>=20'}
 
+  '@interop/ezcap@7.1.1':
+    resolution: {integrity: sha512-WUSimX+bgx4Fa1TIDeqhaeQtZV31XJ14Ve8G7vvm+VhBdORvA8MzMQqzr0aEjVjy0moOCJXDrb7hbuzhNffguA==}
+    engines: {node: '>=20.0'}
+
   '@interop/http-client@1.0.3':
     resolution: {integrity: sha512-KxWiQ87iRreDfrhzrrcEJL/sDrnonhnOSyQKDlnxJywfJnB211rWOtcLlEz3kwrqw3Tt0L3H+5zVvgfG6V/xhw==}
     engines: {node: '>=22.12'}
+
+  '@interop/http-digest-header@2.3.2':
+    resolution: {integrity: sha512-rMq3xzdHcJCl9RH/3pB/G+RW27cpQcMwPBSkMdO5jjnMeimetgMGLT3S5LFIbGe2Lp2JIcStL+RdXGFZ6DWUvw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      expo-crypto: '>=13'
+    peerDependenciesMeta:
+      expo-crypto:
+        optional: true
+
+  '@interop/http-signature-header@5.0.2':
+    resolution: {integrity: sha512-Sd+wNfMCvkxvNUoV+VoLfwn+IjTdtk0T1j/tQqxUiYUOkmS0V24O3ENiwCWfgUNkmmGIhlno9VIzLzd9mDwRkw==}
+    engines: {node: '>=14'}
+
+  '@interop/http-signature-zcap-invoke@6.2.0':
+    resolution: {integrity: sha512-wyY4wLdwVM7rndzGnhXGBg6J4m+ilNWBRn19HpodZnrql1ZE6HCR5aekpHjZHL+X1dPlk4TDD4rf3xQ8XdeL0g==}
+    engines: {node: '>=20'}
 
   '@interop/jsonld-signatures@11.6.7':
     resolution: {integrity: sha512-Eco4Z3RWM0a9WNPPCS2qzrtbtMvWxjzVqRidA7YW0IJ4E22j+a2SV71Y0kQU6Dzg5g87+nzHDvQTwUh2VEA2Pg==}
@@ -466,6 +499,10 @@ packages:
 
   '@interop/verifier-core@3.1.0':
     resolution: {integrity: sha512-FBZU9fH9523JX/MxE8BBFYEsOTGsNOp1n7dtHic1n5Ku1fQWri1ypxSHbKYhzeyKKbxpLP9KMOxT3x5tkOnSag==}
+    engines: {node: '>=24.0'}
+
+  '@interop/zcap@11.0.1':
+    resolution: {integrity: sha512-t2309Tu8Rw6aNtwbxrJee82xy6ta/UhO5c8va2LwJ6KBjc3qXfYlHOPZq1zElP7mULCZu8yJM8qHP43LPCV6yQ==}
     engines: {node: '>=24.0'}
 
   '@isaacs/ttlcache@1.4.1':
@@ -589,8 +626,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@25.9.1':
-    resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+  '@types/node@25.9.2':
+    resolution: {integrity: sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw==}
 
   '@types/yargs-parser@21.0.3':
     resolution: {integrity: sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ==}
@@ -767,8 +804,8 @@ packages:
     resolution: {integrity: sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==}
     engines: {node: '>=10'}
 
-  caniuse-lite@1.0.30001793:
-    resolution: {integrity: sha512-iwSsYWaCOoh26cV8NwNRViHlrfUvYsHDfRVcbtmw0Kg6PJIZZXwMkj1442FYLBGkeUf1juAsU3DTfxW579mrPA==}
+  caniuse-lite@1.0.30001797:
+    resolution: {integrity: sha512-l8xKG+gwAIExZGl9FrF7KUwuOmk6wbEPC9Xoy/RtnWv1XG0Q4LFlagaLpUv3Kiza3W/wm27zy0yWJEieYKAP6w==}
 
   canonicalize@2.1.0:
     resolution: {integrity: sha512-F705O3xrsUtgt98j7leetNhTWPe+5S72rlL5O4jA1pKqBVQ/dT1O1D6PFxmSXvc0SUOinWS57DKx0I3CHrXJHQ==}
@@ -1631,8 +1668,8 @@ packages:
   undici-types@7.24.6:
     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
 
-  undici@7.27.1:
-    resolution: {integrity: sha512-UDdpiex+mzigiyrXrGbiUaF4HzTNhKbh2vRNFaTMzcqmLIPrZxaCtwo/1TMSuWoM1Xz3WiTo9KdgI3kRqYzJGg==}
+  undici@7.27.2:
+    resolution: {integrity: sha512-uZsKNuzQxDMUY6M3pIMvy5tvlGmtq8XJ2oLAkfRKGNu+1VQAIvLy2xIVG5ATZl5wDXl/tddByAWCizRbOme+TA==}
     engines: {node: '>=20.18.1'}
 
   unpipe@1.0.0:
@@ -1651,6 +1688,10 @@ packages:
   utils-merge@1.0.1:
     resolution: {integrity: sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==}
     engines: {node: '>= 0.4.0'}
+
+  uuid@14.0.0:
+    resolution: {integrity: sha512-Qo+uWgilfSmAhXCMav1uYFynlQO7fMFiMVZsQqZRMIXp0O7rR7qjkj+cPvBHLgBqi960QCoo/PH2/6ZtVqKvrg==}
+    hasBin: true
 
   vlq@1.0.1:
     resolution: {integrity: sha512-gQpnTgkubC6hQgdIcRdYGDSDc+SaujOdyesZQMv6JlfQee/9Mp0Qhnys6WxDWvQnL5WZdT7o2Ul187aSt0Rq+w==}
@@ -2043,10 +2084,35 @@ snapshots:
       '@noble/hashes': 2.2.0
       '@scure/base': 2.2.0
 
+  '@interop/ezcap@7.1.1':
+    dependencies:
+      '@interop/data-integrity-core': 6.1.2
+      '@interop/data-integrity-proof': 3.2.1
+      '@interop/http-client': 1.0.3
+      '@interop/http-signature-zcap-invoke': 6.2.0
+      '@interop/jsonld-signatures': 11.6.7
+      '@interop/zcap': 11.0.1
+      uuid: 14.0.0
+    transitivePeerDependencies:
+      - expo-crypto
+
   '@interop/http-client@1.0.3':
     dependencies:
       ky: 1.14.3
-      undici: 7.27.1
+      undici: 7.27.2
+
+  '@interop/http-digest-header@2.3.2': {}
+
+  '@interop/http-signature-header@5.0.2': {}
+
+  '@interop/http-signature-zcap-invoke@6.2.0':
+    dependencies:
+      '@interop/data-integrity-core': 6.1.2
+      '@interop/http-digest-header': 2.3.2
+      '@interop/http-signature-header': 5.0.2
+      pako: 2.1.0
+    transitivePeerDependencies:
+      - expo-crypto
 
   '@interop/jsonld-signatures@11.6.7':
     dependencies:
@@ -2129,6 +2195,12 @@ snapshots:
     transitivePeerDependencies:
       - react-native
 
+  '@interop/zcap@11.0.1':
+    dependencies:
+      '@digitalbazaar/zcap-context': 2.0.1
+      '@interop/data-integrity-core': 6.1.2
+      '@interop/jsonld-signatures': 11.6.7
+
   '@isaacs/ttlcache@1.4.1': {}
 
   '@jest/schemas@29.6.3':
@@ -2140,7 +2212,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -2262,7 +2334,7 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@25.9.1':
+  '@types/node@25.9.2':
     dependencies:
       undici-types: 7.24.6
 
@@ -2443,7 +2515,7 @@ snapshots:
   browserslist@4.28.2:
     dependencies:
       baseline-browser-mapping: 2.10.34
-      caniuse-lite: 1.0.30001793
+      caniuse-lite: 1.0.30001797
       electron-to-chromium: 1.5.368
       node-releases: 2.0.47
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
@@ -2456,7 +2528,7 @@ snapshots:
 
   camelcase@6.3.0: {}
 
-  caniuse-lite@1.0.30001793: {}
+  caniuse-lite@1.0.30001797: {}
 
   canonicalize@2.1.0: {}
 
@@ -2467,7 +2539,7 @@ snapshots:
 
   chrome-launcher@0.15.2:
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -2476,7 +2548,7 @@ snapshots:
 
   chromium-edge-launcher@0.3.0:
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -2813,7 +2885,7 @@ snapshots:
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.11
@@ -2830,7 +2902,7 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 25.9.2
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
@@ -3403,7 +3475,7 @@ snapshots:
 
   undici-types@7.24.6: {}
 
-  undici@7.27.1: {}
+  undici@7.27.2: {}
 
   unpipe@1.0.0: {}
 
@@ -3418,6 +3490,8 @@ snapshots:
       punycode: 2.3.1
 
   utils-merge@1.0.1: {}
+
+  uuid@14.0.0: {}
 
   vlq@1.0.1: {}
 

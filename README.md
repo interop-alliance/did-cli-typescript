@@ -263,6 +263,136 @@ issuance error (an unauthorized key, an unknown suite, a missing DID / key
 file, or an issuer that does not match the signing DID), and `2` on a
 read/parse error.
 
+### Authorization Capabilities (zCaps)
+
+An Authorization Capability (zCap) grants its
+controller permission to invoke an action against a resource (the
+`invocationTarget`). Authority starts at an unsigned _root_ capability and is
+handed down a chain of signed _delegated_ capabilities, each one optionally
+narrowing the allowed actions or the target.
+
+Both commands print the capability as JSON together with an `encoded` field --
+the capability serialized and `base58btc`-encoded with a multibase `z` prefix --
+which is the compact form you pass to `zcap delegate --capability` to delegate it
+further. Pass `--save` to also write the capability to local wallet storage
+(`~/.wallet/zcaps/` by default, or `$WALLET_DIR` if set). The exit code is `0` on
+success and `1` on a creation / delegation or input error.
+
+#### Create a root capability
+
+Build the root capability for an invocation target. The `--controller` is the DID
+that holds root authority over the target, and `--url` is the `invocationTarget`.
+Root capabilities are unsigned, so no key is needed:
+
+```
+./did zcap create \
+  --controller did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
+  --url https://example.com/api
+{
+  "rootCapability": {
+    "@context": "https://w3id.org/zcap/v1",
+    "id": "urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi",
+    "controller": "did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR",
+    "invocationTarget": "https://example.com/api"
+  },
+  "encoded": "z3g9TJBrQTdKemE9BC43N9WsT8snKvQzwCpCWs8o..."
+}
+```
+
+The root capability's `id` is always `urn:zcap:root:<url-encoded invocationTarget>`,
+and a root capability grants all actions (it has no `allowedAction`).
+
+#### Note about the `encoded` field
+
+The multibase- (that's the `z` prefix) and base58btc-encoded JSON of the zcap
+is returned, for convenience, in the `encoded` field.
+
+This is done for easier "double-click to copy" and pasting into other tools,
+such as password managers, server env secrets, etc.
+
+#### Delegate a capability
+
+Delegate authority to another DID (`--delegatee`, which becomes the delegated
+capability's controller). The delegation is signed with the delegator's
+`capabilityDelegation` key, sourced one of two ways:
+
+- **A locally-stored DID (`--did`)** -- the DID must have been saved with
+  `did id create --save`; this is the preferred mode and mirrors `vc issue`.
+- **A secret key seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`)** -- the
+  `did:key` is re-derived from the seed and checked against `--controller`.
+
+To delegate from the root capability for a target, pass `--url` (the same
+`invocationTarget` the root was created for) and the action(s) to allow with
+`--allow` (repeatable; if omitted the delegatee inherits the parent's actions):
+
+```
+./did zcap delegate \
+  --did did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
+  --delegatee did:key:z6MknBxrctS4KsfiBsEaXsfnrnfNYTvDjVpLYYUAN6PX2EfG \
+  --url https://example.com/documents \
+  --allow read
+{
+  "delegatedCapability": {
+    "@context": [
+      "https://w3id.org/zcap/v1",
+      "https://w3id.org/security/suites/ed25519-2020/v1"
+    ],
+    "id": "urn:uuid:e03d4f97-2e70-42e8-ae5d-51e92e903afa",
+    "controller": "did:key:z6MknBxrctS4KsfiBsEaXsfnrnfNYTvDjVpLYYUAN6PX2EfG",
+    "parentCapability": "urn:zcap:root:https%3A%2F%2Fexample.com%2Fdocuments",
+    "invocationTarget": "https://example.com/documents",
+    "expires": "2027-06-07T17:30:00Z",
+    "allowedAction": ["read"],
+    "proof": {
+      "type": "Ed25519Signature2020",
+      "created": "2026-06-07T17:30:00Z",
+      "verificationMethod": "did:key:z6Mkfeco...#z6Mkfeco...",
+      "proofPurpose": "capabilityDelegation",
+      "capabilityChain": ["urn:zcap:root:https%3A%2F%2Fexample.com%2Fdocuments"],
+      "proofValue": "z5tuwwdJE6VXLhf1v8SNAquBmMcJCD7zJ4bXDi6rh1Fk..."
+    }
+  },
+  "encoded": "zkL8vet8M2mn7akSpHEVvgFUCTVq4VSGs1s8Zsq9bYba..."
+}
+```
+
+The same delegation, signed via a secret key seed instead of a stored DID:
+
+```
+ZCAP_CONTROLLER_KEY_SEED=z1AZK4h5w5YZkKYEgqtcFfvSbWQ3tZ3ZFgmLsXMZsTVoeK7 \
+  ./did zcap delegate \
+  --controller did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
+  --delegatee did:key:z6MknBxrctS4KsfiBsEaXsfnrnfNYTvDjVpLYYUAN6PX2EfG \
+  --url https://example.com/documents \
+  --allow read
+```
+
+To delegate an _existing_ capability further down the chain, pass it as
+`--capability` instead of `--url` -- either the `encoded` string from a previous
+delegation or a path to a JSON file containing the capability. Use
+`--invocation-target` to attenuate (narrow) the parent's target to a sub-path:
+
+```
+./did zcap delegate \
+  --did did:key:z6MknBxr... \
+  --delegatee did:key:z6Mks... \
+  --capability zkL8vet8M2mn7akSpHEVvgFUCTVq4VSGs1s8Zsq9bYba... \
+  --invocation-target https://example.com/documents/reports \
+  --allow read
+```
+
+The delegated capability expires after `--ttl` (a duration such as `1y`, `30d`,
+`24h`, `15m`; default `1y`). Pass `--expires` with an explicit ISO 8601 date to
+override it:
+
+```
+./did zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
+  --url https://example.com/documents --allow read --ttl 30d
+
+./did zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
+  --url https://example.com/documents --allow read --expires 2027-01-01T00:00:00Z
+```
+
 ## Contribute
 
 PRs accepted.
