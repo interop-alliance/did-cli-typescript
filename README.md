@@ -158,6 +158,56 @@ DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 }
 ```
 
+#### Create a did:web DID
+
+Generate a `did:web` DID. Unlike `did:key`, a `did:web` DID is tied to a domain,
+so `--url` (the HTTPS url of the DID document) is required:
+
+```
+./di did create web --url https://example.com
+{
+  "id": "did:web:example.com",
+  "didDocument": { ... }
+}
+```
+
+This generates a single Ed25519 verification key, wired into the
+`authentication`, `assertionMethod`, `capabilityDelegation`, and
+`capabilityInvocation` relationships. Additional keys can be added later.
+
+As with `did:key`, pass `--with-seed` to include the secret key seed in the
+output (useful for re-deriving the same DID later):
+
+```
+./di did create web --url https://example.com --with-seed
+{
+  "id": "did:web:example.com",
+  "secretKeySeed": "z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv",
+  "didDocument": { ... }
+}
+```
+
+Or set the `SECRET_KEY_SEED` environment variable to a multibase-encoded seed to
+generate the DID deterministically:
+
+```
+SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv \
+  ./di did create web --url https://example.com
+```
+
+Save the DID document and key material to local storage with `--save` (written
+to `~/.dids/web/` by default, or `$DIDS_DIR` if set). The key file is an object
+keyed by verification method id, so further keys can be appended later:
+
+```
+./di did create web --url https://example.com --save
+DID saved to /home/user/.dids/web/did:web:example.com.json
+{
+  "id": "did:web:example.com",
+  "didDocument": { ... }
+}
+```
+
 #### List DIDs
 
 List the DIDs saved in local storage (via `id create --save`), one per line:

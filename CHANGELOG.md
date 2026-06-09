@@ -1,5 +1,19 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- Add `did:web` support to `did create` (`./di did create web --url <url>`):
+  generates a `did:web` DID with a single Ed25519 verification key (wired into
+  `authentication`, `assertionMethod`, `capabilityDelegation`, and
+  `capabilityInvocation`) via `@interop/did-web-resolver`'s `driver().generate()`.
+  `--url` is required (a `did:web` DID is tied to a domain). The key is derived
+  from a seed exactly as `did:key` is (`SECRET_KEY_SEED` env var or `--with-seed`).
+  `--save` writes the DID document and key material to `~/.dids/web/`, with the
+  key file stored as an object keyed by verification method id so additional keys
+  can be appended later.
+
 ## 0.2.0 - 2026-06-08
 
 ### Changed
