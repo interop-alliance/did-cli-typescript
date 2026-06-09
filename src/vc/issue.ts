@@ -98,6 +98,38 @@ interface StoredKeyPair {
 }
 
 /**
+ * The two on-disk shapes of a `<did>.keys.json` file: a single exported key pair
+ * (written by `id create --save` for did:key), or a map of exported key pairs
+ * keyed by verification-method id (written by `id create web --save` and
+ * `id add-key` for did:web, which may carry more than one key).
+ */
+type StoredKeys = StoredKeyPair | Record<string, StoredKeyPair>
+
+/**
+ * Resolves the exported key pair for `keyId` out of a loaded `<did>.keys.json`,
+ * accommodating both the single-key (did:key) and the keyed-map (did:web)
+ * storage shapes.
+ *
+ * @param options {object}
+ * @param options.keysData {StoredKeys}   The parsed key file contents.
+ * @param options.keyId {string}   The verification method id to find.
+ * @returns {StoredKeyPair | undefined}   The matching key pair, or undefined.
+ */
+function selectStoredKey({
+  keysData,
+  keyId
+}: {
+  keysData: StoredKeys
+  keyId: string
+}): StoredKeyPair | undefined {
+  if ((keysData as StoredKeyPair).id === keyId) {
+    return keysData as StoredKeyPair
+  }
+  const entry = (keysData as Record<string, StoredKeyPair>)[keyId]
+  return entry?.id === keyId ? entry : undefined
+}
+
+/**
  * Returns whether the given key id appears in the DID document's
  * `assertionMethod` relationship, matching either a string reference or the
  * `id` of an embedded verification method object.
@@ -202,14 +234,15 @@ export async function issueCredential({
     selectedKeyId = method.id
   }
 
-  const keysData = await loadDidKeys<StoredKeyPair>(did)
-  if (keysData.id !== selectedKeyId) {
+  const keysData = await loadDidKeys<StoredKeys>(did)
+  const storedKey = selectStoredKey({ keysData, keyId: selectedKeyId })
+  if (!storedKey) {
     throw new Error(
       `No stored secret key found for key id ${selectedKeyId} in DID ${did}`
     )
   }
 
-  const keyPair = await Ed25519VerificationKey.from(keysData)
+  const keyPair = await Ed25519VerificationKey.from(storedKey)
   const signer = createSigner(keyPair)
   const signatureSuite = buildSuite({ suite, signer })
 

@@ -6,7 +6,12 @@ import {
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import { listDids, saveToDids } from '../storage.js'
+import {
+  listDids,
+  loadDidDocument,
+  loadDidKeys,
+  saveToDids
+} from '../storage.js'
 
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
@@ -99,6 +104,7 @@ export function makeDidCommand(): Command {
                     'did:web requires --url (e.g. --url https://example.com)'
                   )
                   process.exit(1)
+                  return
                 }
                 const envSeed = process.env.SECRET_KEY_SEED
                 const secretKeySeed = options.withSeed
@@ -164,6 +170,104 @@ export function makeDidCommand(): Command {
             )
             process.exit(1)
         }
+      }
+    )
+
+  did
+    .command('add-key <did>')
+    .description(
+      'Add a verification key to an existing (locally stored) did:web'
+    )
+    .option('-t, --type <type>', 'key type (supported: ed25519)', 'ed25519')
+    .option(
+      '--purpose <purpose...>',
+      'verification relationship(s) to wire the key into ' +
+        '(default: authentication, assertionMethod, capabilityDelegation, capabilityInvocation)'
+    )
+    .option(
+      '--with-seed',
+      'include the new secret key seed in output (generated if SECRET_KEY_SEED is not set)'
+    )
+    .action(
+      async (
+        did: string,
+        options: {
+          type: string
+          purpose?: string[]
+          withSeed?: boolean
+        }
+      ) => {
+        if (!did.startsWith('did:web:')) {
+          console.error('add-key is only supported for did:web DIDs')
+          process.exit(1)
+        }
+        if (options.type !== 'ed25519') {
+          console.error(`Unknown key type: ${options.type}. Supported: ed25519`)
+          process.exit(1)
+        }
+
+        let didDocument: Record<string, unknown>
+        let exportedKeys: Record<string, unknown>
+        try {
+          didDocument = await loadDidDocument(did)
+          exportedKeys = await loadDidKeys(did)
+        } catch {
+          console.error(`No locally stored did:web found for ${did}`)
+          process.exit(1)
+        }
+
+        const envSeed = process.env.SECRET_KEY_SEED
+        const secretKeySeed = options.withSeed
+          ? (envSeed ?? (await generateSecretKeySeed()))
+          : envSeed
+        const seedBytes = secretKeySeed
+          ? decodeSecretKeySeed({ secretKeySeed })
+          : undefined
+        const keyPair = await Ed25519VerificationKey.generate({
+          seed: seedBytes
+        })
+
+        const didWebDriver = didWeb.driver()
+        didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
+        const keyPairs = new Map<string, any>()
+        try {
+          await didWebDriver.addVerificationMethod({
+            didDocument,
+            keyPairs,
+            keyPair,
+            purposes: options.purpose
+          })
+        } catch (err) {
+          console.error((err as Error).message)
+          process.exit(1)
+        }
+
+        // Merge the new key into the stored keys file (keyed by VM id).
+        for (const [methodId, addedKey] of keyPairs) {
+          exportedKeys[methodId] = addedKey.export({
+            publicKey: true,
+            secretKey: true
+          })
+        }
+        const docPath = await saveToDids({
+          method: 'web',
+          did,
+          data: didDocument
+        })
+        await saveToDids({
+          method: 'web',
+          did,
+          suffix: 'keys',
+          data: exportedKeys
+        })
+        console.error(`DID saved to ${docPath}`)
+
+        const output: Record<string, unknown> = { id: didDocument.id }
+        if (options.withSeed) {
+          output.secretKeySeed = secretKeySeed
+        }
+        output.didDocument = didDocument
+        console.log(JSON.stringify(output, null, 2))
       }
     )
 

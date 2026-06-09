@@ -208,6 +208,38 @@ DID saved to /home/user/.dids/web/did:web:example.com.json
 }
 ```
 
+#### Add a key to a did:web DID
+
+Add another verification key to an existing, locally stored `did:web` DID (the
+DID must have been saved with `did create web --save`). The new key is generated,
+added to the DID document, and both the document and key file in storage are
+updated in place:
+
+```
+./di did add-key did:web:example.com
+DID saved to /home/user/.dids/web/did:web:example.com.json
+{
+  "id": "did:web:example.com",
+  "didDocument": { ... }
+}
+```
+
+By default the new key is wired into the `authentication`, `assertionMethod`,
+`capabilityDelegation`, and `capabilityInvocation` relationships. Pass
+`--purpose` (repeatable) to choose specific relationships:
+
+```
+./di did add-key did:web:example.com --purpose authentication --purpose assertionMethod
+```
+
+As with `did create`, the new key is derived from a seed: pass `--with-seed` to
+generate (and print) a fresh seed, or set `SECRET_KEY_SEED` to derive the key
+deterministically:
+
+```
+./di did add-key did:web:example.com --with-seed
+```
+
 #### List DIDs
 
 List the DIDs saved in local storage (via `id create --save`), one per line:

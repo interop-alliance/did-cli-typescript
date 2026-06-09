@@ -143,9 +143,20 @@ describe('di did', () => {
       }
     })
 
-    it('routes did:web (not yet implemented)', async () => {
+    it('creates a did:web from --url', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'web', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.id, 'did:web:example.com')
+      assert.equal(parsed.didDocument.id, 'did:web:example.com')
+    })
+
+    it('exits with error when did:web is missing --url', async () => {
       await makeDidCommand().parseAsync(['create', 'web'], { from: 'user' })
-      assert.ok(logs[0].includes('did:web'))
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('did:web requires --url'))
     })
 
     it('routes did:webvh (not yet implemented)', async () => {
