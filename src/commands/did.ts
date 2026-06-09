@@ -7,10 +7,11 @@ import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { listDids, saveToDids } from '../storage.js'
 
-export function makeIdCommand(): Command {
-  const id = new Command('id').description('Manage DIDs')
+export function makeDidCommand(): Command {
+  const did = new Command('did').description('Manage DIDs')
 
-  id.command('create [method]')
+  did
+    .command('create [method]')
     .description('Create a new DID (method: key, web, webvh) [default: key]')
     .option('-t, --type <type>', 'key type (supported: ed25519)', 'ed25519')
     .option(
@@ -94,7 +95,8 @@ export function makeIdCommand(): Command {
       }
     )
 
-  id.command('resolve <did>')
+  did
+    .command('resolve <did>')
     .description('Resolve a DID document')
     .option('-o, --output <format>', 'output format (json|pretty)', 'pretty')
     .action((did: string, options: { output: string }) => {
@@ -102,7 +104,8 @@ export function makeIdCommand(): Command {
       // TODO: implement
     })
 
-  id.command('list')
+  did
+    .command('list')
     .description('List locally stored DIDs')
     .option('--json', 'output the list of DIDs as a JSON array')
     .action(async (options: { json?: boolean }) => {
@@ -116,5 +119,5 @@ export function makeIdCommand(): Command {
       }
     })
 
-  return id
+  return did
 }

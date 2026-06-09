@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "did": "dist/index.js"
+    "di": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

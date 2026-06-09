@@ -2,6 +2,17 @@
 
 ## 0.2.0 - TBD
 
+### Changed
+
+- **BREAKING**: Rename the CLI binary from `did` to `di` (bin script and `package.json`
+  `bin` entry), so commands now read `./di key create`, `./di vc verify`, etc.
+- **BREAKING**: Rename the `id` command group to `did`, so DID commands now read
+  `./di did create` and `./di did list`.
+- Bump `@interop/verifier-core` to `^3.1.0`, which reports an explicit
+  `ISSUER_PROOF_MISMATCH` problem (title `Issuer / Proof Mismatch`) when a
+  credential's `issuer` does not match the controller of its proof's
+  verification method, instead of a generic `INVALID_SIGNATURE`.
+
 ### Added
 
 - Implement `zcap create` command: builds an unsigned root Authorization
@@ -52,13 +63,6 @@
   expiration, revocation / status, and issuer registry recognition). Prints the
   full verifier-core result by default, or a compact object with `--summary`,
   and exits `0` / `1` / `2` for verified / not-verified / read error.
-
-### Changed
-
-- Bump `@interop/verifier-core` to `^3.1.0`, which reports an explicit
-  `ISSUER_PROOF_MISMATCH` problem (title `Issuer / Proof Mismatch`) when a
-  credential's `issuer` does not match the controller of its proof's
-  verification method, instead of a generic `INVALID_SIGNATURE`.
 
 ## 0.1.0 - 2026-06-01
 

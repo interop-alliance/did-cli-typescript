@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { makeIdCommand } from './id.js'
+import { makeDidCommand } from './did.js'
 import { makeZcapCommand } from './zcap.js'
 import { decodeCapability } from '../zcap/encoding.js'
 
@@ -20,7 +20,7 @@ async function createStoredDid(
   const prevDids = process.env.DIDS_DIR
   process.env.DIDS_DIR = didsDir
   try {
-    await makeIdCommand().parseAsync(['create', '--save', '--with-seed'], {
+    await makeDidCommand().parseAsync(['create', '--save', '--with-seed'], {
       from: 'user'
     })
   } finally {

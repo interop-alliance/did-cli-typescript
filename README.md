@@ -19,8 +19,8 @@
 Help is available with the `--help/-h` command line option:
 
 ```
-./did -h
-./did COMMAND -h
+./di -h
+./di COMMAND -h
 ```
 
 ### Key Management
@@ -30,14 +30,14 @@ Help is available with the `--help/-h` command line option:
 Generate a random Ed25519 key pair (ed25519 is the default type):
 
 ```
-./did key create
+./di key create
 ```
 
 If you'd like to also generate a secret key seed (to help deterministically
 generate the same key pair in the future), pass in the `--with-seed` flag:
 
 ```
-./did key create --with-seed
+./di key create --with-seed
 {
   "secretKeySeed": "z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv",
   "keyPair": {
@@ -53,7 +53,7 @@ Generate a deterministic key pair by setting the `SECRET_KEY_SEED` environment
 variable to a multibase-encoded seed (e.g. from `@digitalcredentials/bnid`):
 
 ```
-SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./did key create
+SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di key create
 {
   "@context": "https://w3id.org/security/multikey/v1",
   "type": "Multikey",
@@ -65,7 +65,7 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./did key create
 Specify an explicit key type with `--type` (defaults to `ed25519`):
 
 ```
-SECRET_KEY_SEED=z1Aaj5A4UCsd... ./did key create --type ed25519
+SECRET_KEY_SEED=z1Aaj5A4UCsd... ./di key create --type ed25519
 ```
 
 Output is a JSON-LD Multikey document with both the public and secret key in
@@ -86,7 +86,7 @@ List the fingerprints (multibase-encoded public keys) of the key pairs saved in
 local wallet storage (via `key create --save`), one per line:
 
 ```
-./did key list
+./di key list
 z6Mkr...
 z6Mks...
 ```
@@ -95,7 +95,7 @@ If no keys are stored, nothing is printed. Pass `--json` to output the
 fingerprints as a JSON array instead:
 
 ```
-./did key list --json
+./di key list --json
 [
   "z6Mkr...",
   "z6Mks..."
@@ -109,7 +109,7 @@ fingerprints as a JSON array instead:
 Generate a random Ed25519 `did:key` DID (method defaults to `key`):
 
 ```
-./did id create
+./di did create
 {
   "id": "did:key:z6Mkr...",
   "didDocument": { ... }
@@ -119,14 +119,14 @@ Generate a random Ed25519 `did:key` DID (method defaults to `key`):
 Or pass the method explicitly:
 
 ```
-./did id create key
+./di did create key
 ```
 
 To also include the secret key seed in the output (useful for re-deriving the
 same DID later), pass `--with-seed`:
 
 ```
-./did id create --with-seed
+./di did create --with-seed
 {
   "id": "did:key:z6MkrLBubwzwEvwmsyEKd2kJ6pt91E6MHdf3EeQMnCsdX2hM",
   "secretKeySeed": "z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv",
@@ -143,14 +143,14 @@ Generate a deterministic DID by setting the `SECRET_KEY_SEED` environment
 variable to a multibase-encoded seed (e.g. from `@digitalcredentials/bnid`):
 
 ```
-SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./did id create
+SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di did create
 ```
 
 Save the DID document and key material to local storage with `--save`
 (written to `~/.dids/` by default, or `$DIDS_DIR` if set):
 
 ```
-./did id create --save
+./di did create --save
 DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 {
   "id": "did:key:z6Mkr...",
@@ -163,7 +163,7 @@ DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 List the DIDs saved in local storage (via `id create --save`), one per line:
 
 ```
-./did id list
+./di did list
 did:key:z6Mkr...
 did:key:z6Mks...
 ```
@@ -172,7 +172,7 @@ If no DIDs are stored, nothing is printed. Pass `--json` to output the DIDs as
 a JSON array instead:
 
 ```
-./did id list --json
+./di did list --json
 [
   "did:key:z6Mkr...",
   "did:key:z6Mks..."
@@ -191,8 +191,8 @@ status, and whether the issuer DID is recognized in any trusted registry
 The credential is read from a file argument or, if none is given, from stdin:
 
 ```
-./did vc verify credential.json
-cat credential.json | ./did vc verify
+./di vc verify credential.json
+cat credential.json | ./di vc verify
 ```
 
 By default it prints the full `@interop/verifier-core` verification result
@@ -200,7 +200,7 @@ By default it prints the full `@interop/verifier-core` verification result
 check). Pass `--summary` for a compact, human-friendly object instead:
 
 ```
-./did vc verify credential.json --summary
+./di vc verify credential.json --summary
 {
   "verified": true,
   "checks": {
@@ -231,11 +231,11 @@ or, if none is given, from stdin, and the issued credential is printed to
 stdout. If the input already carries a proof, issuing appends an additional one.
 
 The DID to issue with is required (`--did`); it must have been saved locally (see
-`did id create --save`):
+`di did create --save`):
 
 ```
-./did vc issue credential.json --did did:key:z6Mk...
-cat credential.json | ./did vc issue --did did:key:z6Mk...
+./di vc issue credential.json --did did:key:z6Mk...
+cat credential.json | ./di vc issue --did did:key:z6Mk...
 ```
 
 The credential's `issuer` is set to the signing DID when the input has none.
@@ -248,14 +248,14 @@ Pass `--key` to choose a specific verification method; it must be authorized by
 the DID's `assertionMethod` array, otherwise issuance fails:
 
 ```
-./did vc issue credential.json --did did:key:z6Mk... --key did:key:z6Mk...#z6Mk...
+./di vc issue credential.json --did did:key:z6Mk... --key did:key:z6Mk...#z6Mk...
 ```
 
 The signature suite defaults to `eddsa-rdfc-2022` (a W3C Data Integrity proof).
 Pass `--suite Ed25519Signature2020` for the classic Ed25519Signature2020 proof:
 
 ```
-./did vc issue credential.json --did did:key:z6Mk... --suite Ed25519Signature2020
+./di vc issue credential.json --did did:key:z6Mk... --suite Ed25519Signature2020
 ```
 
 The exit code is scriptable: `0` when the credential was issued, `1` on an
@@ -285,7 +285,7 @@ that holds root authority over the target, and `--url` is the `invocationTarget`
 Root capabilities are unsigned, so no key is needed:
 
 ```
-./did zcap create \
+./di zcap create \
   --controller did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
   --url https://example.com/api
 {
@@ -317,7 +317,7 @@ capability's controller). The delegation is signed with the delegator's
 `capabilityDelegation` key, sourced one of two ways:
 
 - **A locally-stored DID (`--did`)** -- the DID must have been saved with
-  `did id create --save`; this is the preferred mode and mirrors `vc issue`.
+  `di did create --save`; this is the preferred mode and mirrors `vc issue`.
 - **A secret key seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`)** -- the
   `did:key` is re-derived from the seed and checked against `--controller`.
 
@@ -326,7 +326,7 @@ To delegate from the root capability for a target, pass `--url` (the same
 `--allow` (repeatable; if omitted the delegatee inherits the parent's actions):
 
 ```
-./did zcap delegate \
+./di zcap delegate \
   --did did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
   --delegatee did:key:z6MknBxrctS4KsfiBsEaXsfnrnfNYTvDjVpLYYUAN6PX2EfG \
   --url https://example.com/documents \
@@ -360,7 +360,7 @@ The same delegation, signed via a secret key seed instead of a stored DID:
 
 ```
 ZCAP_CONTROLLER_KEY_SEED=z1AZK4h5w5YZkKYEgqtcFfvSbWQ3tZ3ZFgmLsXMZsTVoeK7 \
-  ./did zcap delegate \
+  ./di zcap delegate \
   --controller did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR \
   --delegatee did:key:z6MknBxrctS4KsfiBsEaXsfnrnfNYTvDjVpLYYUAN6PX2EfG \
   --url https://example.com/documents \
@@ -373,7 +373,7 @@ delegation or a path to a JSON file containing the capability. Use
 `--invocation-target` to attenuate (narrow) the parent's target to a sub-path:
 
 ```
-./did zcap delegate \
+./di zcap delegate \
   --did did:key:z6MknBxr... \
   --delegatee did:key:z6Mks... \
   --capability zkL8vet8M2mn7akSpHEVvgFUCTVq4VSGs1s8Zsq9bYba... \
@@ -386,10 +386,10 @@ The delegated capability expires after `--ttl` (a duration such as `1y`, `30d`,
 override it:
 
 ```
-./did zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
+./di zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
   --url https://example.com/documents --allow read --ttl 30d
 
-./did zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
+./di zcap delegate --did did:key:z6Mk... --delegatee did:key:z6Mkn... \
   --url https://example.com/documents --allow read --expires 2027-01-01T00:00:00Z
 ```
 
@@ -399,7 +399,7 @@ List the ids of the capabilities saved in local wallet storage (via
 `zcap create --save` or `zcap delegate --save`), one per line:
 
 ```
-./did zcap list
+./di zcap list
 urn:zcap:root:https%3A%2F%2Fexample.com%2Fa
 urn:zcap:root:https%3A%2F%2Fexample.com%2Fb
 ```
@@ -408,7 +408,7 @@ If no capabilities are stored, nothing is printed. Pass `--json` to output the
 ids as a JSON array instead:
 
 ```
-./did zcap list --json
+./di zcap list --json
 [
   "urn:zcap:root:https%3A%2F%2Fexample.com%2Fa",
   "urn:zcap:root:https%3A%2F%2Fexample.com%2Fb"
