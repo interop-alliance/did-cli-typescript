@@ -367,12 +367,25 @@ the DID's `assertionMethod` array, otherwise issuance fails:
 ./di vc issue credential.json --did did:key:z6Mk... --key did:key:z6Mk...#z6Mk...
 ```
 
-The signature suite defaults to `eddsa-rdfc-2022` (a W3C Data Integrity proof).
-Pass `--suite Ed25519Signature2020` for the classic Ed25519Signature2020 proof:
+The signature suite defaults to the signing key's type. An Ed25519 DID signs
+with `eddsa-rdfc-2022` (a W3C Data Integrity proof) by default; pass
+`--suite Ed25519Signature2020` for the classic Ed25519Signature2020 proof:
 
 ```
 ./di vc issue credential.json --did did:key:z6Mk... --suite Ed25519Signature2020
 ```
+
+An ECDSA DID (see `did create --type ecdsa`) signs with `ecdsa-rdfc-2019`. The
+suite is selected automatically from the key, so no `--suite` flag is needed:
+
+```
+./di vc issue credential.json --did did:key:zDna...
+```
+
+Only the P-256 and P-384 curves can issue credentials -- the `ecdsa-rdfc-2019`
+cryptosuite does not support P-521 (key creation warns about this). A suite that
+does not match the key type (e.g. `--suite eddsa-rdfc-2022` for an ECDSA key) is
+rejected. ECDSA credentials round-trip through `vc verify` (below).
 
 The exit code is scriptable: `0` when the credential was issued, `1` on an
 issuance error (an unauthorized key, an unknown suite, a missing DID / key

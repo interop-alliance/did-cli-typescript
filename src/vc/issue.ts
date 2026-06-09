@@ -19,6 +19,9 @@ import {
   createSigner,
   eddsaRdfc2022
 } from '@interop/ed25519-signature'
+import * as EcdsaMultikey from '@interop/ecdsa-multikey'
+import { ECDSA_MULTIBASE_HEADERS } from '@interop/ecdsa-multikey'
+import { ecdsaRdfc2019 } from '@interop/ecdsa-signature'
 import { DataIntegrityProof } from '@interop/data-integrity-proof'
 import { issue } from '@interop/vc'
 import { securityLoader } from '@interop/security-document-loader'
@@ -32,9 +35,24 @@ import { loadDidDocument, loadDidKeys } from '../storage.js'
 const documentLoader = securityLoader().build()
 
 /**
- * The supported `--suite` values and their human-readable list (for errors).
+ * The supported `--suite` values per key type. The signing key's type (read
+ * from its multibase header) determines which suites are usable; an ed25519 key
+ * cannot sign with an ecdsa cryptosuite and vice versa.
  */
-const SUPPORTED_SUITES = ['eddsa-rdfc-2022', 'Ed25519Signature2020'] as const
+const SUPPORTED_SUITES = {
+  ed25519: ['eddsa-rdfc-2022', 'Ed25519Signature2020'],
+  ecdsa: ['ecdsa-rdfc-2019']
+} as const
+
+/**
+ * The default `--suite` for each key type, used when no `--suite` is given.
+ */
+const DEFAULT_SUITE = {
+  ed25519: 'eddsa-rdfc-2022',
+  ecdsa: 'ecdsa-rdfc-2019'
+} as const
+
+type KeyType = keyof typeof SUPPORTED_SUITES
 
 /**
  * A DID document verification method entry: either a key id reference (string)
@@ -158,29 +176,69 @@ function isAuthorizedForAssertion({
 }
 
 /**
- * Builds the @interop/vc signature suite for the requested cryptosuite name.
+ * Detects a stored key's type from its `publicKeyMultibase` header. Both
+ * ed25519 and ecdsa keys export with `type: "Multikey"`, so the multibase
+ * prefix is what distinguishes them: ecdsa P-256/P-384/P-521 keys carry the
+ * `ECDSA_MULTIBASE_HEADERS`, and everything else is treated as ed25519.
  *
  * @param options {object}
- * @param options.suite {string}   One of `SUPPORTED_SUITES`.
- * @param options.signer {object}   The signer produced from the key pair.
- * @returns {DataIntegrityProof | Ed25519Signature2020}
+ * @param options.storedKey {StoredKeyPair}   The exported key pair.
+ * @returns {KeyType}
  */
-function buildSuite({
-  suite,
-  signer
+function detectKeyType({ storedKey }: { storedKey: StoredKeyPair }): KeyType {
+  const publicKeyMultibase = storedKey.publicKeyMultibase ?? ''
+  const isEcdsa = ECDSA_MULTIBASE_HEADERS.some(header =>
+    publicKeyMultibase.startsWith(header)
+  )
+  return isEcdsa ? 'ecdsa' : 'ed25519'
+}
+
+/**
+ * Builds the @interop/vc signature suite for a stored key, loading the matching
+ * key pair, deriving a signer, and wiring the requested (or default) cryptosuite.
+ * The signing key's type selects the available suites: ed25519 keys sign with
+ * `eddsa-rdfc-2022` (default) or `Ed25519Signature2020`, and ecdsa keys sign
+ * with `ecdsa-rdfc-2019`.
+ *
+ * @param options {object}
+ * @param options.storedKey {StoredKeyPair}   The exported signing key pair.
+ * @param [options.suite] {string}   The requested suite, or undefined to use
+ *   the key type's default.
+ * @returns {Promise<DataIntegrityProof | Ed25519Signature2020>}
+ */
+async function buildSuite({
+  storedKey,
+  suite
 }: {
-  suite: string
-  signer: ReturnType<typeof createSigner>
-}): DataIntegrityProof | Ed25519Signature2020 {
-  switch (suite) {
+  storedKey: StoredKeyPair
+  suite?: string
+}): Promise<DataIntegrityProof | Ed25519Signature2020> {
+  const keyType = detectKeyType({ storedKey })
+  const resolvedSuite = suite ?? DEFAULT_SUITE[keyType]
+  const supported: readonly string[] = SUPPORTED_SUITES[keyType]
+  if (!supported.includes(resolvedSuite)) {
+    throw new Error(
+      `Suite ${resolvedSuite} is not supported for ${keyType} keys. ` +
+        `Supported: ${supported.join(', ')}`
+    )
+  }
+
+  if (keyType === 'ecdsa') {
+    const keyPair = await EcdsaMultikey.from(storedKey)
+    const signer = keyPair.signer()
+    return new DataIntegrityProof({ signer, cryptosuite: ecdsaRdfc2019 })
+  }
+
+  const keyPair = await Ed25519VerificationKey.from(storedKey)
+  const signer = createSigner(keyPair)
+  switch (resolvedSuite) {
     case 'eddsa-rdfc-2022':
       return new DataIntegrityProof({ signer, cryptosuite: eddsaRdfc2022 })
     case 'Ed25519Signature2020':
       return new Ed25519Signature2020({ signer })
     default:
-      throw new Error(
-        `Unknown suite: ${suite}. Supported: ${SUPPORTED_SUITES.join(', ')}`
-      )
+      // Unreachable: resolvedSuite was validated against SUPPORTED_SUITES above.
+      throw new Error(`Unknown suite: ${resolvedSuite}`)
   }
 }
 
@@ -196,15 +254,16 @@ function buildSuite({
  * @param options.credential {object}   The unsigned credential to issue.
  * @param options.did {string}   The id of the stored DID to issue (sign) with.
  * @param [options.keyId] {string}   The verification method id to use.
- * @param [options.suite] {string}   The signature suite (default
- *   `eddsa-rdfc-2022`).
+ * @param [options.suite] {string}   The signature suite. Defaults to the signing
+ *   key type's default (`eddsa-rdfc-2022` for ed25519, `ecdsa-rdfc-2019` for
+ *   ecdsa).
  * @returns {Promise<object>}   The issued credential.
  */
 export async function issueCredential({
   credential,
   did,
   keyId,
-  suite = 'eddsa-rdfc-2022'
+  suite
 }: {
   credential: object
   did: string
@@ -242,9 +301,7 @@ export async function issueCredential({
     )
   }
 
-  const keyPair = await Ed25519VerificationKey.from(storedKey)
-  const signer = createSigner(keyPair)
-  const signatureSuite = buildSuite({ suite, signer })
+  const signatureSuite = await buildSuite({ storedKey, suite })
 
   return issue({
     credential: credential as never,

@@ -41,3 +41,33 @@ export function normalizeEcdsaCurve({
 }): EcdsaCurve | undefined {
   return CURVE_ALIASES[curve.toLowerCase()]
 }
+
+// Curves the `ecdsa-rdfc-2019` VC cryptosuite can sign with. Other curves
+// (P-521) can still be generated and resolved, but cannot issue Verifiable
+// Credentials with the suites the CLI supports.
+const VC_ISSUANCE_CURVES: readonly EcdsaCurve[] = [
+  ECDSA_CURVE.P256,
+  ECDSA_CURVE.P384
+]
+
+/**
+ * Prints a stderr warning when a freshly created ecdsa key uses a curve that
+ * cannot issue Verifiable Credentials. The `ecdsa-rdfc-2019` cryptosuite (the
+ * only ecdsa VC suite the CLI wires up) supports P-256 and P-384 only, so a
+ * P-521 key can be created but `vc issue` will reject it.
+ *
+ * @param options {object}
+ * @param options.curve {EcdsaCurve}   the canonical curve the key was created on
+ */
+export function warnIfNotVcIssuanceCapable({
+  curve
+}: {
+  curve: EcdsaCurve
+}): void {
+  if (!VC_ISSUANCE_CURVES.includes(curve)) {
+    console.error(
+      `Warning: ${curve} keys cannot issue Verifiable Credentials. The ` +
+        'ecdsa-rdfc-2019 cryptosuite supports P-256 and P-384 only.'
+    )
+  }
+}

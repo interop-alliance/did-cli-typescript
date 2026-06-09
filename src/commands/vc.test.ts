@@ -7,6 +7,7 @@ import { Readable } from 'node:stream'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
+import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { runIssue, runVerify } from './vc.js'
 import { saveToDids } from '../storage.js'
 import { toSummary, verifyCredentialFully } from '../vc/verify.js'
@@ -114,6 +115,26 @@ async function createSavedDidWeb(): Promise<{ did: string; keyId: string }> {
   await saveToDids({ method: 'web', did, data: didDocument })
   await saveToDids({ method: 'web', did, suffix: 'keys', data: exported })
   return { did, keyId: didDocument.assertionMethod[0] as string }
+}
+
+/**
+ * Generates an ECDSA (P-256) did:key, saves its DID document and
+ * `<did>.keys.json` to the (temp) DIDs storage dir, and returns the DID id and
+ * its assertionMethod key id -- mirroring what `did create key --type ecdsa
+ * --save` does. ECDSA did:keys are minted via the driver's `fromKeyPair()`, so
+ * no suite registration is required.
+ */
+async function createSavedEcdsaDid(): Promise<{ did: string; keyId: string }> {
+  const keyPair = await EcdsaMultikey.generate({ curve: 'P-256' })
+  const didDriver = driver()
+  const { didDocument } = await didDriver.fromKeyPair({
+    verificationKeyPair: keyPair
+  })
+  const did = didDocument.id as string
+  const exported = await keyPair.export({ publicKey: true, secretKey: true })
+  await saveToDids({ method: 'key', did, data: didDocument })
+  await saveToDids({ method: 'key', did, suffix: 'keys', data: exported })
+  return { did, keyId: exported.id as string }
 }
 
 describe('did vc issue', () => {
@@ -314,5 +335,91 @@ describe('did vc issue with did:web', () => {
     assert.equal(code, 0)
     const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
     assert.equal(signed.proof.verificationMethod, keyId)
+  })
+})
+
+describe('did vc issue with ecdsa', () => {
+  let logs: string[]
+  let errors: string[]
+  let dir: string
+  let originalDidsDir: string | undefined
+  let did: string
+  let keyId: string
+
+  beforeEach(async () => {
+    logs = []
+    errors = []
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
+    mock.method(console, 'error', (...args: unknown[]) =>
+      errors.push(args.join(' '))
+    )
+    dir = await mkdtemp(join(tmpdir(), 'did-cli-sign-ecdsa-test-'))
+    originalDidsDir = process.env.DIDS_DIR
+    process.env.DIDS_DIR = dir
+    ;({ did, keyId } = await createSavedEcdsaDid())
+  })
+
+  afterEach(async () => {
+    mock.restoreAll()
+    if (originalDidsDir === undefined) {
+      delete process.env.DIDS_DIR
+    } else {
+      process.env.DIDS_DIR = originalDidsDir
+    }
+    await rm(dir, { recursive: true })
+  })
+
+  /**
+   * Writes the unsigned credential (welcomeCredential without its `proof`, with
+   * the issuer set to the test ecdsa DID) to a file and returns its path.
+   */
+  async function writeUnsignedCredential(): Promise<string> {
+    const { proof, ...unsigned } = welcomeCredential
+    void proof
+    const credential = { ...unsigned, issuer: did }
+    const file = join(dir, 'unsigned.json')
+    await writeFile(file, JSON.stringify(credential), 'utf8')
+    return file
+  }
+
+  it('signs with the default ecdsa-rdfc-2019 suite', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.type, 'DataIntegrityProof')
+    assert.equal(signed.proof.cryptosuite, 'ecdsa-rdfc-2019')
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('signs when an explicit, authorized --key is given', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did, key: keyId })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.cryptosuite, 'ecdsa-rdfc-2019')
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('rejects an ed25519 suite for an ecdsa key', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did, suite: 'eddsa-rdfc-2022' })
+    assert.equal(code, 1)
+    assert.equal(logs.length, 0)
+    assert.ok(errors[0].includes('is not supported for ecdsa keys'))
+  })
+
+  it('produces a credential whose signature verifies', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as object
+    const result = await verifyCredentialFully({
+      credential: signed,
+      registries: []
+    })
+    assert.equal(toSummary(result).checks.signature, true)
   })
 })

@@ -13,6 +13,20 @@
   `--with-seed` / `SECRET_KEY_SEED` are rejected (exit `1`) with `--type ecdsa`.
   ECDSA `did:key`s are minted via the driver's `fromKeyPair()` (no suite
   registration required).
+- Support issuing Verifiable Credentials with ECDSA keys in `vc issue`. The
+  signing key's type is detected from its `publicKeyMultibase` header, and ECDSA
+  keys sign with the `ecdsa-rdfc-2019` cryptosuite (via `@interop/ecdsa-signature`).
+  `--suite` now defaults per key type (`eddsa-rdfc-2022` for ed25519,
+  `ecdsa-rdfc-2019` for ecdsa) instead of always defaulting to `eddsa-rdfc-2022`.
+- Warn at key creation time (`key create`, `did create key`, `did create web`,
+  `did add-key`) when a `p521` ECDSA key is generated: P-521 keys can be created
+  but cannot issue Verifiable Credentials, because the `ecdsa-rdfc-2019`
+  cryptosuite supports P-256 and P-384 only.
+- `vc verify` now verifies ECDSA (`ecdsa-rdfc-2019`) credentials, completing the
+  ECDSA issue/verify round trip. This required upstream support in
+  `@interop/verifier-core` `^3.2.0` (ECDSA `did:key` resolution and the
+  `ecdsa-rdfc-2019` suite in its defaults), so the previous CLI-side crypto-suite
+  injection was removed in favor of verifier-core's defaults.
 
 ### Changed
 

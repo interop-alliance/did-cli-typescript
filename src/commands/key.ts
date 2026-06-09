@@ -10,7 +10,11 @@ import {
   loadFromCollection,
   saveToCollection
 } from '../storage.js'
-import { normalizeEcdsaCurve, SUPPORTED_ECDSA_CURVES } from '../keys/ecdsa.js'
+import {
+  normalizeEcdsaCurve,
+  SUPPORTED_ECDSA_CURVES,
+  warnIfNotVcIssuanceCapable
+} from '../keys/ecdsa.js'
 
 export function makeKeyCommand(): Command {
   const key = new Command('key').description('Manage cryptographic keys')
@@ -95,6 +99,7 @@ export function makeKeyCommand(): Command {
               process.exit(1)
               return
             }
+            warnIfNotVcIssuanceCapable({ curve })
             const keyPair = await EcdsaMultikey.generate({ curve })
             const exported = await keyPair.export({
               publicKey: true,

@@ -13,7 +13,11 @@ import {
   loadDidKeys,
   saveToDids
 } from '../storage.js'
-import { normalizeEcdsaCurve, SUPPORTED_ECDSA_CURVES } from '../keys/ecdsa.js'
+import {
+  normalizeEcdsaCurve,
+  SUPPORTED_ECDSA_CURVES,
+  warnIfNotVcIssuanceCapable
+} from '../keys/ecdsa.js'
 
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
@@ -119,6 +123,7 @@ export function makeDidCommand(): Command {
                   process.exit(1)
                   return
                 }
+                warnIfNotVcIssuanceCapable({ curve })
                 const keyPair = await EcdsaMultikey.generate({ curve })
 
                 const didDriver = driver()
@@ -241,6 +246,7 @@ export function makeDidCommand(): Command {
                   process.exit(1)
                   return
                 }
+                warnIfNotVcIssuanceCapable({ curve })
                 const keyPair = await EcdsaMultikey.generate({ curve })
 
                 const didWebDriver = didWeb.driver()
@@ -388,6 +394,7 @@ export function makeDidCommand(): Command {
             process.exit(1)
             return
           }
+          warnIfNotVcIssuanceCapable({ curve })
           keyPair = await EcdsaMultikey.generate({ curve })
         }
 

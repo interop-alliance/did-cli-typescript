@@ -154,8 +154,8 @@ export function makeVcCommand(): Command {
     )
     .option(
       '--suite <suite>',
-      'signature suite (eddsa-rdfc-2022 | Ed25519Signature2020)',
-      'eddsa-rdfc-2022'
+      'signature suite (ed25519: eddsa-rdfc-2022 | Ed25519Signature2020; ' +
+        'ecdsa: ecdsa-rdfc-2019); defaults to the signing key type'
     )
     .action(
       async (
