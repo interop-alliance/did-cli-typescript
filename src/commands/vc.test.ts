@@ -84,7 +84,7 @@ async function createSavedDid(): Promise<{ did: string; keyId: string }> {
     verificationKeyPair: keyPair
   })
   const did = didDocument.id as string
-  const exported = keyPair.export({ publicKey: true, secretKey: true })
+  const exported = await keyPair.export({ publicKey: true, secretKey: true })
   await saveToDids({ method: 'key', did, data: didDocument })
   await saveToDids({ method: 'key', did, suffix: 'keys', data: exported })
   return { did, keyId: exported.id as string }
@@ -106,7 +106,10 @@ async function createSavedDidWeb(): Promise<{ did: string; keyId: string }> {
   const did = didDocument.id as string
   const exported: Record<string, unknown> = {}
   for (const [methodId, keyPair] of keyPairs) {
-    exported[methodId] = keyPair.export({ publicKey: true, secretKey: true })
+    exported[methodId] = await keyPair.export({
+      publicKey: true,
+      secretKey: true
+    })
   }
   await saveToDids({ method: 'web', did, data: didDocument })
   await saveToDids({ method: 'web', did, suffix: 'keys', data: exported })
