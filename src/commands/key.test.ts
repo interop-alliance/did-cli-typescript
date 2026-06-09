@@ -147,6 +147,65 @@ describe('did key', () => {
         await rm(walletDir, { recursive: true })
       }
     })
+
+    it('generates an ecdsa p256 key by default curve', async () => {
+      await makeKeyCommand().parseAsync(['create', '--type', 'ecdsa'], {
+        from: 'user'
+      })
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.type, 'Multikey')
+      // p256 did:key public keys carry the zDna multibase-multikey prefix
+      assert.match(parsed.publicKeyMultibase, /^zDna/)
+      assert.ok(parsed.secretKeyMultibase)
+    })
+
+    it('accepts ecdsa curve aliases (case-insensitive)', async () => {
+      for (const curve of ['p384', 'P-384', 'secp384r1']) {
+        logs.length = 0
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'ecdsa', '--curve', curve],
+          { from: 'user' }
+        )
+        const parsed = JSON.parse(logs[0])
+        // p384 did:key public keys carry the z82L prefix
+        assert.match(parsed.publicKeyMultibase, /^z82L/, `curve: ${curve}`)
+      }
+    })
+
+    it('exits with error for unknown ecdsa curve', async () => {
+      await makeKeyCommand().parseAsync(
+        ['create', '--type', 'ecdsa', '--curve', 'p999'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('p999'))
+    })
+
+    it('exits with error for ecdsa --with-seed', async () => {
+      await makeKeyCommand().parseAsync(
+        ['create', '--type', 'ecdsa', '--with-seed'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
+    it('saves an ecdsa key with a curve-tagged filename', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'ecdsa', '--curve', 'p256', '--save'],
+          { from: 'user' }
+        )
+        const filePath = errors[0].slice('Key saved to '.length)
+        const filename = filePath.slice(filePath.lastIndexOf('/') + 1)
+        // filename format: YYYY-MM-DD-ecdsa-p256-<publicKeyMultibase>.json
+        assert.match(filename, /^\d{4}-\d{2}-\d{2}-ecdsa-p256-zDna.*\.json$/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
   })
 
   describe('list', () => {

@@ -143,6 +143,93 @@ describe('di did', () => {
       }
     })
 
+    it('creates an ecdsa did:key (p256 default curve)', async () => {
+      await makeDidCommand().parseAsync(['create', 'key', '--type', 'ecdsa'], {
+        from: 'user'
+      })
+      const parsed = JSON.parse(logs[0])
+      // p256 did:key identifiers carry the zDna multibase-multikey prefix
+      assert.ok(parsed.id.startsWith('did:key:zDna'), parsed.id)
+      assert.equal(parsed.didDocument.id, parsed.id)
+    })
+
+    it('creates an ecdsa did:key with an explicit curve', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'key', '--type', 'ecdsa', '--curve', 'secp521r1'],
+        { from: 'user' }
+      )
+      const parsed = JSON.parse(logs[0])
+      // p521 did:key identifiers carry the z2J9 multibase-multikey prefix
+      assert.ok(parsed.id.startsWith('did:key:z2J9'), parsed.id)
+    })
+
+    it('exits with error for ecdsa --with-seed', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'key', '--type', 'ecdsa', '--with-seed'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
+    it('exits with error for unknown ecdsa curve', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'key', '--type', 'ecdsa', '--curve', 'p999'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('p999'))
+    })
+
+    it('saves an ecdsa did:key with its key file', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'key', '--type', 'ecdsa', '--save'],
+          { from: 'user' }
+        )
+        const docPath = errors[0].slice('DID saved to '.length)
+        const keysPath = docPath.replace('.json', '.keys.json')
+        const keysContent = JSON.parse(await readFile(keysPath, 'utf8'))
+        assert.equal(keysContent.type, 'Multikey')
+        assert.match(keysContent.publicKeyMultibase, /^zDna/)
+        assert.ok(keysContent.secretKeyMultibase)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('creates an ecdsa did:web from --url', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'web', '--type', 'ecdsa', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.id, 'did:web:example.com')
+      const vm = parsed.didDocument.verificationMethod[0]
+      assert.equal(vm.type, 'Multikey')
+      // p256 verification methods carry the zDna multibase-multikey prefix
+      assert.match(vm.publicKeyMultibase, /^zDna/)
+    })
+
+    it('did:web ecdsa rejects --with-seed', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'web',
+          '--type',
+          'ecdsa',
+          '--url',
+          'https://example.com',
+          '--with-seed'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
     it('creates a did:web from --url', async () => {
       await makeDidCommand().parseAsync(
         ['create', 'web', '--url', 'https://example.com'],

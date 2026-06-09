@@ -1,5 +1,28 @@
 # History
 
+## 0.4.0 - TBD
+
+### Added
+
+- Add ECDSA key support via `@interop/ecdsa-multikey`, selected with
+  `--type ecdsa`, to `key create`, `did create key`, `did create web`, and
+  `did add-key`. The curve is chosen with `--curve` (defaults to `p256`;
+  supported: `p256`, `p384`, `p521`, each also accepted in hyphenated `p-256`
+  and SECG `secp256r1` spellings, case-insensitively). Keys are serialized as
+  Multikey, the same as Ed25519. ECDSA key generation is non-deterministic, so
+  `--with-seed` / `SECRET_KEY_SEED` are rejected (exit `1`) with `--type ecdsa`.
+  ECDSA `did:key`s are minted via the driver's `fromKeyPair()` (no suite
+  registration required).
+
+### Changed
+
+- Update to the `@interop/data-integrity-core` `^7.0.0` chain, in which
+  `AbstractKeyPair.export()` is now `async`: `@interop/data-integrity-core`
+  `^7.0.0`, `@interop/data-integrity-proof` `^3.3.0`, `@interop/did-method-key`
+  `^7.3.1`, `@interop/did-web-resolver` `^6.2.1`, `@interop/ecdsa-multikey`
+  `^2.3.0`, and `@interop/ed25519-verification-key` `^8.0.0`. All
+  `keyPair.export(...)` call sites now `await` the result.
+
 ## 0.3.0 - 2026-06-09
 
 ### Added

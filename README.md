@@ -62,7 +62,8 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di key create
 }
 ```
 
-Specify an explicit key type with `--type` (defaults to `ed25519`):
+Specify an explicit key type with `--type` (defaults to `ed25519`; supported:
+`ed25519`, `ecdsa`):
 
 ```
 SECRET_KEY_SEED=z1Aaj5A4UCsd... ./di key create --type ed25519
@@ -79,6 +80,18 @@ multibase encoding:
   "secretKeyMultibase": "zrv..."
 }
 ```
+
+Generate an ECDSA key with `--type ecdsa`. The curve is chosen with `--curve`
+(defaults to `p256`; supported: `p256`, `p384`, `p521`, each also accepted in
+hyphenated `p-256` and SECG `secp256r1` spellings, case-insensitively):
+
+```
+./di key create --type ecdsa --curve p384
+```
+
+ECDSA keys are serialized as Multikey, the same as Ed25519. Note that ECDSA key
+generation is non-deterministic (it cannot be derived from a seed), so
+`--with-seed` and `SECRET_KEY_SEED` are not supported with `--type ecdsa`.
 
 #### List key pairs
 
@@ -121,6 +134,19 @@ Or pass the method explicitly:
 ```
 ./di did create key
 ```
+
+By default the DID's verification key is Ed25519. Pass `--type ecdsa` (with an
+optional `--curve`, defaulting to `p256`) to mint a DID backed by an ECDSA key
+instead. This works for both `did:key` and `did:web`:
+
+```
+./di did create key --type ecdsa --curve p384
+./di did create web --type ecdsa --url https://example.com
+```
+
+ECDSA works for `did create web --type ecdsa` and `did add-key --type ecdsa`
+too. Because ECDSA keys are not seed-derivable, `--with-seed` and
+`SECRET_KEY_SEED` are not supported with `--type ecdsa`.
 
 To also include the secret key seed in the output (useful for re-deriving the
 same DID later), pass `--with-seed`:
@@ -232,9 +258,17 @@ By default the new key is wired into the `authentication`, `assertionMethod`,
 ./di did add-key did:web:example.com --purpose authentication --purpose assertionMethod
 ```
 
-As with `did create`, the new key is derived from a seed: pass `--with-seed` to
-generate (and print) a fresh seed, or set `SECRET_KEY_SEED` to derive the key
-deterministically:
+By default the new key is Ed25519; pass `--type ecdsa` (with an optional
+`--curve`, defaulting to `p256`) to add an ECDSA key instead:
+
+```
+./di did add-key did:web:example.com --type ecdsa --curve p384
+```
+
+For Ed25519 keys, the new key is derived from a seed (as with `did create`):
+pass `--with-seed` to generate (and print) a fresh seed, or set `SECRET_KEY_SEED`
+to derive the key deterministically. ECDSA keys are not seed-derivable, so
+`--with-seed` is not supported with `--type ecdsa`:
 
 ```
 ./di did add-key did:web:example.com --with-seed

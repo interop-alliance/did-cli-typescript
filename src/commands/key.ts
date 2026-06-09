@@ -4,11 +4,13 @@ import {
   generateSecretKeySeed
 } from '@digitalcredentials/bnid'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
+import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import {
   listCollection,
   loadFromCollection,
   saveToCollection
 } from '../storage.js'
+import { normalizeEcdsaCurve, SUPPORTED_ECDSA_CURVES } from '../keys/ecdsa.js'
 
 export function makeKeyCommand(): Command {
   const key = new Command('key').description('Manage cryptographic keys')
@@ -16,14 +18,28 @@ export function makeKeyCommand(): Command {
   key
     .command('create')
     .description('Create a new key')
-    .option('-t, --type <type>', 'key type (supported: ed25519)', 'ed25519')
+    .option(
+      '-t, --type <type>',
+      'key type (supported: ed25519, ecdsa)',
+      'ed25519'
+    )
+    .option(
+      '--curve <curve>',
+      `ECDSA curve for --type ecdsa (supported: ${SUPPORTED_ECDSA_CURVES})`,
+      'p256'
+    )
     .option('--save', 'save the key to local wallet storage (~/.wallet/keys/)')
     .option(
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
     .action(
-      async (options: { type: string; save?: boolean; withSeed?: boolean }) => {
+      async (options: {
+        type: string
+        curve: string
+        save?: boolean
+        withSeed?: boolean
+      }) => {
         switch (options.type) {
           case 'ed25519': {
             const envSeed = process.env.SECRET_KEY_SEED
@@ -36,7 +52,7 @@ export function makeKeyCommand(): Command {
             const keyPair = await Ed25519VerificationKey.generate({
               seed: seedBytes
             })
-            const exported = keyPair.export({
+            const exported = await keyPair.export({
               publicKey: true,
               secretKey: true
             })
@@ -60,9 +76,49 @@ export function makeKeyCommand(): Command {
             console.log(JSON.stringify(output, null, 2))
             break
           }
+          case 'ecdsa': {
+            if (options.withSeed) {
+              console.error(
+                '--with-seed is not supported for ecdsa keys; ECDSA key ' +
+                  'generation is non-deterministic and cannot be derived ' +
+                  'from a seed.'
+              )
+              process.exit(1)
+              return
+            }
+            const curve = normalizeEcdsaCurve({ curve: options.curve })
+            if (!curve) {
+              console.error(
+                `Unknown ecdsa curve: ${options.curve}. ` +
+                  `Supported: ${SUPPORTED_ECDSA_CURVES}`
+              )
+              process.exit(1)
+              return
+            }
+            const keyPair = await EcdsaMultikey.generate({ curve })
+            const exported = await keyPair.export({
+              publicKey: true,
+              secretKey: true
+            })
+            if (options.save) {
+              const date = new Date().toISOString().slice(0, 10)
+              const rawId = exported.id ?? exported.publicKeyMultibase
+              const curveLabel = curve.replace('-', '').toLowerCase()
+              const storageId =
+                `${date}-ecdsa-${curveLabel}-${rawId}`.replaceAll(':', '_')
+              const filePath = await saveToCollection(
+                'keys',
+                storageId,
+                exported
+              )
+              console.error(`Key saved to ${filePath}`)
+            }
+            console.log(JSON.stringify(exported, null, 2))
+            break
+          }
           default:
             console.error(
-              `Unknown key type: ${options.type}. Supported: ed25519`
+              `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
             )
             process.exit(1)
         }
