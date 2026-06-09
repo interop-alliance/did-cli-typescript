@@ -23,6 +23,7 @@
     "@interop/data-integrity-core": "^6.1.2",
     "@interop/data-integrity-proof": "^3.2.1",
     "@interop/did-method-key": "^7.1.1",
+    "@interop/did-web-resolver": "^6.1.1",
     "@interop/ed25519-signature": "^7.0.1",
     "@interop/ed25519-verification-key": "^7.0.1",
     "@interop/ezcap": "^7.1.1",

@@ -23,6 +23,9 @@ importers:
       '@interop/did-method-key':
         specifier: ^7.1.1
         version: 7.1.1
+      '@interop/did-web-resolver':
+        specifier: ^6.1.1
+        version: 6.1.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
       '@interop/ed25519-signature':
         specifier: ^7.0.1
         version: 7.0.1(@interop/jsonld-signatures@11.6.7)
@@ -433,6 +436,10 @@ packages:
 
   '@interop/did-web-resolver@6.1.0':
     resolution: {integrity: sha512-MRt2F3S0uzDETJYEjE7GIo3Go7nY8sIdjHRkanzmOpxp62fDbY9+Olqgayv2k0HpZLxjIBSwM5JBFjG87zWpug==}
+    engines: {node: '>=24.0'}
+
+  '@interop/did-web-resolver@6.1.1':
+    resolution: {integrity: sha512-C7kkFZKLLRt//v4GoJLHqLdyuDJik7vSU6CypSxdYCaqhdcG3+G7YTPArOoy2RO6MQGbqPklwveqPxh6PfdjRA==}
     engines: {node: '>=24.0'}
 
   '@interop/ed25519-signature@7.0.1':
@@ -2056,6 +2063,16 @@ snapshots:
       '@interop/ed25519-verification-key': 7.0.1
 
   '@interop/did-web-resolver@6.1.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))':
+    dependencies:
+      '@digitalcredentials/bnid': 5.0.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
+      '@interop/data-integrity-core': 6.1.2
+      '@interop/did-io': 4.0.2
+      '@interop/http-client': 1.0.3
+      did-context: 3.1.1
+    transitivePeerDependencies:
+      - react-native
+
+  '@interop/did-web-resolver@6.1.1(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))':
     dependencies:
       '@digitalcredentials/bnid': 5.0.0(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.7))
       '@interop/data-integrity-core': 6.1.2
