@@ -13,6 +13,23 @@
   `--save` writes the DID document and key material to `~/.dids/web/`, with the
   key file stored as an object keyed by verification method id so additional keys
   can be appended later.
+- Add `did add-key <did>` command: adds a new verification key to an existing,
+  locally stored `did:web` DID via `@interop/did-web-resolver`'s
+  `addVerificationMethod()`, updating both the stored DID document and its
+  key file (keyed by verification method id) in place. The key is derived from a
+  seed (`SECRET_KEY_SEED` env var or `--with-seed`). `--purpose <purpose...>`
+  selects the verification relationships to wire the key into (defaults to
+  `authentication`, `assertionMethod`, `capabilityDelegation`, and
+  `capabilityInvocation`). Only `did:web` DIDs are supported; exits `1`
+  on an unknown DID, a non-`did:web` DID, or an unsupported purpose.
+
+### Fixed
+
+- `vc issue --did <did:web:...>` now works. Issuance read the `<did>.keys.json`
+  file as a single exported key pair (the `did:key` shape), but `did:web` stores
+  keys as a map keyed by verification method id, so the secret-key lookup always
+  failed with "No stored secret key found". The issuer now resolves the signing
+  key from either storage shape.
 
 ## 0.2.0 - 2026-06-08
 

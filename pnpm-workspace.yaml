@@ -2,4 +2,7 @@ allowBuilds:
   core-js: false
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@interop/verifier-core@3.1.0'
+  - '@interop/bnid@6.0.1'
+  - '@interop/data-integrity-core@6.4.0'
+  - '@interop/did-io@4.0.3'
+  - '@interop/did-web-resolver@6.2.0'

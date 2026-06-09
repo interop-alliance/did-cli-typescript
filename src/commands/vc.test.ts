@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { driver } from '@interop/did-method-key'
+import * as didWeb from '@interop/did-web-resolver'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { runIssue, runVerify } from './vc.js'
 import { saveToDids } from '../storage.js'
@@ -87,6 +88,29 @@ async function createSavedDid(): Promise<{ did: string; keyId: string }> {
   await saveToDids({ method: 'key', did, data: didDocument })
   await saveToDids({ method: 'key', did, suffix: 'keys', data: exported })
   return { did, keyId: exported.id as string }
+}
+
+/**
+ * Generates a did:web, saves its DID document and `<did>.keys.json` to the
+ * (temp) DIDs storage dir, and returns the DID id and its assertionMethod key
+ * id -- mirroring what `id create web --save` does. Unlike did:key, the saved
+ * key file is a map keyed by verification-method id (a did:web may carry more
+ * than one key).
+ */
+async function createSavedDidWeb(): Promise<{ did: string; keyId: string }> {
+  const didWebDriver = didWeb.driver()
+  didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
+  const { didDocument, keyPairs } = await didWebDriver.generate({
+    url: 'https://example.com'
+  })
+  const did = didDocument.id as string
+  const exported: Record<string, unknown> = {}
+  for (const [methodId, keyPair] of keyPairs) {
+    exported[methodId] = keyPair.export({ publicKey: true, secretKey: true })
+  }
+  await saveToDids({ method: 'web', did, data: didDocument })
+  await saveToDids({ method: 'web', did, suffix: 'keys', data: exported })
+  return { did, keyId: didDocument.assertionMethod[0] as string }
 }
 
 describe('did vc issue', () => {
@@ -223,5 +247,69 @@ describe('did vc issue', () => {
         "Signing DID does not match the existing 'issuer' property"
       )
     )
+  })
+})
+
+describe('did vc issue with did:web', () => {
+  let logs: string[]
+  let errors: string[]
+  let dir: string
+  let originalDidsDir: string | undefined
+  let did: string
+  let keyId: string
+
+  beforeEach(async () => {
+    logs = []
+    errors = []
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
+    mock.method(console, 'error', (...args: unknown[]) =>
+      errors.push(args.join(' '))
+    )
+    dir = await mkdtemp(join(tmpdir(), 'did-cli-sign-web-test-'))
+    originalDidsDir = process.env.DIDS_DIR
+    process.env.DIDS_DIR = dir
+    ;({ did, keyId } = await createSavedDidWeb())
+  })
+
+  afterEach(async () => {
+    mock.restoreAll()
+    if (originalDidsDir === undefined) {
+      delete process.env.DIDS_DIR
+    } else {
+      process.env.DIDS_DIR = originalDidsDir
+    }
+    await rm(dir, { recursive: true })
+  })
+
+  /**
+   * Writes the unsigned credential (welcomeCredential without its `proof`, with
+   * the issuer set to the test did:web) to a file and returns its path.
+   */
+  async function writeUnsignedCredential(): Promise<string> {
+    const { proof, ...unsigned } = welcomeCredential
+    void proof
+    const credential = { ...unsigned, issuer: did }
+    const file = join(dir, 'unsigned.json')
+    await writeFile(file, JSON.stringify(credential), 'utf8')
+    return file
+  }
+
+  it('signs with the default assertionMethod key from the keyed map', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.cryptosuite, 'eddsa-rdfc-2022')
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('signs when an explicit, authorized --key is given', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did, key: keyId })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.verificationMethod, keyId)
   })
 })
