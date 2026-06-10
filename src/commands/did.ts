@@ -450,6 +450,24 @@ export function makeDidCommand(): Command {
     })
 
   did
+    .command('show <did>')
+    .aliases(['view', 'cat'])
+    .description('Show a locally stored DID document (no secret key material)')
+    .action(async (did: string) => {
+      let didDocument: Record<string, unknown>
+      try {
+        didDocument = await loadDidDocument(did)
+      } catch {
+        console.error(`No locally stored DID found for ${did}`)
+        process.exit(1)
+        return
+      }
+      // The stored DID document holds no secret material -- signing keys live in
+      // the separate `<did>.keys.json` file -- so it is safe to print as-is.
+      console.log(JSON.stringify(didDocument, null, 2))
+    })
+
+  did
     .command('list')
     .description('List locally stored DIDs')
     .option('--json', 'output the list of DIDs as a JSON array')

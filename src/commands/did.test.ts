@@ -358,4 +358,79 @@ describe('di did', () => {
       }
     })
   })
+
+  describe('show', () => {
+    it('prints the stored DID document', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const created = JSON.parse(logs[0])
+        const did = created.id as string
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['show', did], { from: 'user' })
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.id, did)
+        assert.deepEqual(shown, created.didDocument)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('contains no secret key material', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id as string
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did], { from: 'user' })
+
+        assert.ok(!logs[0].includes('secretKeyMultibase'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('is aliased as view and cat', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id as string
+
+        for (const verb of ['view', 'cat']) {
+          logs.length = 0
+          await makeDidCommand().parseAsync([verb, did], { from: 'user' })
+          assert.equal(JSON.parse(logs[0]).id, did)
+        }
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an unknown DID', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['show', 'did:key:z6MkUnknown'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('did:key:z6MkUnknown'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+  })
 })

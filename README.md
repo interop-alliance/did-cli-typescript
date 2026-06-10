@@ -115,6 +115,25 @@ fingerprints as a JSON array instead:
 ]
 ```
 
+#### Show a key pair
+
+Display a key saved in local wallet storage, looked up by its fingerprint
+(`publicKeyMultibase`, as printed by `key list`). Only the public key object is
+shown -- the stored secret key is never included in the output:
+
+```
+./di key show z6Mkr...
+{
+  "@context": "https://w3id.org/security/multikey/v1",
+  "id": "...",
+  "type": "Multikey",
+  "controller": "...",
+  "publicKeyMultibase": "z6Mkr..."
+}
+```
+
+Aliases: `view`, `cat`.
+
 ### DID Management
 
 #### Create a DID
@@ -294,6 +313,24 @@ a JSON array instead:
   "did:key:z6Mks..."
 ]
 ```
+
+#### Show a DID
+
+Display the DID document saved in local storage (via `did create --save`). The
+stored DID document holds no secret key material -- signing keys live in a
+separate key file -- so it is printed as-is:
+
+```
+./di did show did:key:z6Mkr...
+{
+  "@context": [ ... ],
+  "id": "did:key:z6Mkr...",
+  "verificationMethod": [ ... ],
+  ...
+}
+```
+
+Aliases: `view`, `cat`.
 
 ### Verifiable Credentials
 

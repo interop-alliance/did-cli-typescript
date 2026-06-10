@@ -20,12 +20,12 @@ import {
   eddsaRdfc2022
 } from '@interop/ed25519-signature'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
-import { ECDSA_MULTIBASE_HEADERS } from '@interop/ecdsa-multikey'
 import { ecdsaRdfc2019 } from '@interop/ecdsa-signature'
 import { DataIntegrityProof } from '@interop/data-integrity-proof'
 import { issue } from '@interop/vc'
 import { securityLoader } from '@interop/security-document-loader'
 import { loadDidDocument, loadDidKeys } from '../storage.js'
+import { isEcdsaPublicKeyMultibase } from '../keys/ecdsa.js'
 
 /**
  * Offline document loader for signing: bundles the VC / Data Integrity / suite
@@ -179,18 +179,18 @@ function isAuthorizedForAssertion({
  * Detects a stored key's type from its `publicKeyMultibase` header. Both
  * ed25519 and ecdsa keys export with `type: "Multikey"`, so the multibase
  * prefix is what distinguishes them: ecdsa P-256/P-384/P-521 keys carry the
- * `ECDSA_MULTIBASE_HEADERS`, and everything else is treated as ed25519.
+ * ecdsa-multikey headers, and everything else is treated as ed25519.
  *
  * @param options {object}
  * @param options.storedKey {StoredKeyPair}   The exported key pair.
  * @returns {KeyType}
  */
 function detectKeyType({ storedKey }: { storedKey: StoredKeyPair }): KeyType {
-  const publicKeyMultibase = storedKey.publicKeyMultibase ?? ''
-  const isEcdsa = ECDSA_MULTIBASE_HEADERS.some(header =>
-    publicKeyMultibase.startsWith(header)
-  )
-  return isEcdsa ? 'ecdsa' : 'ed25519'
+  return isEcdsaPublicKeyMultibase({
+    publicKeyMultibase: storedKey.publicKeyMultibase
+  })
+    ? 'ecdsa'
+    : 'ed25519'
 }
 
 /**

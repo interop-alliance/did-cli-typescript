@@ -275,6 +275,116 @@ describe('did key', () => {
     })
   })
 
+  describe('show', () => {
+    it('prints the public key object for a stored key', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const created = JSON.parse(logs[0])
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['show', created.publicKeyMultibase],
+          { from: 'user' }
+        )
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.type, 'Multikey')
+        assert.equal(shown.publicKeyMultibase, created.publicKeyMultibase)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('omits the secret key material', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const created = JSON.parse(logs[0])
+        assert.ok(created.secretKeyMultibase, 'stored key has a secret half')
+        logs.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['show', created.publicKeyMultibase],
+          { from: 'user' }
+        )
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.secretKeyMultibase, undefined)
+        assert.ok(!logs[0].includes('secretKeyMultibase'))
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('shows a stored ecdsa key', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'ecdsa', '--curve', 'p256', '--save'],
+          { from: 'user' }
+        )
+        const created = JSON.parse(logs[0])
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['show', created.publicKeyMultibase],
+          { from: 'user' }
+        )
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.publicKeyMultibase, created.publicKeyMultibase)
+        assert.equal(shown.secretKeyMultibase, undefined)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('is aliased as view and cat', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+
+        for (const verb of ['view', 'cat']) {
+          logs.length = 0
+          await makeKeyCommand().parseAsync([verb, fingerprint], {
+            from: 'user'
+          })
+          assert.equal(JSON.parse(logs[0]).publicKeyMultibase, fingerprint)
+        }
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an unknown key', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['show', 'z6MkUnknown'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('z6MkUnknown'))
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
   describe('export', () => {
     it('routes export with default format', () => {
       makeKeyCommand().parse(['export', 'key-id-123'], { from: 'user' })

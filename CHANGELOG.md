@@ -1,5 +1,17 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- Add `did show <did>` and `key show <id>` commands to display a locally stored
+  DID document or key (aliases: `view`, `cat`). `did show` prints the stored DID
+  document (which holds no secret material). `key show` looks up a stored key by
+  its `publicKeyMultibase` fingerprint and prints the public key object only --
+  it re-imports the stored key pair and re-exports the public half, so the secret
+  key never appears in the output. These are distinct from a future `get`
+  command, which will resolve DIDs/keys rather than read local storage.
+
 ## 0.4.0 - 2026-06-09
 
 ### Added

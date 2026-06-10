@@ -11,6 +11,7 @@ import {
   saveToCollection
 } from '../storage.js'
 import {
+  isEcdsaPublicKeyMultibase,
   normalizeEcdsaCurve,
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
@@ -154,6 +155,55 @@ export function makeKeyCommand(): Command {
       for (const keyId of keyIds) {
         console.log(keyId)
       }
+    })
+
+  key
+    .command('show <id>')
+    .aliases(['view', 'cat'])
+    .description(
+      'Show a locally stored key (public key object only) by its ' +
+        'publicKeyMultibase fingerprint'
+    )
+    .action(async (id: string) => {
+      const storageIds = await listCollection('keys')
+      let storedKey:
+        | { publicKeyMultibase?: string; secretKeyMultibase?: string }
+        | undefined
+      for (const storageId of storageIds) {
+        const candidate = await loadFromCollection<{
+          publicKeyMultibase?: string
+          secretKeyMultibase?: string
+        }>('keys', storageId)
+        if (candidate.publicKeyMultibase === id) {
+          storedKey = candidate
+          break
+        }
+      }
+      if (!storedKey) {
+        console.error(`No locally stored key found for ${id}`)
+        process.exit(1)
+        return
+      }
+
+      // Re-import the stored key pair and re-export the public half only, so the
+      // secret key material never leaves storage in the displayed output.
+      const isEcdsa = isEcdsaPublicKeyMultibase({
+        publicKeyMultibase: storedKey.publicKeyMultibase
+      })
+      const publicKey = isEcdsa
+        ? await (
+            await EcdsaMultikey.from(storedKey)
+          ).export({
+            publicKey: true,
+            secretKey: false
+          })
+        : await (
+            await Ed25519VerificationKey.from(storedKey)
+          ).export({
+            publicKey: true,
+            secretKey: false
+          })
+      console.log(JSON.stringify(publicKey, null, 2))
     })
 
   key

@@ -5,7 +5,7 @@
  * short, hyphenated, and SECG names) onto the canonical curve identifiers used
  * by `@interop/ecdsa-multikey` (`P-256` / `P-384` / `P-521`).
  */
-import { ECDSA_CURVE } from '@interop/ecdsa-multikey'
+import { ECDSA_CURVE, ECDSA_MULTIBASE_HEADERS } from '@interop/ecdsa-multikey'
 import type { EcdsaCurve } from '@interop/ecdsa-multikey'
 
 // Accepted `--curve` spellings (lower-cased) mapped to the library's canonical
@@ -40,6 +40,26 @@ export function normalizeEcdsaCurve({
   curve: string
 }): EcdsaCurve | undefined {
   return CURVE_ALIASES[curve.toLowerCase()]
+}
+
+/**
+ * Detects whether an exported key is an ecdsa Multikey from its
+ * `publicKeyMultibase` header. Both ed25519 and ecdsa keys export with
+ * `type: "Multikey"`, so the multibase prefix is what distinguishes them: ecdsa
+ * P-256/P-384/P-521 keys carry the `ECDSA_MULTIBASE_HEADERS`, and everything
+ * else is treated as ed25519.
+ *
+ * @param options {object}
+ * @param [options.publicKeyMultibase] {string}   the key's multibase header
+ * @returns {boolean}
+ */
+export function isEcdsaPublicKeyMultibase({
+  publicKeyMultibase
+}: {
+  publicKeyMultibase?: string
+}): boolean {
+  const header = publicKeyMultibase ?? ''
+  return ECDSA_MULTIBASE_HEADERS.some(prefix => header.startsWith(prefix))
 }
 
 // Curves the `ecdsa-rdfc-2019` VC cryptosuite can sign with. Other curves
