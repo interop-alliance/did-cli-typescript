@@ -7,7 +7,7 @@
  * existing `--capability`. Both print `{ rootCapability|delegatedCapability,
  * encoded }` to stdout (the `encoded` field is the multibase base58btc form);
  * diagnostics and errors go to stderr. `--save` writes the capability to local
- * wallet storage (`~/.wallet/zcaps/`) along with a `.meta.json` metadata
+ * wallet storage (`~/.config/did-cli-wallet/zcaps/`) along with a `.meta.json` metadata
  * sidecar (creation timestamp plus `--handle` / `--description` when given).
  * `list` renders a metadata table of the saved zcaps, `show` prints one back
  * (`--meta` for its metadata), `meta` edits the metadata sidecar, and `remove`
@@ -249,7 +249,7 @@ export function makeZcapCommand(): Command {
     )
     .option(
       '--save',
-      'save the zcap to local wallet storage (~/.wallet/zcaps/)'
+      'save the zcap to local wallet storage (~/.config/did-cli-wallet/zcaps/)'
     )
     .option(
       '--handle <handle>',
@@ -317,7 +317,7 @@ export function makeZcapCommand(): Command {
     .option('--expires <iso>', 'explicit ISO 8601 expiration (overrides --ttl)')
     .option(
       '--save',
-      'save the zcap to local wallet storage (~/.wallet/zcaps/)'
+      'save the zcap to local wallet storage (~/.config/did-cli-wallet/zcaps/)'
     )
     .option(
       '--handle <handle>',

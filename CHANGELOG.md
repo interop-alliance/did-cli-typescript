@@ -1,5 +1,20 @@
 # History
 
+## 0.7.0 - TBD
+
+### Changed
+
+- **BREAKING**: Move the default wallet storage directory from `~/.wallet/` to
+  `~/.config/did-cli-wallet/` (honoring `$XDG_CONFIG_HOME` when set), to avoid
+  colliding with other tools that use the generic `~/.wallet` name. Existing
+  data can be moved with `mv ~/.wallet ~/.config/did-cli-wallet`. The
+  `WALLET_DIR` and `DIDS_DIR` environment variables still override the default
+  as before.
+- `di --version` now reports the version from `package.json` instead of a
+  hardcoded string.
+- Relax the `engines` requirement from Node `>=24` to `>=22` (the oldest
+  currently supported LTS line).
+
 ## 0.6.0 - 2026-06-11
 
 ### Added

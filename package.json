@@ -7,12 +7,18 @@
   "bin": {
     "di": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc",
     "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
     "fix": "eslint --fix src && npm run format",
     "format": "prettier --write src",
     "lint": "eslint src",
+    "prepublishOnly": "npm run build",
     "start": "node --enable-source-maps dist/index.js",
     "test": "npm run lint && npm run format && npm run test:node",
     "test:node": "node --test --import tsx --enable-source-maps 'src/**/*.test.ts'"
@@ -39,7 +45,7 @@
   },
   "packageManager": "pnpm@11.5.0",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

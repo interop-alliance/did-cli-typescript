@@ -103,7 +103,7 @@ export function makeDidCommand(): Command {
     )
     .option(
       '--save',
-      'save the DID document to local storage (~/.wallet/dids/)'
+      'save the DID document to local storage (~/.config/did-cli-wallet/dids/)'
     )
     .option(
       '--handle <handle>',

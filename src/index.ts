@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from 'node:module'
 import { Command } from 'commander'
 import { makeDidCommand } from './commands/did.js'
 import { makeKeyCommand } from './commands/key.js'
@@ -7,9 +8,13 @@ import { makeWalletCommand } from './commands/wallet.js'
 import { makeWasCommand } from './commands/was.js'
 import { makeZcapCommand } from './commands/zcap.js'
 
+const { version } = createRequire(import.meta.url)('../package.json') as {
+  version: string
+}
+
 const program = new Command()
 
-program.name('di').description('DID CLI tool').version('0.1.0')
+program.name('di').description('DID CLI tool').version(version)
 
 program.addCommand(makeDidCommand())
 program.addCommand(makeKeyCommand())
