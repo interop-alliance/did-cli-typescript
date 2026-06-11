@@ -23,7 +23,7 @@
  * input error (bad path syntax, unknown handle/DID, missing server URL).
  */
 import { readFile } from 'node:fs/promises'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import {
   WasError,
   type Collection,
@@ -57,7 +57,58 @@ import { saveToCollection } from '../storage.js'
 import { encodeCapability } from '../zcap/encoding.js'
 import { expiresFromTtl } from '../zcap/ttl.js'
 import { storageIdFor, writeCreateMeta } from './zcap.js'
-import { renderTable } from '../table.js'
+import { renderTable, type Column } from '../table.js'
+
+/**
+ * Awaits a command's run function and exits the process with its code when
+ * non-zero -- the shared tail of every `was` command action.
+ *
+ * @param run {Promise<number>}
+ * @returns {Promise<void>}
+ */
+async function runAndExit(run: Promise<number>): Promise<void> {
+  const code = await run
+  if (code !== 0) {
+    process.exit(code)
+  }
+}
+
+/**
+ * The shared command options, as factories (commander `Option` instances
+ * are bound to the command they are added to, so they cannot be shared).
+ * Centralizing them keeps the flag names and help text consistent across
+ * the whole command tree.
+ *
+ * @returns {Option}
+ */
+function serverOption(): Option {
+  return new Option(
+    '--server <url>',
+    'the WAS server base URL (or WAS_SERVER_URL)'
+  )
+}
+
+function didOption(): Option {
+  return new Option(
+    '--did <did>',
+    'DID or stored-DID handle to sign with (or WAS_DID)'
+  )
+}
+
+function capabilityOption(): Option {
+  return new Option(
+    '--capability <ref>',
+    'a received capability (encoded string, JSON file, or stored zcap ' +
+      'id/handle) instead of a path'
+  )
+}
+
+function contentTypeOption(): Option {
+  return new Option(
+    '--content-type <type>',
+    'send the payload as-is with this content type (skips JSON detection)'
+  )
+}
 
 /** The capability actions WAS servers match against (HTTP verbs). */
 const WAS_ACTIONS = ['GET', 'PUT', 'POST', 'DELETE'] as const
@@ -718,6 +769,48 @@ export async function runCollectionList(options: {
 }
 
 /**
+ * Renders a listing as a table, raw JSON, or one item id per line -- the
+ * shared output logic of `collection list`, `resource list`, and `ls`.
+ *
+ * @param options {object}
+ * @param options.listing {{items: T[]}}
+ * @param [options.json] {boolean}
+ * @param [options.plain] {boolean}
+ * @param options.columns {Column[]}
+ * @param options.toRow {(item: T) => string[]}
+ * @returns {void}
+ */
+function printListing<T extends { id: string }>({
+  listing,
+  json,
+  plain,
+  columns,
+  toRow
+}: {
+  listing: { items: T[] }
+  json?: boolean
+  plain?: boolean
+  columns: Column[]
+  toRow: (item: T) => string[]
+}): void {
+  if (json) {
+    console.log(JSON.stringify(listing, null, 2))
+    return
+  }
+  if (plain) {
+    const ids = listing.items.map(item => item.id).sort()
+    for (const id of ids) {
+      console.log(id)
+    }
+    return
+  }
+  if (listing.items.length === 0) {
+    return
+  }
+  console.log(renderTable({ columns, rows: listing.items.map(toRow) }))
+}
+
+/**
  * Renders a collection listing as a table, raw JSON, or one id per line.
  *
  * @param options {object}
@@ -735,31 +828,17 @@ function printCollectionListing({
   json?: boolean
   plain?: boolean
 }): void {
-  if (json) {
-    console.log(JSON.stringify(listing, null, 2))
-    return
-  }
-  if (plain) {
-    const ids = listing.items.map(item => item.id).sort()
-    for (const id of ids) {
-      console.log(id)
-    }
-    return
-  }
-  if (listing.items.length === 0) {
-    return
-  }
-  const rows = listing.items.map(item => [item.id, item.name, item.url])
-  console.log(
-    renderTable({
-      columns: [
-        { header: 'ID', maxWidth: 30 },
-        { header: 'NAME', maxWidth: 20 },
-        { header: 'URL' }
-      ],
-      rows
-    })
-  )
+  printListing({
+    listing,
+    json,
+    plain,
+    columns: [
+      { header: 'ID', maxWidth: 30 },
+      { header: 'NAME', maxWidth: 20 },
+      { header: 'URL' }
+    ],
+    toRow: item => [item.id, item.name, item.url]
+  })
 }
 
 /**
@@ -923,7 +1002,7 @@ export async function runResourceAdd(options: {
             'add needs a collection capability.'
         )
       }
-      collection = resolved.handle as Collection
+      collection = resolved.handle
     } else {
       const target = requireCollectionTarget({
         target: await resolveWasTarget({
@@ -991,7 +1070,7 @@ export async function runResourcePut(options: {
             'put needs a resource capability.'
         )
       }
-      resource = resolved.handle as Resource
+      resource = resolved.handle
       url = resolved.url
     } else {
       const target = requireResourceTarget({
@@ -1066,7 +1145,7 @@ export async function runResourceGet(options: {
             'get needs a resource capability.'
         )
       }
-      resource = resolved.handle as Resource
+      resource = resolved.handle
       url = resolved.url
     } else {
       const target = requireResourceTarget({
@@ -1167,31 +1246,17 @@ function printResourceListing({
   json?: boolean
   plain?: boolean
 }): void {
-  if (json) {
-    console.log(JSON.stringify(listing, null, 2))
-    return
-  }
-  if (plain) {
-    const ids = listing.items.map(item => item.id).sort()
-    for (const id of ids) {
-      console.log(id)
-    }
-    return
-  }
-  if (listing.items.length === 0) {
-    return
-  }
-  const rows = listing.items.map(item => [item.id, item.contentType, item.url])
-  console.log(
-    renderTable({
-      columns: [
-        { header: 'ID', maxWidth: 30 },
-        { header: 'CONTENT TYPE', maxWidth: 24 },
-        { header: 'URL' }
-      ],
-      rows
-    })
-  )
+  printListing({
+    listing,
+    json,
+    plain,
+    columns: [
+      { header: 'ID', maxWidth: 30 },
+      { header: 'CONTENT TYPE', maxWidth: 24 },
+      { header: 'URL' }
+    ],
+    toRow: item => [item.id, item.contentType, item.url]
+  })
 }
 
 /**
@@ -1274,23 +1339,25 @@ export async function runLs(options: {
             'ls takes a space or collection capability.'
         )
       }
-      const listing =
-        resolved.depth === 'space'
-          ? await (resolved.handle as Space).collections()
-          : await (resolved.handle as Collection).list()
-      if (listing === null) {
-        console.error(`Not found (or not visible to you): ${resolved.url}`)
-        return 1
-      }
       if (resolved.depth === 'space') {
+        const listing = await resolved.handle.collections()
+        if (listing === null) {
+          console.error(`Not found (or not visible to you): ${resolved.url}`)
+          return 1
+        }
         printCollectionListing({
-          listing: listing as CollectionListing,
+          listing,
           json: options.json,
           plain: options.plain
         })
       } else {
+        const listing = await resolved.handle.list()
+        if (listing === null) {
+          console.error(`Not found (or not visible to you): ${resolved.url}`)
+          return 1
+        }
         printResourceListing({
-          listing: listing as ResourceListing,
+          listing,
           json: options.json,
           plain: options.plain
         })
@@ -1772,8 +1839,8 @@ export function makeWasCommand(): Command {
     .command('create')
     .description('Create a new space on a WAS server')
     .option('--name <name>', "the space's display name")
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .option(
       '--id <id>',
       'a caller-chosen space id (server-generated otherwise)'
@@ -1808,10 +1875,7 @@ export function makeWasCommand(): Command {
           process.exit(2)
           return
         }
-        const code = await runSpaceCreate(options)
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceCreate(options))
       }
     )
 
@@ -1840,10 +1904,7 @@ export function makeWasCommand(): Command {
         server?: string
         did?: string
       }) => {
-        const code = await runSpaceList(options)
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceList(options))
       }
     )
 
@@ -1856,8 +1917,8 @@ export function makeWasCommand(): Command {
     )
     .option('--meta', 'show the local registry metadata instead')
     .option('--json', 'with --meta, output the metadata as JSON')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
@@ -1868,10 +1929,7 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runSpaceShow({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceShow({ address, ...options }))
       }
     )
 
@@ -1880,17 +1938,14 @@ export function makeWasCommand(): Command {
     .alias('configure')
     .description("Update a space's description fields on the server (upsert)")
     .option('--name <name>', "the space's new display name")
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         options: { name?: string; server?: string; did?: string }
       ) => {
-        const code = await runSpaceUpdate({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceUpdate({ address, ...options }))
       }
     )
 
@@ -1901,14 +1956,11 @@ export function makeWasCommand(): Command {
       'Delete a space on the server (idempotent) and remove its local ' +
         'registry entry'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runSpaceDelete({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceDelete({ address, ...options }))
       }
     )
 
@@ -1919,10 +1971,7 @@ export function makeWasCommand(): Command {
         'space is untouched)'
     )
     .action(async (address: string) => {
-      const code = await runSpaceForget({ address })
-      if (code !== 0) {
-        process.exit(code)
-      }
+      await runAndExit(runSpaceForget({ address }))
     })
 
   space
@@ -1931,8 +1980,8 @@ export function makeWasCommand(): Command {
       'Register an existing remote space (a full space URL, or a space id ' +
         'plus --server) in the local registry'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .option('--handle <handle>', 'short tag for the registered space')
     .option(
       '--description <description>',
@@ -1948,10 +1997,7 @@ export function makeWasCommand(): Command {
           description?: string
         }
       ) => {
-        const code = await runSpaceAdd({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceAdd({ address, ...options }))
       }
     )
 
@@ -1959,17 +2005,14 @@ export function makeWasCommand(): Command {
     .command('export <space>')
     .description('Export a whole space as a tar archive')
     .option('--output <file>', 'write the tar to a file (stdout otherwise)')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         options: { output?: string; server?: string; did?: string }
       ) => {
-        const code = await runSpaceExport({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceExport({ address, ...options }))
       }
     )
 
@@ -1978,18 +2021,15 @@ export function makeWasCommand(): Command {
     .description(
       'Import (merge) a tar archive into a space; tar from file or stdin'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         file: string | undefined,
         options: { server?: string; did?: string }
       ) => {
-        const code = await runSpaceImport({ address, file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runSpaceImport({ address, file, ...options }))
       }
     )
 
@@ -2007,17 +2047,14 @@ export function makeWasCommand(): Command {
       '--id <id>',
       'a caller-chosen collection id (server-generated otherwise)'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         options: { name?: string; id?: string; server?: string; did?: string }
       ) => {
-        const code = await runCollectionCreate({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runCollectionCreate({ address, ...options }))
       }
     )
 
@@ -2026,8 +2063,8 @@ export function makeWasCommand(): Command {
     .description('List the collections in a space')
     .option('--json', 'output the raw listing JSON')
     .option('--plain', 'output one collection id per line, sorted')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
@@ -2038,10 +2075,7 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runCollectionList({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runCollectionList({ address, ...options }))
       }
     )
 
@@ -2051,14 +2085,11 @@ export function makeWasCommand(): Command {
     .description(
       "Show a collection's description from the server (SPACE/COLLECTION)"
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runCollectionShow({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runCollectionShow({ address, ...options }))
       }
     )
 
@@ -2069,17 +2100,14 @@ export function makeWasCommand(): Command {
       "Update a collection's description fields on the server (upsert)"
     )
     .requiredOption('--name <name>', "the collection's new display name")
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         options: { name: string; server?: string; did?: string }
       ) => {
-        const code = await runCollectionUpdate({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runCollectionUpdate({ address, ...options }))
       }
     )
 
@@ -2089,14 +2117,11 @@ export function makeWasCommand(): Command {
     .description(
       'Delete a whole collection and its contents on the server (idempotent)'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runCollectionDelete({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runCollectionDelete({ address, ...options }))
       }
     )
 
@@ -2112,17 +2137,10 @@ export function makeWasCommand(): Command {
       'Add a resource to a collection (server-generated id); payload from ' +
         'file or stdin'
     )
-    .option(
-      '--content-type <type>',
-      'send the payload as-is with this content type (skips JSON detection)'
-    )
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(contentTypeOption())
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2140,10 +2158,7 @@ export function makeWasCommand(): Command {
           file = address
           address = undefined
         }
-        const code = await runResourceAdd({ address, file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourceAdd({ address, file, ...options }))
       }
     )
 
@@ -2153,17 +2168,10 @@ export function makeWasCommand(): Command {
       'Create or replace a resource at a known id (upsert); payload from ' +
         'file or stdin'
     )
-    .option(
-      '--content-type <type>',
-      'send the payload as-is with this content type (skips JSON detection)'
-    )
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(contentTypeOption())
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2181,10 +2189,7 @@ export function makeWasCommand(): Command {
           file = address
           address = undefined
         }
-        const code = await runResourcePut({ address, file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourcePut({ address, file, ...options }))
       }
     )
 
@@ -2194,13 +2199,9 @@ export function makeWasCommand(): Command {
       'Read a resource: JSON pretty-printed to stdout, binary written raw'
     )
     .option('--output <file>', 'write the resource content to a file')
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2211,10 +2212,7 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runResourceGet({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourceGet({ address, ...options }))
       }
     )
 
@@ -2223,8 +2221,8 @@ export function makeWasCommand(): Command {
     .description('List the resources in a collection (SPACE/COLLECTION)')
     .option('--json', 'output the raw listing JSON')
     .option('--plain', 'output one resource id per line, sorted')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
@@ -2235,10 +2233,7 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runResourceList({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourceList({ address, ...options }))
       }
     )
 
@@ -2246,14 +2241,11 @@ export function makeWasCommand(): Command {
     .command('delete <path>')
     .alias('rm')
     .description('Delete a resource on the server (idempotent)')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runResourceDelete({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourceDelete({ address, ...options }))
       }
     )
 
@@ -2266,13 +2258,9 @@ export function makeWasCommand(): Command {
     )
     .option('--json', 'output the raw listing JSON')
     .option('--plain', 'output one id per line, sorted')
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2284,10 +2272,7 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runLs({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runLs({ address, ...options }))
       }
     )
 
@@ -2295,13 +2280,9 @@ export function makeWasCommand(): Command {
     .command('get [path]')
     .description('Read a resource (shorthand for "resource get")')
     .option('--output <file>', 'write the resource content to a file')
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2312,27 +2293,17 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        const code = await runResourceGet({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourceGet({ address, ...options }))
       }
     )
 
   was
     .command('put [path] [file]')
     .description('Create or replace a resource (shorthand for "resource put")')
-    .option(
-      '--content-type <type>',
-      'send the payload as-is with this content type (skips JSON detection)'
-    )
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(contentTypeOption())
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
@@ -2350,10 +2321,7 @@ export function makeWasCommand(): Command {
           file = address
           address = undefined
         }
-        const code = await runResourcePut({ address, file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runResourcePut({ address, file, ...options }))
       }
     )
 
@@ -2363,22 +2331,15 @@ export function makeWasCommand(): Command {
       'Delete whatever the path points at: a space, a collection, or a ' +
         'resource'
     )
-    .option(
-      '--capability <ref>',
-      'a received capability (encoded string, JSON file, or stored zcap ' +
-        'id/handle) instead of a path'
-    )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string | undefined,
         options: { capability?: string; server?: string; did?: string }
       ) => {
-        const code = await runRm({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runRm({ address, ...options }))
       }
     )
 
@@ -2390,14 +2351,11 @@ export function makeWasCommand(): Command {
     .command('show <path>')
     .aliases(['view', 'cat'])
     .description('Show the access-control policy of a path')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runPolicyShow({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runPolicyShow({ address, ...options }))
       }
     )
 
@@ -2408,18 +2366,15 @@ export function makeWasCommand(): Command {
         'type-only policy, or a policy JSON file'
     )
     .option('--type <type>', 'a simple type-only policy, e.g. PublicCanRead')
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
         file: string | undefined,
         options: { type?: string; server?: string; did?: string }
       ) => {
-        const code = await runPolicySet({ address, file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runPolicySet({ address, file, ...options }))
       }
     )
 
@@ -2429,14 +2384,11 @@ export function makeWasCommand(): Command {
       'Remove the access-control policy of a path (back to capability-only ' +
         'access; idempotent)'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runPolicyClear({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runPolicyClear({ address, ...options }))
       }
     )
 
@@ -2448,14 +2400,11 @@ export function makeWasCommand(): Command {
       'Make a space, collection, or resource world-readable and print its ' +
         'public URL'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runPublish({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runPublish({ address, ...options }))
       }
     )
 
@@ -2465,14 +2414,11 @@ export function makeWasCommand(): Command {
       'Revert a published space, collection, or resource to capability-only ' +
         'access'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
-        const code = await runUnpublish({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runUnpublish({ address, ...options }))
       }
     )
 
@@ -2504,8 +2450,8 @@ export function makeWasCommand(): Command {
       '--description <description>',
       'longer description of the saved capability (requires --save)'
     )
-    .option('--server <url>', 'the WAS server base URL (or WAS_SERVER_URL)')
-    .option('--did <did>', 'DID or stored-DID handle to sign with (or WAS_DID)')
+    .addOption(serverOption())
+    .addOption(didOption())
     .action(
       async (
         address: string,
@@ -2529,10 +2475,7 @@ export function makeWasCommand(): Command {
           process.exit(2)
           return
         }
-        const code = await runGrant({ address, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        await runAndExit(runGrant({ address, ...options }))
       }
     )
 

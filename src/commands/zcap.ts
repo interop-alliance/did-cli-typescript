@@ -31,6 +31,7 @@ import {
   removeFromCollection,
   saveMetaToCollection,
   saveToCollection,
+  sanitizeStorageId,
   type ItemMetadata
 } from '../storage.js'
 import { resolveZcapRef, type StoredZcap } from '../meta.js'
@@ -38,14 +39,14 @@ import { renderTable } from '../table.js'
 
 /**
  * Derives a filesystem-safe storage id from a capability id (the `urn:...`
- * value), replacing characters that are awkward in file names. Exported for
- * reuse by `was grant --save`, which stores into the same zcap collection.
+ * value). Exported for reuse by `was grant --save`, which stores into the
+ * same zcap collection.
  *
  * @param capabilityId {string}
  * @returns {string}
  */
 export function storageIdFor(capabilityId: string): string {
-  return capabilityId.replaceAll(':', '_').replaceAll('%', '_')
+  return sanitizeStorageId(capabilityId)
 }
 
 /**

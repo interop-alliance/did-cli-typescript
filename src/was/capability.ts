@@ -28,13 +28,10 @@ import { buildWasClient } from './client.js'
 export type CapabilityDepth = 'space' | 'collection' | 'resource'
 
 /**
- * A ready-to-use command target rebuilt from a received capability.
+ * The depth-independent fields of a resolved capability target.
  */
-export interface ResolvedCapabilityTarget {
+interface ResolvedCapabilityBase {
   client: WasClient
-  /** The access handle at the depth implied by the invocation target. */
-  handle: Space | Collection | Resource
-  depth: CapabilityDepth
   zcap: IZcap
   /** The server base URL (the invocation target's origin). */
   server: string
@@ -43,6 +40,16 @@ export interface ResolvedCapabilityTarget {
   /** The capability's invocation target URL, for messages and output. */
   url: string
 }
+
+/**
+ * A ready-to-use command target rebuilt from a received capability. A
+ * discriminated union keyed by `depth`, so checking the depth narrows the
+ * `handle` to the matching access-handle type.
+ */
+export type ResolvedCapabilityTarget =
+  | (ResolvedCapabilityBase & { depth: 'space'; handle: Space })
+  | (ResolvedCapabilityBase & { depth: 'collection'; handle: Collection })
+  | (ResolvedCapabilityBase & { depth: 'resource'; handle: Resource })
 
 /**
  * Returns true when the path exists on disk.
@@ -99,26 +106,6 @@ export async function resolveCapabilityInput({
 }
 
 /**
- * Derives the handle depth from a capability handle's own shape (a
- * `Resource` carries `collectionId`, a `Collection` carries `spaceId`, a
- * `Space` carries neither).
- *
- * @param handle {Space | Collection | Resource}
- * @returns {CapabilityDepth}
- */
-export function capabilityHandleDepth(
-  handle: Space | Collection | Resource
-): CapabilityDepth {
-  if ('collectionId' in handle) {
-    return 'resource'
-  }
-  if ('spaceId' in handle) {
-    return 'collection'
-  }
-  return 'space'
-}
-
-/**
  * Resolves a `--capability` reference into a ready-to-use command target:
  * the capability itself, a signed client for the invocation target's
  * server, and the access handle rebuilt at the depth the capability
@@ -165,13 +152,14 @@ export async function resolveCapabilityTarget({
     did: didRef
   })
   const handle = client.fromCapability(zcap)
-  return {
-    client,
-    handle,
-    depth: capabilityHandleDepth(handle),
-    zcap,
-    server,
-    did: resolvedDid,
-    url
+  const base = { client, zcap, server, did: resolvedDid, url }
+  // The handle's own shape implies the depth: a Resource carries
+  // `collectionId`, a Collection carries `spaceId`, a Space carries neither.
+  if ('collectionId' in handle) {
+    return { ...base, depth: 'resource', handle }
   }
+  if ('spaceId' in handle) {
+    return { ...base, depth: 'collection', handle }
+  }
+  return { ...base, depth: 'space', handle }
 }

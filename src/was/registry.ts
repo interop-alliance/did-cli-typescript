@@ -16,6 +16,7 @@ import {
   removeFromCollection,
   saveMetaToCollection,
   saveToCollection,
+  sanitizeStorageId,
   type ItemMetadata
 } from '../storage.js'
 
@@ -33,17 +34,6 @@ export interface SpaceRecord {
   server: string
   /** The controller DID, used as the default signing DID. */
   controller?: string
-}
-
-/**
- * Derives a filesystem-safe storage id from a space id, replacing characters
- * that are awkward in file names (same convention as stored zcaps).
- *
- * @param spaceId {string}
- * @returns {string}
- */
-function storageIdFor(spaceId: string): string {
-  return spaceId.replaceAll(':', '_').replaceAll('%', '_').replaceAll('/', '_')
 }
 
 /**
@@ -66,7 +56,7 @@ export async function saveSpaceRecord({
   handle?: string
   description?: string
 }): Promise<string> {
-  const storageId = storageIdFor(record.id)
+  const storageId = sanitizeStorageId(record.id)
   const filePath = await saveToCollection(COLLECTION, storageId, record)
   const existing = await loadMetaFromCollection({
     collection: COLLECTION,

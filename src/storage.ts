@@ -7,6 +7,18 @@ function getWalletDir(): string {
 }
 
 /**
+ * Derives a filesystem-safe storage id from an item identifier (a
+ * capability urn, a space id, etc.), replacing characters that are awkward
+ * in file names.
+ *
+ * @param id {string}
+ * @returns {string}
+ */
+export function sanitizeStorageId(id: string): string {
+  return id.replaceAll(':', '_').replaceAll('%', '_').replaceAll('/', '_')
+}
+
+/**
  * User-editable metadata stored in a `.meta.json` sidecar next to a wallet
  * item or DID document. All fields are optional; a missing sidecar simply
  * means "no metadata".
