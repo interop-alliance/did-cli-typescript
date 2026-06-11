@@ -61,5 +61,16 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
-  }
+  },
+  "author": {
+    "name": "Interop Alliance",
+    "url": "https://github.com/interop-alliance/"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/interop-alliance/did-cli-typescript.git"
+  },
+  "homepage": "https://github.com/interop-alliance/did-cli-typescript",
+  "bugs": "https://github.com/interop-alliance/did-cli-typescript/issues"
 }
