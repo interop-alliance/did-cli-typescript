@@ -1,6 +1,6 @@
 /**
  * Local space registry: records of WAS spaces the user works with, stored in
- * the `was-spaces` wallet collection (`~/.wallet/was-spaces/`). Each entry
+ * the `was-spaces` wallet collection (`~/.config/did-cli-wallet/was-spaces/`). Each entry
  * carries the space id, its display name, the server base URL, and the
  * controller DID, with the usual `.meta.json` sidecar (created / handle /
  * description). The registry is what lets `was space list` work without the

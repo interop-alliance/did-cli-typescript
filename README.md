@@ -93,7 +93,7 @@ ECDSA keys are serialized as Multikey, the same as Ed25519. Note that ECDSA key
 generation is non-deterministic (it cannot be derived from a seed), so
 `--with-seed` and `SECRET_KEY_SEED` are not supported with `--type ecdsa`.
 
-Save the key to local wallet storage (`~/.wallet/keys/` by default, or
+Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by default, or
 `$WALLET_DIR/keys/` if set) with `--save`. A `.meta.json` metadata sidecar is
 written next to the key, recording the creation timestamp; `--handle` (a short
 tag for telling keys apart) and `--description` add user-defined metadata to
@@ -101,7 +101,7 @@ it (both require `--save`):
 
 ```
 ./di key create --save --handle issuer-signing --description 'Demo issuer signing key'
-Key saved to /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....json
+Key saved to /home/user/.config/did-cli-wallet/keys/2026-06-10-ed25519-z6Mkr....json
 ```
 
 #### List key pairs
@@ -191,7 +191,7 @@ itself is never rewritten). Passing an empty string clears a field:
 
 ```
 ./di key meta z6Mkr... --handle issuer-signing --description 'Demo issuer signing key'
-Metadata saved to /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
+Metadata saved to /home/user/.config/did-cli-wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
 {
   "created": "2026-06-10T17:22:31.123Z",
   "handle": "issuer-signing",
@@ -212,8 +212,8 @@ are deleted:
 
 ```
 ./di key remove issuer-signing
-Removed /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....json
-Removed /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
+Removed /home/user/.config/did-cli-wallet/keys/2026-06-10-ed25519-z6Mkr....json
+Removed /home/user/.config/did-cli-wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
 ```
 
 ### DID Management
@@ -274,14 +274,14 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di did create
 ```
 
 Save the DID document and key material to local storage with `--save`
-(written to `~/.wallet/dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
+(written to `~/.config/did-cli-wallet/dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
 metadata sidecar is written next to the DID document, recording the creation
 timestamp; `--handle` and `--description` add user-defined metadata to it
 (both require `--save`):
 
 ```
 ./di did create --save --handle demo-issuer
-DID saved to /home/user/.wallet/dids/key/did:key:z6Mkr....json
+DID saved to /home/user/.config/did-cli-wallet/dids/key/did:key:z6Mkr....json
 {
   "id": "did:key:z6Mkr...",
   "didDocument": { ... }
@@ -330,12 +330,12 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv \
 ```
 
 Save the DID document and key material to local storage with `--save` (written
-to `~/.wallet/dids/web/` by default, or `$DIDS_DIR` if set). The key file is an
+to `~/.config/did-cli-wallet/dids/web/` by default, or `$DIDS_DIR` if set). The key file is an
 object keyed by verification method id, so further keys can be appended later:
 
 ```
 ./di did create web --url https://example.com --save
-DID saved to /home/user/.wallet/dids/web/did:web:example.com.json
+DID saved to /home/user/.config/did-cli-wallet/dids/web/did:web:example.com.json
 {
   "id": "did:web:example.com",
   "didDocument": { ... }
@@ -351,7 +351,7 @@ updated in place:
 
 ```
 ./di did add-key did:web:example.com
-DID saved to /home/user/.wallet/dids/web/did:web:example.com.json
+DID saved to /home/user/.config/did-cli-wallet/dids/web/did:web:example.com.json
 {
   "id": "did:web:example.com",
   "didDocument": { ... }
@@ -461,7 +461,7 @@ never rewritten). Passing an empty string clears a field:
 
 ```
 ./di did meta did:key:z6Mkr... --handle demo-issuer --description 'Issuer DID for the demo'
-Metadata saved to /home/user/.wallet/dids/key/did:key:z6Mkr....meta.json
+Metadata saved to /home/user/.config/did-cli-wallet/dids/key/did:key:z6Mkr....meta.json
 {
   "created": "2026-06-10T17:22:31.123Z",
   "handle": "demo-issuer",
@@ -478,9 +478,9 @@ the cached `dids` associations of any matching wallet keys:
 
 ```
 ./di did remove demo-issuer
-Removed /home/user/.wallet/dids/key/did:key:z6Mkr....json
-Removed /home/user/.wallet/dids/key/did:key:z6Mkr....keys.json
-Removed /home/user/.wallet/dids/key/did:key:z6Mkr....meta.json
+Removed /home/user/.config/did-cli-wallet/dids/key/did:key:z6Mkr....json
+Removed /home/user/.config/did-cli-wallet/dids/key/did:key:z6Mkr....keys.json
+Removed /home/user/.config/did-cli-wallet/dids/key/did:key:z6Mkr....meta.json
 ```
 
 ### Verifiable Credentials
@@ -579,14 +579,14 @@ does not match the key type (e.g. `--suite eddsa-rdfc-2022` for an ECDSA key) is
 rejected. ECDSA credentials round-trip through `vc verify` (below).
 
 Pass `--save` to also store the issued credential in local wallet storage
-(`~/.wallet/credentials/` by default, or `$WALLET_DIR` if set); `--save`
+(`~/.config/did-cli-wallet/credentials/` by default, or `$WALLET_DIR` if set); `--save`
 records the creation timestamp in a `.meta.json` metadata sidecar, and
 `--handle` / `--description` (which require `--save`) tag the saved credential
 the same way `zcap create --save` does:
 
 ```
 ./di vc issue credential.json --did did:key:z6Mk... --save --handle alumni
-Credential saved to /home/user/.wallet/credentials/sha256-1f4a....json
+Credential saved to /home/user/.config/did-cli-wallet/credentials/sha256-1f4a....json
 ```
 
 The exit code is scriptable: `0` when the credential was issued, `1` on an
@@ -607,7 +607,7 @@ as-is and is *not* verified on import (run `vc verify` for that). `--handle` /
 ./di vc import credential.json --handle alumni --description 'Alumni credential'
 ./di vc import https://example.com/credentials/123.json
 cat credential.json | ./di vc import
-Credential saved to /home/user/.wallet/credentials/urn_uuid_9b1deb4d....json
+Credential saved to /home/user/.config/did-cli-wallet/credentials/urn_uuid_9b1deb4d....json
 ```
 
 The credential file is named after the credential's `id`; a credential
@@ -701,7 +701,7 @@ clears a field:
 ```
 ./di vc meta urn:uuid:9b1deb4d-3b7d-4ba8 \
   --handle alumni --description 'Alumni credential'
-Metadata saved to /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
+Metadata saved to /home/user/.config/did-cli-wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
 {
   "created": "2026-06-11T17:22:31.123Z",
   "handle": "alumni",
@@ -719,8 +719,8 @@ up by credential id, storage id, or handle. Both the credential file and its
 
 ```
 ./di vc remove alumni
-Removed /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.json
-Removed /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
+Removed /home/user/.config/did-cli-wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.json
+Removed /home/user/.config/did-cli-wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
 ```
 
 ### Authorization Capabilities (zCaps)
@@ -735,7 +735,7 @@ Both commands print the capability as JSON together with an `encoded` field --
 the capability serialized and `base58btc`-encoded with a multibase `z` prefix --
 which is the compact form you pass to `zcap delegate --capability` to delegate it
 further. Pass `--save` to also write the capability to local wallet storage
-(`~/.wallet/zcaps/` by default, or `$WALLET_DIR` if set); `--save` records the
+(`~/.config/did-cli-wallet/zcaps/` by default, or `$WALLET_DIR` if set); `--save` records the
 creation timestamp in a `.meta.json` metadata sidecar, and `--handle` /
 `--description` (which require `--save`) tag the saved capability the same way
 `key create --save` and `did create --save` do. The exit code is `0` on
@@ -939,7 +939,7 @@ capability itself is never rewritten). Passing an empty string clears a field:
 ```
 ./di zcap meta urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi \
   --handle api-root --description 'Demo API root'
-Metadata saved to /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
+Metadata saved to /home/user/.config/did-cli-wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
 {
   "created": "2026-06-11T17:22:31.123Z",
   "handle": "api-root",
@@ -957,8 +957,8 @@ looked up by capability id or handle. Both the capability file and its
 
 ```
 ./di zcap remove api-root
-Removed /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.json
-Removed /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
+Removed /home/user/.config/did-cli-wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.json
+Removed /home/user/.config/did-cli-wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
 ```
 
 Note that removing a capability from local storage does not revoke it -- a
@@ -982,7 +982,7 @@ SPACE[/COLLECTION[/RESOURCE]]
 where `SPACE` is one of:
 
 - a **registry handle** (e.g. `home`) of a space registered in the local
-  wallet (`~/.wallet/was-spaces/`), which also supplies the server URL and
+  wallet (`~/.config/did-cli-wallet/was-spaces/`), which also supplies the server URL and
   signing DID defaults;
 - a **bare space id** (a server-generated uuid or urn), combined with
   `--server` / `WAS_SERVER_URL`;
@@ -1006,7 +1006,7 @@ Create a space on a WAS server (`--name`, a display name, is optional). Pass
 ./di was space create --name 'Home space' \
   --server http://localhost:3002 --did did:key:z6Mkfeco... \
   --save --handle home
-Space registered in /home/user/.wallet/was-spaces/81246131-69a4-45ab-9bff-9c946b59cf2e.json
+Space registered in /home/user/.config/did-cli-wallet/was-spaces/81246131-69a4-45ab-9bff-9c946b59cf2e.json
 {
   "id": "81246131-69a4-45ab-9bff-9c946b59cf2e",
   "url": "http://localhost:3002/space/81246131-69a4-45ab-9bff-9c946b59cf2e",
@@ -1138,7 +1138,7 @@ HTTP verbs (`GET`, `PUT`, `POST`, `DELETE`; lowercase accepted), expiration
 comes from `--ttl` (default `1y`) or an explicit `--expires`, and the output
 is the signed capability plus its `encoded` multibase form -- the same shape
 as `zcap delegate`. `--save` (with `--handle` / `--description`) stores it in
-the zcap store (`~/.wallet/zcaps/`):
+the zcap store (`~/.config/did-cli-wallet/zcaps/`):
 
 ```
 ./di was grant home/credentials --to did:key:z6MkBob... --action GET PUT
@@ -1167,7 +1167,7 @@ of:
 - the `encoded` multibase string from the grant output (`zkL8vet...`),
 - a path to a JSON file holding the capability, or
 - the capability id or metadata **handle of a zcap** stored in
-  `~/.wallet/zcaps/`.
+  `~/.config/did-cli-wallet/zcaps/`.
 
 Note that a `--capability` reference is *not* a WAS path -- no space,
 collection, or resource address is given (or needed). The capability itself

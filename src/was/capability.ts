@@ -2,7 +2,7 @@
  * Capability-based addressing for the `was` commands (the receiving side of
  * delegation): resolves a `--capability` reference -- a multibase-encoded
  * capability string, a JSON file path, or the id/handle of a zcap stored in
- * `~/.wallet/zcaps/` -- and rebuilds a signed access handle from it with
+ * `~/.config/did-cli-wallet/zcaps/` -- and rebuilds a signed access handle from it with
  * `was.fromCapability()`. The capability's `invocationTarget` determines
  * both the server URL (its origin) and the handle depth (space, collection,
  * or resource), so no path argument is needed. The signing DID falls back

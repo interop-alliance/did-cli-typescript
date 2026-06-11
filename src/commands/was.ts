@@ -6,7 +6,7 @@
  * single positional WAS path -- `SPACE[/COLLECTION[/RESOURCE]]` -- where the
  * space part is a local registry handle, a bare space id, or a full space
  * https URL (see `src/was/address.ts`). The local space registry
- * (`~/.wallet/was-spaces/`) records each space's server URL and controller
+ * (`~/.config/did-cli-wallet/was-spaces/`) records each space's server URL and controller
  * DID so day-to-day commands need no `--server`/`--did` flags.
  *
  * Subcommand groups: `space` (`create`, `list`, `show`, `update` alias
@@ -1750,7 +1750,7 @@ export async function runSpaceImport(options: {
  * for the `--to` DID with the given actions and expiration, and prints
  * `{ delegatedCapability, encoded }` (the same shape as `zcap delegate`).
  * `--save` stores the capability in the local zcap store
- * (`~/.wallet/zcaps/`).
+ * (`~/.config/did-cli-wallet/zcaps/`).
  *
  * @param options {object}
  * @param options.address {string}   The space/collection/resource address.
@@ -1847,7 +1847,7 @@ export function makeWasCommand(): Command {
     )
     .option(
       '--save',
-      'register the space in the local wallet (~/.wallet/was-spaces/)'
+      'register the space in the local wallet (~/.config/did-cli-wallet/was-spaces/)'
     )
     .option(
       '--handle <handle>',
@@ -2440,7 +2440,7 @@ export function makeWasCommand(): Command {
     .option('--expires <iso>', 'explicit ISO 8601 expiration (overrides --ttl)')
     .option(
       '--save',
-      'save the capability to local wallet storage (~/.wallet/zcaps/)'
+      'save the capability to local wallet storage (~/.config/did-cli-wallet/zcaps/)'
     )
     .option(
       '--handle <handle>',

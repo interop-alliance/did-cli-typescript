@@ -7,7 +7,7 @@
  * over @interop/verifier-core. By default it prints the full verifier-core
  * result; `--summary` prints a compact flattened object. `vc issue` signs an
  * unsigned credential with a locally stored DID. `vc import` stores an
- * existing credential in local wallet storage (`~/.wallet/credentials/`)
+ * existing credential in local wallet storage (`~/.config/did-cli-wallet/credentials/`)
  * along with a `.meta.json` metadata sidecar (creation timestamp plus
  * `--handle` / `--description` when given); `vc issue --save` does the same
  * for a freshly issued credential. `list` renders a metadata table of the
@@ -374,7 +374,7 @@ export function makeVcCommand(): Command {
     )
     .option(
       '--save',
-      'save the issued credential to local wallet storage (~/.wallet/credentials/)'
+      'save the issued credential to local wallet storage (~/.config/did-cli-wallet/credentials/)'
     )
     .option(
       '--handle <handle>',
@@ -414,7 +414,7 @@ export function makeVcCommand(): Command {
   vc.command('import [source]')
     .description(
       'Import a Verifiable Credential (JSON from a file, an http(s) URL, or ' +
-        'stdin) into local wallet storage (~/.wallet/credentials/)'
+        'stdin) into local wallet storage (~/.config/did-cli-wallet/credentials/)'
     )
     .option('--handle <handle>', 'short tag for the saved credential')
     .option(

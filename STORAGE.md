@@ -3,9 +3,9 @@
 To work with DIDs, you'll need storage for keys, local DID docs, and
 notes.
 
-**By default, everything is stored under `~/.wallet/` -- DIDs in
-`~/.wallet/dids/<method>/`, other wallet items (keys, zcaps, credentials) in
-`~/.wallet/<collection>/`.**
+**By default, everything is stored under `~/.config/did-cli-wallet/` -- DIDs in
+`~/.config/did-cli-wallet/dids/<method>/`, other wallet items (keys, zcaps, credentials) in
+`~/.config/did-cli-wallet/<collection>/`.**
 
 The wallet directory can be relocated with the `WALLET_DIR` environment
 variable; the DIDs subtree alone can be overridden with `DIDS_DIR` (its
@@ -21,15 +21,15 @@ uses a simple filesystem-based JSON blob storage system to store private keys,
 local copies of DID documents, and DID metadata on one's local machine.
 
 Keys from DID Documents (as well as related metadata) you control will be stored
-in the `~/.wallet/dids/<method>/` folder by default, and will be organized by
+in the `~/.config/did-cli-wallet/dids/<method>/` folder by default, and will be organized by
 DID.
 
 For example, for a DID of "did:method:abcd", the following files would be
 potentially created:
 
-- `~/.wallet/dids/method/did:method:abcd.json` -- the DID document
-- `~/.wallet/dids/method/did:method:abcd.keys.json` -- the signing key material
-- `~/.wallet/dids/method/did:method:abcd.meta.json` -- the metadata sidecar
+- `~/.config/did-cli-wallet/dids/method/did:method:abcd.json` -- the DID document
+- `~/.config/did-cli-wallet/dids/method/did:method:abcd.keys.json` -- the signing key material
+- `~/.config/did-cli-wallet/dids/method/did:method:abcd.meta.json` -- the metadata sidecar
 
 You can override the storage mechanism for each ledger method (to store JSON
 files in a different directory, or to use an in-memory `MockStore` for unit
@@ -44,10 +44,10 @@ DID files are plain DID documents, zcap files are plain capability JSON,
 credential files are plain Verifiable Credentials), and means metadata edits
 never rewrite a file that holds secret key material.
 
-- Keys: `~/.wallet/keys/<storageId>.meta.json` (next to `<storageId>.json`)
-- DIDs: `~/.wallet/dids/<method>/<did>.meta.json` (next to `<did>.json`)
-- zCaps: `~/.wallet/zcaps/<storageId>.meta.json` (next to `<storageId>.json`)
-- Credentials: `~/.wallet/credentials/<storageId>.meta.json` (next to
+- Keys: `~/.config/did-cli-wallet/keys/<storageId>.meta.json` (next to `<storageId>.json`)
+- DIDs: `~/.config/did-cli-wallet/dids/<method>/<did>.meta.json` (next to `<did>.json`)
+- zCaps: `~/.config/did-cli-wallet/zcaps/<storageId>.meta.json` (next to `<storageId>.json`)
+- Credentials: `~/.config/did-cli-wallet/credentials/<storageId>.meta.json` (next to
   `<storageId>.json`). The storage id is the credential's `id` (sanitized for
   the filesystem), or a `sha256-...` digest of its content when the
   credential has no `id`.

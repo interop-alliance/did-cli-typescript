@@ -3,7 +3,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 function getWalletDir(): string {
-  return process.env.WALLET_DIR ?? join(homedir(), '.wallet')
+  if (process.env.WALLET_DIR) {
+    return process.env.WALLET_DIR
+  }
+  const configHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config')
+  return join(configHome, 'did-cli-wallet')
 }
 
 /**

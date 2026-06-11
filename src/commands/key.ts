@@ -113,7 +113,10 @@ export function makeKeyCommand(): Command {
       `ECDSA curve for --type ecdsa (supported: ${SUPPORTED_ECDSA_CURVES})`,
       'p256'
     )
-    .option('--save', 'save the key to local wallet storage (~/.wallet/keys/)')
+    .option(
+      '--save',
+      'save the key to local wallet storage (~/.config/did-cli-wallet/keys/)'
+    )
     .option(
       '--handle <handle>',
       'short tag for the saved key (requires --save)'

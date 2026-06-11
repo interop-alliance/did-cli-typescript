@@ -5,7 +5,7 @@
  * legacy did-cli respectively:
  *
  * - Stored DID (`--did`): the DID document and its secret key are read from
- *   local storage (`~/.wallet/dids/`, the store written by `id create --save`),
+ *   local storage (`~/.config/did-cli-wallet/dids/`, the store written by `id create --save`),
  *   exactly as `vc issue` loads its signing key. For `did:key` the single key
  *   serves the `capabilityDelegation` relationship.
  * - Env seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`): the `did:key` is

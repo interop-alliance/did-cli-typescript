@@ -1,5 +1,5 @@
 /**
- * The `wallet` command group reports on local wallet storage (`~/.wallet/`)
+ * The `wallet` command group reports on local wallet storage (`~/.config/did-cli-wallet/`)
  * as a whole. `ls` prints a summary of how many items are saved in each
  * collection (keys, DIDs, zcaps, credentials, WAS spaces).
  */
