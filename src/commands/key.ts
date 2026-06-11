@@ -9,6 +9,7 @@ import {
   listCollection,
   loadFromCollection,
   loadMetaFromCollection,
+  removeFromCollection,
   saveMetaToCollection,
   saveToCollection,
   type KeyMetadata
@@ -518,6 +519,36 @@ export function makeKeyCommand(): Command {
         console.log(JSON.stringify(meta, null, 2))
       }
     )
+
+  key
+    .command('remove <id>')
+    .aliases(['delete', 'rm'])
+    .description(
+      'Remove a locally stored key and its metadata sidecar (by ' +
+        'publicKeyMultibase fingerprint or handle)'
+    )
+    .action(async (id: string) => {
+      let resolved
+      try {
+        resolved = await resolveKeyRef({ ref: id })
+      } catch (err) {
+        console.error((err as Error).message)
+        process.exit(1)
+        return
+      }
+      if (!resolved) {
+        console.error(`No locally stored key found for ${id}`)
+        process.exit(1)
+        return
+      }
+      const removed = await removeFromCollection({
+        collection: 'keys',
+        storageId: resolved.storageId
+      })
+      for (const filePath of removed) {
+        console.error(`Removed ${filePath}`)
+      }
+    })
 
   key
     .command('export <id>')

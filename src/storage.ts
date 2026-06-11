@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -133,6 +133,52 @@ export async function saveMetaToCollection({
   const filePath = join(dir, `${storageId}.meta.json`)
   await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf8')
   return filePath
+}
+
+/**
+ * Delete a file, ignoring the case where it does not exist.
+ *
+ * @param filePath {string}
+ * @returns {Promise<boolean>} true when the file existed and was deleted.
+ */
+async function unlinkIfExists(filePath: string): Promise<boolean> {
+  try {
+    await unlink(filePath)
+    return true
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw err
+  }
+}
+
+/**
+ * Remove an item from a wallet collection: the item file itself plus its
+ * `.meta.json` metadata sidecar (when one exists).
+ *
+ * @param options {object}
+ * @param options.collection {string}
+ * @param options.storageId {string}
+ * @returns {Promise<string[]>} the file paths that were deleted.
+ */
+export async function removeFromCollection({
+  collection,
+  storageId
+}: {
+  collection: string
+  storageId: string
+}): Promise<string[]> {
+  const dir = join(getWalletDir(), collection)
+  const removed: string[] = []
+  const filePath = join(dir, `${storageId}.json`)
+  await unlink(filePath)
+  removed.push(filePath)
+  const metaPath = join(dir, `${storageId}.meta.json`)
+  if (await unlinkIfExists(metaPath)) {
+    removed.push(metaPath)
+  }
+  return removed
 }
 
 /**
@@ -287,6 +333,35 @@ export async function saveDidMeta({
 }): Promise<string> {
   const method = did.split(':')[1]
   return saveToDids({ method, did, suffix: 'meta', data: meta })
+}
+
+/**
+ * Remove a DID from local storage: the `<did>.json` DID document plus its
+ * `<did>.keys.json` key file and `<did>.meta.json` metadata sidecar (when
+ * they exist).
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @returns {Promise<string[]>} the file paths that were deleted.
+ */
+export async function removeDidFiles({
+  did
+}: {
+  did: string
+}): Promise<string[]> {
+  const method = did.split(':')[1]
+  const dir = join(getDidsDir(), method)
+  const removed: string[] = []
+  const docPath = join(dir, `${did}.json`)
+  await unlink(docPath)
+  removed.push(docPath)
+  for (const suffix of ['keys', 'meta']) {
+    const sidecarPath = join(dir, `${did}.${suffix}.json`)
+    if (await unlinkIfExists(sidecarPath)) {
+      removed.push(sidecarPath)
+    }
+  }
+  return removed
 }
 
 /**

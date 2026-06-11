@@ -109,6 +109,48 @@ export async function recordKeyDidAssociation({
 }
 
 /**
+ * Remove a DID from a wallet key's cached `dids` associations, the inverse of
+ * `recordKeyDidAssociation`. No-op when no wallet key matches the fingerprint
+ * or the key's sidecar does not cache the DID.
+ *
+ * @param options {object}
+ * @param options.publicKeyMultibase {string}
+ * @param options.did {string}
+ * @returns {Promise<void>}
+ */
+export async function removeKeyDidAssociation({
+  publicKeyMultibase,
+  did
+}: {
+  publicKeyMultibase: string
+  did: string
+}): Promise<void> {
+  const found = await findStoredKey({ fingerprint: publicKeyMultibase })
+  if (!found) {
+    return
+  }
+  const meta = await loadMetaFromCollection({
+    collection: 'keys',
+    storageId: found.storageId
+  })
+  if (!meta?.dids?.includes(did)) {
+    return
+  }
+  const dids = meta.dids.filter(entry => entry !== did)
+  const updated: KeyMetadata = { ...meta }
+  if (dids.length > 0) {
+    updated.dids = dids
+  } else {
+    delete updated.dids
+  }
+  await saveMetaToCollection({
+    collection: 'keys',
+    storageId: found.storageId,
+    meta: updated
+  })
+}
+
+/**
  * Resolve a user-supplied DID reference -- a full DID or a metadata handle --
  * to a stored DID. Anything starting with `did:` is returned as-is; otherwise
  * the metadata sidecars of all stored DIDs are searched for a matching

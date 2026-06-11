@@ -4,6 +4,14 @@
 
 ### Added
 
+- Add `key remove <id>` and `did remove <did>` commands (aliases: `delete`,
+  `rm`) to remove a locally stored key or DID from wallet storage, looked up
+  by fingerprint/DID or by metadata handle. `key remove` deletes the key file
+  and its `.meta.json` metadata sidecar; `did remove` deletes the DID
+  document, its `.keys.json` key file, and its `.meta.json` metadata sidecar,
+  and also scrubs the removed DID from the cached `dids` associations of any
+  matching wallet keys (the inverse of the caching done by
+  `did create --save` and `did add-key`).
 - Add metadata support for locally stored keys and DIDs, persisted as
   `.meta.json` sidecar files next to the stored item (`~/.wallet/keys/
   <storageId>.meta.json` and `~/.dids/<method>/<did>.meta.json`, following the

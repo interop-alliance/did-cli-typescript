@@ -704,6 +704,150 @@ describe('did key', () => {
     })
   })
 
+  describe('remove', () => {
+    it('removes the key file and its metadata sidecar', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'doomed'],
+          { from: 'user' }
+        )
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['remove', fingerprint], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, undefined)
+        assert.equal(errors.length, 2)
+        assert.ok(errors[0].startsWith('Removed '))
+        assert.ok(errors[1].startsWith('Removed '))
+        assert.ok(errors[1].endsWith('.meta.json'))
+        const remaining = await readdir(join(walletDir, 'keys'))
+        assert.deepEqual(remaining, [])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('removes a key without a metadata sidecar', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        // Remove the sidecar written by create to simulate a legacy key.
+        const filePath = errors[0].slice('Key saved to '.length)
+        await rm(filePath.replace(/\.json$/, '.meta.json'))
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['remove', fingerprint], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, undefined)
+        assert.equal(errors.length, 1)
+        const remaining = await readdir(join(walletDir, 'keys'))
+        assert.deepEqual(remaining, [])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('looks up a key by handle', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'doomed'],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['remove', 'doomed'], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, undefined)
+        const remaining = await readdir(join(walletDir, 'keys'))
+        assert.deepEqual(remaining, [])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('is aliased as delete and rm', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        for (const verb of ['delete', 'rm']) {
+          await makeKeyCommand().parseAsync(['create', '--save'], {
+            from: 'user'
+          })
+          const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+          logs.length = 0
+          errors.length = 0
+
+          await makeKeyCommand().parseAsync([verb, fingerprint], {
+            from: 'user'
+          })
+
+          assert.equal(exitCode, undefined, `verb: ${verb}`)
+          const remaining = await readdir(join(walletDir, 'keys'))
+          assert.deepEqual(remaining, [], `verb: ${verb}`)
+        }
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an unknown key', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['remove', 'z6MkUnknown'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('z6MkUnknown'))
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an ambiguous handle', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        for (let i = 0; i < 2; i++) {
+          await makeKeyCommand().parseAsync(
+            ['create', '--save', '--handle', 'dupe'],
+            { from: 'user' }
+          )
+        }
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['remove', 'dupe'], { from: 'user' })
+
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('dupe'))
+        // Nothing was removed.
+        const remaining = await readdir(join(walletDir, 'keys'))
+        assert.equal(remaining.length, 4)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
   describe('key-to-DID association', () => {
     it('derives the DIDs a stored key participates in', async () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))

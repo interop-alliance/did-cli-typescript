@@ -709,6 +709,134 @@ describe('di did', () => {
     })
   })
 
+  describe('remove', () => {
+    it('removes the DID document, keys file, and metadata sidecar', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'doomed'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
+
+        assert.equal(exitCode, undefined)
+        assert.equal(errors.length, 3)
+        for (const line of errors) {
+          assert.ok(line.startsWith('Removed '))
+        }
+        assert.deepEqual(await storedDids(didsDir), [])
+        const remaining = await readdir(join(didsDir, 'key'))
+        assert.deepEqual(remaining, [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('looks up a DID by handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'doomed'],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['remove', 'doomed'], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(await storedDids(didsDir), [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('is aliased as delete and rm', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        for (const verb of ['delete', 'rm']) {
+          await makeDidCommand().parseAsync(['create', '--save'], {
+            from: 'user'
+          })
+          const did = JSON.parse(logs[0]).id
+          logs.length = 0
+          errors.length = 0
+
+          await makeDidCommand().parseAsync([verb, did], { from: 'user' })
+
+          assert.equal(exitCode, undefined, `verb: ${verb}`)
+          assert.deepEqual(await storedDids(didsDir), [], `verb: ${verb}`)
+        }
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an unknown DID', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['remove', 'did:key:z6MkUnknown'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('did:key:z6MkUnknown'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('scrubs the cached association from matching wallet keys', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-wallet-'))
+      process.env.DIDS_DIR = didsDir
+      process.env.WALLET_DIR = walletDir
+      // ed25519 keys are seed-deterministic, so the wallet key and the DID's
+      // verification key coincide when created from the same seed.
+      process.env.SECRET_KEY_SEED =
+        'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        const keysDir = join(walletDir, 'keys')
+        const metaName = (await readdir(keysDir)).find(name =>
+          name.endsWith('.meta.json')
+        ) as string
+        let meta = JSON.parse(await readFile(join(keysDir, metaName), 'utf8'))
+        assert.deepEqual(meta.dids, [did])
+
+        await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
+
+        meta = JSON.parse(await readFile(join(keysDir, metaName), 'utf8'))
+        assert.equal(meta.dids, undefined)
+      } finally {
+        delete process.env.WALLET_DIR
+        await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
   describe('add-key', () => {
     it('updates the key-to-DID cache of a matching wallet key', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))

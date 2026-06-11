@@ -204,6 +204,18 @@ Metadata saved to /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
 Keys saved before metadata support get a sidecar created on first edit, with
 `created` backfilled from the date prefix of the key's file name.
 
+#### Remove a key pair
+
+Remove a stored key with `key remove` (aliases: `delete`, `rm`), looked up by
+fingerprint or handle. Both the key file and its `.meta.json` metadata sidecar
+are deleted:
+
+```
+./di key remove issuer-signing
+Removed /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....json
+Removed /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
+```
+
 ### DID Management
 
 #### Create a DID
@@ -455,6 +467,20 @@ Metadata saved to /home/user/.dids/key/did:key:z6Mkr....meta.json
   "handle": "demo-issuer",
   "description": "Issuer DID for the demo"
 }
+```
+
+#### Remove a DID
+
+Remove a stored DID with `did remove` (aliases: `delete`, `rm`), looked up by
+DID or handle. The DID document, its `.keys.json` key file, and its
+`.meta.json` metadata sidecar are all deleted, and the DID is scrubbed from
+the cached `dids` associations of any matching wallet keys:
+
+```
+./di did remove demo-issuer
+Removed /home/user/.dids/key/did:key:z6Mkr....json
+Removed /home/user/.dids/key/did:key:z6Mkr....keys.json
+Removed /home/user/.dids/key/did:key:z6Mkr....meta.json
 ```
 
 ### Verifiable Credentials

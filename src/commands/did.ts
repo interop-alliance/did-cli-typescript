@@ -12,11 +12,16 @@ import {
   loadDidDocument,
   loadDidKeys,
   loadDidMeta,
+  removeDidFiles,
   saveDidMeta,
   saveToDids,
   type ItemMetadata
 } from '../storage.js'
-import { recordKeyDidAssociation, resolveDidRef } from '../meta.js'
+import {
+  recordKeyDidAssociation,
+  removeKeyDidAssociation,
+  resolveDidRef
+} from '../meta.js'
 import { renderTable } from '../table.js'
 import {
   normalizeEcdsaCurve,
@@ -719,6 +724,49 @@ export function makeDidCommand(): Command {
         console.log(JSON.stringify(meta, null, 2))
       }
     )
+
+  did
+    .command('remove <did>')
+    .aliases(['delete', 'rm'])
+    .description(
+      'Remove a locally stored DID document, its keys file, and its ' +
+        'metadata sidecar (by DID or handle)'
+    )
+    .action(async (didRef: string) => {
+      let did: string | undefined
+      try {
+        did = await resolveDidRef({ ref: didRef })
+      } catch (err) {
+        console.error((err as Error).message)
+        process.exit(1)
+        return
+      }
+      let didDocument: {
+        verificationMethod?: { publicKeyMultibase?: string }[]
+      }
+      try {
+        didDocument = await loadDidDocument(did ?? didRef)
+      } catch {
+        console.error(`No locally stored DID found for ${didRef}`)
+        process.exit(1)
+        return
+      }
+      const docDid = did ?? didRef
+      // Scrub the cached key-to-DID associations of any matching wallet keys
+      // before the DID document (the source of truth) is deleted.
+      for (const method of didDocument.verificationMethod ?? []) {
+        if (method.publicKeyMultibase) {
+          await removeKeyDidAssociation({
+            publicKeyMultibase: method.publicKeyMultibase,
+            did: docDid
+          })
+        }
+      }
+      const removed = await removeDidFiles({ did: docDid })
+      for (const filePath of removed) {
+        console.error(`Removed ${filePath}`)
+      }
+    })
 
   return did
 }
