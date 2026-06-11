@@ -11,13 +11,66 @@ import {
   listDids,
   loadDidDocument,
   loadDidKeys,
-  saveToDids
+  loadDidMeta,
+  saveDidMeta,
+  saveToDids,
+  type ItemMetadata
 } from '../storage.js'
+import { recordKeyDidAssociation, resolveDidRef } from '../meta.js'
+import { renderTable } from '../table.js'
 import {
   normalizeEcdsaCurve,
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
+
+/**
+ * Save the artifacts of a newly created DID: the DID document, its keys file,
+ * a metadata sidecar (creation timestamp plus the handle and description when
+ * given), and the key-to-DID association cache of any matching wallet keys.
+ *
+ * @param options {object}
+ * @param options.method {string}
+ * @param options.didDocument {object}
+ * @param options.exportedKeys {object}
+ * @param options.fingerprints {(string | undefined)[]}
+ * @param [options.handle] {string}
+ * @param [options.description] {string}
+ * @returns {Promise<void>}
+ */
+async function saveDidArtifacts({
+  method,
+  didDocument,
+  exportedKeys,
+  fingerprints,
+  handle,
+  description
+}: {
+  method: string
+  didDocument: object
+  exportedKeys: object
+  fingerprints: (string | undefined)[]
+  handle?: string
+  description?: string
+}): Promise<void> {
+  const did = (didDocument as { id: string }).id
+  const docPath = await saveToDids({ method, did, data: didDocument })
+  await saveToDids({ method, did, suffix: 'keys', data: exportedKeys })
+  const meta: ItemMetadata = { created: new Date().toISOString() }
+  if (handle) {
+    meta.handle = handle
+  }
+  if (description) {
+    meta.description = description
+  }
+  await saveDidMeta({ did, meta })
+  for (const fingerprint of fingerprints) {
+    if (fingerprint) {
+      await recordKeyDidAssociation({ publicKeyMultibase: fingerprint, did })
+    }
+  }
+  console.error(`DID saved to ${docPath}`)
+}
 
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
@@ -44,6 +97,14 @@ export function makeDidCommand(): Command {
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
     .option('--save', 'save the DID document to local storage (~/.dids/)')
+    .option(
+      '--handle <handle>',
+      'short tag for the saved DID (requires --save)'
+    )
+    .option(
+      '--description <description>',
+      'longer description of the saved DID (requires --save)'
+    )
     .action(
       async (
         method: string = 'key',
@@ -53,8 +114,18 @@ export function makeDidCommand(): Command {
           url?: string
           withSeed?: boolean
           save?: boolean
+          handle?: string
+          description?: string
         }
       ) => {
+        if (
+          (options.handle !== undefined || options.description !== undefined) &&
+          !options.save
+        ) {
+          console.error('--handle and --description require --save')
+          process.exit(1)
+          return
+        }
         switch (method) {
           case 'key': {
             switch (options.type) {
@@ -77,23 +148,21 @@ export function makeDidCommand(): Command {
                 })
 
                 if (options.save) {
-                  const did = didDocument.id as string
                   const exported = await keyPair.export({
                     publicKey: true,
                     secretKey: true
                   })
-                  const docPath = await saveToDids({
+                  await saveDidArtifacts({
                     method: 'key',
-                    did,
-                    data: didDocument
+                    didDocument,
+                    exportedKeys: exported,
+                    fingerprints: [
+                      (exported as { publicKeyMultibase?: string })
+                        .publicKeyMultibase
+                    ],
+                    handle: options.handle,
+                    description: options.description
                   })
-                  await saveToDids({
-                    method: 'key',
-                    did,
-                    suffix: 'keys',
-                    data: exported
-                  })
-                  console.error(`DID saved to ${docPath}`)
                 }
 
                 const output: Record<string, unknown> = { id: didDocument.id }
@@ -132,23 +201,21 @@ export function makeDidCommand(): Command {
                 })
 
                 if (options.save) {
-                  const did = didDocument.id as string
                   const exported = await keyPair.export({
                     publicKey: true,
                     secretKey: true
                   })
-                  const docPath = await saveToDids({
+                  await saveDidArtifacts({
                     method: 'key',
-                    did,
-                    data: didDocument
+                    didDocument,
+                    exportedKeys: exported,
+                    fingerprints: [
+                      (exported as { publicKeyMultibase?: string })
+                        .publicKeyMultibase
+                    ],
+                    handle: options.handle,
+                    description: options.description
                   })
-                  await saveToDids({
-                    method: 'key',
-                    did,
-                    suffix: 'keys',
-                    data: exported
-                  })
-                  console.error(`DID saved to ${docPath}`)
                 }
 
                 const output: Record<string, unknown> = { id: didDocument.id }
@@ -190,26 +257,24 @@ export function makeDidCommand(): Command {
                 })
 
                 if (options.save) {
-                  const did = didDocument.id as string
                   const exported: Record<string, unknown> = {}
+                  const fingerprints: (string | undefined)[] = []
                   for (const [methodId, keyPair] of keyPairs) {
-                    exported[methodId] = await keyPair.export({
+                    const exportedKey = (await keyPair.export({
                       publicKey: true,
                       secretKey: true
-                    })
+                    })) as { publicKeyMultibase?: string }
+                    exported[methodId] = exportedKey
+                    fingerprints.push(exportedKey.publicKeyMultibase)
                   }
-                  const docPath = await saveToDids({
+                  await saveDidArtifacts({
                     method: 'web',
-                    did,
-                    data: didDocument
+                    didDocument,
+                    exportedKeys: exported,
+                    fingerprints,
+                    handle: options.handle,
+                    description: options.description
                   })
-                  await saveToDids({
-                    method: 'web',
-                    did,
-                    suffix: 'keys',
-                    data: exported
-                  })
-                  console.error(`DID saved to ${docPath}`)
                 }
 
                 const output: Record<string, unknown> = { id: didDocument.id }
@@ -256,26 +321,24 @@ export function makeDidCommand(): Command {
                 })
 
                 if (options.save) {
-                  const did = didDocument.id as string
                   const exported: Record<string, unknown> = {}
+                  const fingerprints: (string | undefined)[] = []
                   for (const [methodId, savedKey] of keyPairs) {
-                    exported[methodId] = await savedKey.export({
+                    const exportedKey = (await savedKey.export({
                       publicKey: true,
                       secretKey: true
-                    })
+                    })) as { publicKeyMultibase?: string }
+                    exported[methodId] = exportedKey
+                    fingerprints.push(exportedKey.publicKeyMultibase)
                   }
-                  const docPath = await saveToDids({
+                  await saveDidArtifacts({
                     method: 'web',
-                    did,
-                    data: didDocument
+                    didDocument,
+                    exportedKeys: exported,
+                    fingerprints,
+                    handle: options.handle,
+                    description: options.description
                   })
-                  await saveToDids({
-                    method: 'web',
-                    did,
-                    suffix: 'keys',
-                    data: exported
-                  })
-                  console.error(`DID saved to ${docPath}`)
                 }
 
                 const output: Record<string, unknown> = { id: didDocument.id }
@@ -412,11 +475,14 @@ export function makeDidCommand(): Command {
         }
 
         // Merge the new key into the stored keys file (keyed by VM id).
+        const addedFingerprints: (string | undefined)[] = []
         for (const [methodId, addedKey] of keyPairs) {
-          exportedKeys[methodId] = await addedKey.export({
+          const exportedKey = (await addedKey.export({
             publicKey: true,
             secretKey: true
-          })
+          })) as { publicKeyMultibase?: string }
+          exportedKeys[methodId] = exportedKey
+          addedFingerprints.push(exportedKey.publicKeyMultibase)
         }
         const docPath = await saveToDids({
           method: 'web',
@@ -429,6 +495,16 @@ export function makeDidCommand(): Command {
           suffix: 'keys',
           data: exportedKeys
         })
+        // Update the key-to-DID cache of any matching wallet keys; the DID's
+        // own metadata sidecar is left untouched.
+        for (const fingerprint of addedFingerprints) {
+          if (fingerprint) {
+            await recordKeyDidAssociation({
+              publicKeyMultibase: fingerprint,
+              did
+            })
+          }
+        }
         console.error(`DID saved to ${docPath}`)
 
         const output: Record<string, unknown> = { id: didDocument.id }
@@ -452,35 +528,197 @@ export function makeDidCommand(): Command {
   did
     .command('show <did>')
     .aliases(['view', 'cat'])
-    .description('Show a locally stored DID document (no secret key material)')
-    .action(async (did: string) => {
-      let didDocument: Record<string, unknown>
-      try {
-        didDocument = await loadDidDocument(did)
-      } catch {
-        console.error(`No locally stored DID found for ${did}`)
-        process.exit(1)
-        return
+    .description(
+      'Show a locally stored DID document (no secret key material) by DID ' +
+        'or handle'
+    )
+    .option('--meta', 'show the DID metadata instead of the DID document')
+    .option('--json', 'with --meta, output the metadata as JSON')
+    .action(
+      async (didRef: string, options: { meta?: boolean; json?: boolean }) => {
+        let did: string | undefined
+        try {
+          did = await resolveDidRef({ ref: didRef })
+        } catch (err) {
+          console.error((err as Error).message)
+          process.exit(1)
+          return
+        }
+        let didDocument: Record<string, unknown>
+        try {
+          didDocument = await loadDidDocument(did ?? didRef)
+        } catch {
+          console.error(`No locally stored DID found for ${didRef}`)
+          process.exit(1)
+          return
+        }
+
+        if (options.meta) {
+          const docDid = didDocument.id as string
+          const meta = await loadDidMeta({ did: docDid })
+          const keyCount = Array.isArray(didDocument.verificationMethod)
+            ? didDocument.verificationMethod.length
+            : 0
+          if (options.json) {
+            const output = {
+              did: docDid,
+              method: docDid.split(':')[1],
+              ...(meta?.created && { created: meta.created }),
+              ...(meta?.handle && { handle: meta.handle }),
+              ...(meta?.description && { description: meta.description }),
+              keys: keyCount
+            }
+            console.log(JSON.stringify(output, null, 2))
+            return
+          }
+          const rows = [
+            ['DID', docDid],
+            ['Method', docDid.split(':')[1]],
+            ['Handle', meta?.handle ?? ''],
+            ['Created', meta?.created ?? ''],
+            ['Description', meta?.description ?? ''],
+            ['Keys', String(keyCount)]
+          ]
+          console.log(
+            renderTable({
+              columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
+              rows
+            })
+          )
+          return
+        }
+
+        // The stored DID document holds no secret material -- signing keys live in
+        // the separate `<did>.keys.json` file -- so it is safe to print as-is.
+        console.log(JSON.stringify(didDocument, null, 2))
       }
-      // The stored DID document holds no secret material -- signing keys live in
-      // the separate `<did>.keys.json` file -- so it is safe to print as-is.
-      console.log(JSON.stringify(didDocument, null, 2))
-    })
+    )
 
   did
     .command('list')
-    .description('List locally stored DIDs')
-    .option('--json', 'output the list of DIDs as a JSON array')
-    .action(async (options: { json?: boolean }) => {
+    .description('List locally stored DIDs with their metadata')
+    .option(
+      '--json',
+      'output the list as a JSON array of objects with metadata'
+    )
+    .option('--plain', 'output one DID per line, sorted (no metadata)')
+    .action(async (options: { json?: boolean; plain?: boolean }) => {
       const dids = await listDids()
-      if (options.json) {
-        console.log(JSON.stringify(dids, null, 2))
+      if (options.plain) {
+        for (const did of dids) {
+          console.log(did)
+        }
         return
       }
+
+      const entries: ({ did: string; method: string } & ItemMetadata)[] = []
       for (const did of dids) {
-        console.log(did)
+        const meta = await loadDidMeta({ did })
+        entries.push({ did, method: did.split(':')[1], ...meta })
       }
+
+      if (options.json) {
+        const output = entries.map(entry => ({
+          did: entry.did,
+          method: entry.method,
+          ...(entry.created && { created: entry.created }),
+          ...(entry.handle && { handle: entry.handle }),
+          ...(entry.description && { description: entry.description })
+        }))
+        console.log(JSON.stringify(output, null, 2))
+        return
+      }
+
+      if (entries.length === 0) {
+        return
+      }
+      const rows = entries.map(entry => [
+        entry.handle ?? '',
+        entry.method,
+        entry.created?.slice(0, 10) ?? '',
+        entry.did,
+        entry.description ?? ''
+      ])
+      console.log(
+        renderTable({
+          columns: [
+            { header: 'HANDLE', maxWidth: 16 },
+            { header: 'METHOD' },
+            { header: 'CREATED' },
+            { header: 'DID', maxWidth: 44 },
+            { header: 'DESCRIPTION', maxWidth: 40 }
+          ],
+          rows
+        })
+      )
     })
+
+  did
+    .command('meta <did>')
+    .description(
+      'Show or edit the metadata of a locally stored DID (by DID or handle); ' +
+        'with no options, prints the current metadata'
+    )
+    .option('--handle <handle>', 'set the handle (an empty string clears it)')
+    .option(
+      '--description <description>',
+      'set the description (an empty string clears it)'
+    )
+    .action(
+      async (
+        didRef: string,
+        options: { handle?: string; description?: string }
+      ) => {
+        let did: string | undefined
+        try {
+          did = await resolveDidRef({ ref: didRef })
+        } catch (err) {
+          console.error((err as Error).message)
+          process.exit(1)
+          return
+        }
+        if (did) {
+          // Refuse to create metadata for DIDs that are not saved locally.
+          try {
+            await loadDidDocument(did)
+          } catch {
+            did = undefined
+          }
+        }
+        if (!did) {
+          console.error(`No locally stored DID found for ${didRef}`)
+          process.exit(1)
+          return
+        }
+
+        const existing = await loadDidMeta({ did })
+        const hasEdits =
+          options.handle !== undefined || options.description !== undefined
+        if (!hasEdits) {
+          console.log(JSON.stringify(existing ?? {}, null, 2))
+          return
+        }
+
+        const meta: ItemMetadata = { ...(existing ?? {}) }
+        if (options.handle !== undefined) {
+          if (options.handle === '') {
+            delete meta.handle
+          } else {
+            meta.handle = options.handle
+          }
+        }
+        if (options.description !== undefined) {
+          if (options.description === '') {
+            delete meta.description
+          } else {
+            meta.description = options.description
+          }
+        }
+        const filePath = await saveDidMeta({ did, meta })
+        console.error(`Metadata saved to ${filePath}`)
+        console.log(JSON.stringify(meta, null, 2))
+      }
+    )
 
   return did
 }

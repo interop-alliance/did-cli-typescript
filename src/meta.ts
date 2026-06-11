@@ -1,0 +1,200 @@
+/**
+ * Metadata derivation and resolution logic layered on top of the raw storage
+ * helpers: parsing key storage IDs, deriving key-to-DID associations from the
+ * stored DID documents, caching those associations in key metadata sidecars,
+ * and resolving user-supplied key references (fingerprint or handle).
+ */
+
+import {
+  findStoredKey,
+  listCollection,
+  listDids,
+  loadDidDocument,
+  loadDidMeta,
+  loadFromCollection,
+  loadMetaFromCollection,
+  saveMetaToCollection,
+  type KeyMetadata
+} from './storage.js'
+
+/**
+ * Parse a key storage ID of the form `YYYY-MM-DD-<type>[-<curve>]-<rawId>`
+ * into its date, key type, and (for ecdsa) curve components. Returns empty
+ * fields for storage IDs that do not match the convention.
+ *
+ * @param options {object}
+ * @param options.storageId {string}
+ * @returns {{date?: string, type?: string, curve?: string}}
+ */
+export function parseKeyStorageId({ storageId }: { storageId: string }): {
+  date?: string
+  type?: string
+  curve?: string
+} {
+  const match = storageId.match(
+    /^(\d{4}-\d{2}-\d{2})-(ed25519|ecdsa)(?:-(p\d{3}))?-/
+  )
+  if (!match) {
+    return {}
+  }
+  return { date: match[1], type: match[2], curve: match[3] }
+}
+
+/**
+ * Derive the key-to-DID associations from the locally stored DID documents.
+ *
+ * Performs a single pass over all saved DIDs and returns a map from each
+ * verification method's publicKeyMultibase to the sorted DIDs whose documents
+ * reference it. This is the source of truth shown by `key list` / `key show`;
+ * the `dids` cached in key metadata sidecars is never displayed directly.
+ *
+ * @returns {Promise<Map<string, string[]>>}
+ */
+export async function mapFingerprintsToDids(): Promise<Map<string, string[]>> {
+  const fingerprintDids = new Map<string, string[]>()
+  const dids = await listDids()
+  for (const did of dids) {
+    const didDocument = await loadDidDocument<{
+      verificationMethod?: { publicKeyMultibase?: string }[]
+    }>(did)
+    for (const method of didDocument.verificationMethod ?? []) {
+      if (!method.publicKeyMultibase) {
+        continue
+      }
+      const entries = fingerprintDids.get(method.publicKeyMultibase) ?? []
+      if (!entries.includes(did)) {
+        entries.push(did)
+      }
+      fingerprintDids.set(method.publicKeyMultibase, entries)
+    }
+  }
+  for (const entries of fingerprintDids.values()) {
+    entries.sort()
+  }
+  return fingerprintDids
+}
+
+/**
+ * Record in a wallet key's metadata sidecar that the key participates in a
+ * DID document. No-op when no wallet key matches the fingerprint. The cached
+ * `dids` list is deduplicated and sorted; the sidecar is created if needed.
+ *
+ * @param options {object}
+ * @param options.publicKeyMultibase {string}
+ * @param options.did {string}
+ * @returns {Promise<void>}
+ */
+export async function recordKeyDidAssociation({
+  publicKeyMultibase,
+  did
+}: {
+  publicKeyMultibase: string
+  did: string
+}): Promise<void> {
+  const found = await findStoredKey({ fingerprint: publicKeyMultibase })
+  if (!found) {
+    return
+  }
+  const meta =
+    (await loadMetaFromCollection({
+      collection: 'keys',
+      storageId: found.storageId
+    })) ?? {}
+  const dids = [...new Set([...(meta.dids ?? []), did])].sort()
+  await saveMetaToCollection({
+    collection: 'keys',
+    storageId: found.storageId,
+    meta: { ...meta, dids }
+  })
+}
+
+/**
+ * Resolve a user-supplied DID reference -- a full DID or a metadata handle --
+ * to a stored DID. Anything starting with `did:` is returned as-is; otherwise
+ * the metadata sidecars of all stored DIDs are searched for a matching
+ * handle. Throws when a handle matches more than one DID (handles are not
+ * unique). Returns undefined when nothing matches.
+ *
+ * @param options {object}
+ * @param options.ref {string}
+ * @returns {Promise<string | undefined>}
+ */
+export async function resolveDidRef({
+  ref
+}: {
+  ref: string
+}): Promise<string | undefined> {
+  if (ref.startsWith('did:')) {
+    return ref
+  }
+  const dids = await listDids()
+  const matches: string[] = []
+  for (const did of dids) {
+    const meta = await loadDidMeta({ did })
+    if (meta?.handle === ref) {
+      matches.push(did)
+    }
+  }
+  if (matches.length === 0) {
+    return undefined
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Handle "${ref}" matches ${matches.length} DIDs; ` +
+        'use the full DID instead.'
+    )
+  }
+  return matches[0]
+}
+
+/**
+ * Resolve a user-supplied key reference -- a publicKeyMultibase fingerprint
+ * or a metadata handle -- to a stored wallet key. Fingerprint matches take
+ * precedence; otherwise the metadata sidecars are searched for a matching
+ * handle. Throws when a handle matches more than one key (handles are not
+ * unique). Returns undefined when nothing matches.
+ *
+ * @param options {object}
+ * @param options.ref {string}
+ * @returns {Promise<{storageId: string, key: object, meta?: KeyMetadata} | undefined>}
+ */
+export async function resolveKeyRef({ ref }: { ref: string }): Promise<
+  | {
+      storageId: string
+      key: { publicKeyMultibase?: string; secretKeyMultibase?: string }
+      meta?: KeyMetadata
+    }
+  | undefined
+> {
+  const byFingerprint = await findStoredKey({ fingerprint: ref })
+  if (byFingerprint) {
+    const meta = await loadMetaFromCollection({
+      collection: 'keys',
+      storageId: byFingerprint.storageId
+    })
+    return { ...byFingerprint, meta }
+  }
+  const storageIds = await listCollection('keys')
+  const matches: { storageId: string; meta: KeyMetadata }[] = []
+  for (const storageId of storageIds) {
+    const meta = await loadMetaFromCollection({ collection: 'keys', storageId })
+    if (meta?.handle === ref) {
+      matches.push({ storageId, meta })
+    }
+  }
+  if (matches.length === 0) {
+    return undefined
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Handle "${ref}" matches ${matches.length} keys; ` +
+        'use the publicKeyMultibase fingerprint instead.'
+    )
+  }
+  const { storageId, meta } = matches[0]
+  const key = await loadFromCollection<{
+    publicKeyMultibase?: string
+    secretKeyMultibase?: string
+  }>('keys', storageId)
+  return { storageId, key, meta }
+}

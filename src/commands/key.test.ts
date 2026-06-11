@@ -1,18 +1,21 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeKeyCommand } from './key.js'
+import { makeDidCommand } from './did.js'
 
 async function storedFingerprints(walletDir: string): Promise<string[]> {
   const keysDir = join(walletDir, 'keys')
   const fileNames = await readdir(keysDir)
   const fingerprints = await Promise.all(
-    fileNames.map(async name => {
-      const key = JSON.parse(await readFile(join(keysDir, name), 'utf8'))
-      return key.publicKeyMultibase as string
-    })
+    fileNames
+      .filter(name => !name.endsWith('.meta.json'))
+      .map(async name => {
+        const key = JSON.parse(await readFile(join(keysDir, name), 'utf8'))
+        return key.publicKeyMultibase as string
+      })
   )
   return fingerprints.sort()
 }
@@ -206,6 +209,48 @@ describe('did key', () => {
         await rm(walletDir, { recursive: true })
       }
     })
+
+    it('--save writes a .meta.json sidecar with created/handle/description', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          [
+            'create',
+            '--save',
+            '--handle',
+            'signing',
+            '--description',
+            'demo key'
+          ],
+          { from: 'user' }
+        )
+        const filePath = errors[0].slice('Key saved to '.length)
+        const metaPath = filePath.replace(/\.json$/, '.meta.json')
+        const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+        assert.match(meta.created, /^\d{4}-\d{2}-\d{2}T/)
+        assert.equal(meta.handle, 'signing')
+        assert.equal(meta.description, 'demo key')
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for --handle without --save', async () => {
+      await makeKeyCommand().parseAsync(['create', '--handle', 'x'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--save'))
+    })
+
+    it('exits with error for --description without --save', async () => {
+      await makeKeyCommand().parseAsync(['create', '--description', 'x'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--save'))
+    })
   })
 
   describe('list', () => {
@@ -228,7 +273,7 @@ describe('did key', () => {
       assert.equal(logs.length, 0)
     })
 
-    it('prints key fingerprints, one per line, sorted', async () => {
+    it('--plain prints key fingerprints, one per line, sorted', async () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.WALLET_DIR = walletDir
       try {
@@ -241,7 +286,9 @@ describe('did key', () => {
         logs.length = 0
         errors.length = 0
 
-        await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+        await makeKeyCommand().parseAsync(['list', '--plain'], {
+          from: 'user'
+        })
 
         const expected = await storedFingerprints(walletDir)
         assert.equal(logs.length, 2)
@@ -254,13 +301,41 @@ describe('did key', () => {
       }
     })
 
-    it('--json outputs the key fingerprints as a JSON array', async () => {
+    it('prints a metadata table by default', async () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.WALLET_DIR = walletDir
       try {
-        await makeKeyCommand().parseAsync(['create', '--save'], {
-          from: 'user'
-        })
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'signing', '--description', 'demo'],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+
+        assert.equal(logs.length, 1)
+        const [header, separator, row] = logs[0].split('\n')
+        assert.match(
+          header,
+          /^HANDLE\s+TYPE\s+CREATED\s+FINGERPRINT\s+DIDS\s+DESCRIPTION$/
+        )
+        assert.match(separator, /^-+(\s+-+)+$/)
+        assert.match(row, /^signing\s+ed25519\s+\d{4}-\d{2}-\d{2}\s+z6Mk/)
+        assert.match(row, /demo$/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('--json outputs an array of objects with metadata', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'signing'],
+          { from: 'user' }
+        )
         logs.length = 0
         errors.length = 0
 
@@ -268,7 +343,38 @@ describe('did key', () => {
 
         const parsed = JSON.parse(logs[0])
         const expected = await storedFingerprints(walletDir)
-        assert.deepEqual(parsed, expected)
+        assert.equal(parsed.length, 1)
+        assert.equal(parsed[0].fingerprint, expected[0])
+        assert.equal(parsed[0].type, 'ed25519')
+        assert.equal(parsed[0].handle, 'signing')
+        assert.match(parsed[0].created, /^\d{4}-\d{2}-\d{2}T/)
+        assert.deepEqual(parsed[0].dids, [])
+        assert.ok(parsed[0].storageId)
+        assert.equal(parsed[0].description, undefined)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('tolerates an orphaned .meta.json sidecar', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        await writeFile(
+          join(walletDir, 'keys', 'orphan.meta.json'),
+          JSON.stringify({ handle: 'ghost' }),
+          'utf8'
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['list'], { from: 'user' })
+
+        assert.equal(logs.length, 1)
+        assert.ok(!logs[0].includes('ghost'))
       } finally {
         await rm(walletDir, { recursive: true })
       }
@@ -381,6 +487,273 @@ describe('did key', () => {
         assert.ok(errors[0].includes('z6MkUnknown'))
       } finally {
         await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('looks up a key by handle', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'signing'],
+          { from: 'user' }
+        )
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+
+        await makeKeyCommand().parseAsync(['show', 'signing'], {
+          from: 'user'
+        })
+
+        assert.equal(JSON.parse(logs[0]).publicKeyMultibase, fingerprint)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an ambiguous handle', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        for (let i = 0; i < 2; i++) {
+          await makeKeyCommand().parseAsync(
+            ['create', '--save', '--handle', 'dupe'],
+            { from: 'user' }
+          )
+        }
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['show', 'dupe'], { from: 'user' })
+
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('dupe'))
+        assert.ok(errors[0].includes('2 keys'))
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('--meta prints a vertical metadata table', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'signing', '--description', 'demo'],
+          { from: 'user' }
+        )
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+
+        await makeKeyCommand().parseAsync(['show', fingerprint, '--meta'], {
+          from: 'user'
+        })
+
+        const lines = logs[0].split('\n')
+        assert.match(lines[0], /^FIELD\s+VALUE$/)
+        assert.ok(logs[0].includes(fingerprint))
+        assert.match(logs[0], /Handle\s+signing/)
+        assert.match(logs[0], /Description\s+demo/)
+        assert.match(logs[0], /Type\s+ed25519/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('--meta --json prints the metadata object', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'signing'],
+          { from: 'user' }
+        )
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['show', fingerprint, '--meta', '--json'],
+          { from: 'user' }
+        )
+
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.fingerprint, fingerprint)
+        assert.equal(parsed.handle, 'signing')
+        assert.equal(parsed.type, 'ed25519')
+        assert.deepEqual(parsed.dids, [])
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('meta', () => {
+    it('prints {} for a key without a sidecar', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        // Remove the sidecar written by create to simulate a legacy key.
+        const filePath = errors[0].slice('Key saved to '.length)
+        await rm(filePath.replace(/\.json$/, '.meta.json'))
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(['meta', fingerprint], {
+          from: 'user'
+        })
+
+        assert.deepEqual(JSON.parse(logs[0]), {})
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('sets handle and description', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['meta', fingerprint, '--handle', 'h1', '--description', 'd1'],
+          { from: 'user' }
+        )
+
+        assert.ok(errors[0].startsWith('Metadata saved to '))
+        const saved = JSON.parse(logs[0])
+        assert.equal(saved.handle, 'h1')
+        assert.equal(saved.description, 'd1')
+        assert.match(saved.created, /^\d{4}-\d{2}-\d{2}/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('clears a field with an empty string', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--save', '--handle', 'h1'],
+          { from: 'user' }
+        )
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['meta', fingerprint, '--handle', ''],
+          { from: 'user' }
+        )
+
+        const saved = JSON.parse(logs[0])
+        assert.equal(saved.handle, undefined)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('backfills created from the storage ID date for legacy keys', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        const filePath = errors[0].slice('Key saved to '.length)
+        // Remove the sidecar to simulate a key saved before metadata existed.
+        await rm(filePath.replace(/\.json$/, '.meta.json'))
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['meta', fingerprint, '--handle', 'legacy'],
+          { from: 'user' }
+        )
+
+        const saved = JSON.parse(logs[0])
+        // Date-only created, derived from the YYYY-MM-DD filename prefix.
+        assert.match(saved.created, /^\d{4}-\d{2}-\d{2}$/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an unknown key', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(['meta', 'z6MkUnknown'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('z6MkUnknown'))
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('key-to-DID association', () => {
+    it('derives the DIDs a stored key participates in', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-dids-'))
+      process.env.WALLET_DIR = walletDir
+      process.env.DIDS_DIR = didsDir
+      // ed25519 keys are seed-deterministic, so the wallet key and the DID's
+      // verification key coincide when created from the same seed.
+      process.env.SECRET_KEY_SEED =
+        'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      try {
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const fingerprint = JSON.parse(logs[0]).publicKeyMultibase
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        // show --meta --json reports the derived association
+        await makeKeyCommand().parseAsync(
+          ['show', fingerprint, '--meta', '--json'],
+          { from: 'user' }
+        )
+        assert.deepEqual(JSON.parse(logs[0]).dids, [did])
+        logs.length = 0
+
+        // list --json reports it as well
+        await makeKeyCommand().parseAsync(['list', '--json'], { from: 'user' })
+        assert.deepEqual(JSON.parse(logs[0])[0].dids, [did])
+        logs.length = 0
+
+        // did create --save also cached the association in the sidecar
+        const keysDir = join(walletDir, 'keys')
+        const metaName = (await readdir(keysDir)).find(name =>
+          name.endsWith('.meta.json')
+        ) as string
+        const meta = JSON.parse(await readFile(join(keysDir, metaName), 'utf8'))
+        assert.deepEqual(meta.dids, [did])
+      } finally {
+        delete process.env.DIDS_DIR
+        delete process.env.SECRET_KEY_SEED
+        await rm(walletDir, { recursive: true })
+        await rm(didsDir, { recursive: true })
       }
     })
   })

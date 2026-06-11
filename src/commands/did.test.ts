@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeDidCommand } from './did.js'
+import { makeKeyCommand } from './key.js'
 
 async function storedDids(didsDir: string): Promise<string[]> {
   const methodEntries = await readdir(didsDir, { withFileTypes: true })
@@ -14,7 +15,11 @@ async function storedDids(didsDir: string): Promise<string[]> {
     }
     const fileNames = await readdir(join(didsDir, methodEntry.name))
     for (const fileName of fileNames) {
-      if (!fileName.endsWith('.json') || fileName.endsWith('.keys.json')) {
+      if (
+        !fileName.endsWith('.json') ||
+        fileName.endsWith('.keys.json') ||
+        fileName.endsWith('.meta.json')
+      ) {
         continue
       }
       dids.push(fileName.slice(0, -'.json'.length))
@@ -141,6 +146,40 @@ describe('di did', () => {
       } finally {
         await rm(didsDir, { recursive: true })
       }
+    })
+
+    it('--save writes a .meta.json sidecar with created/handle/description', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            '--save',
+            '--handle',
+            'issuer',
+            '--description',
+            'demo DID'
+          ],
+          { from: 'user' }
+        )
+        const docPath = errors[0].slice('DID saved to '.length)
+        const metaPath = docPath.replace(/\.json$/, '.meta.json')
+        const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+        assert.match(meta.created, /^\d{4}-\d{2}-\d{2}T/)
+        assert.equal(meta.handle, 'issuer')
+        assert.equal(meta.description, 'demo DID')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for --handle without --save', async () => {
+      await makeDidCommand().parseAsync(['create', '--handle', 'x'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--save'))
     })
 
     it('creates an ecdsa did:key (p256 default curve)', async () => {
@@ -293,7 +332,7 @@ describe('di did', () => {
       assert.equal(logs.length, 0)
     })
 
-    it('prints stored DIDs, one per line, sorted', async () => {
+    it('--plain prints stored DIDs, one per line, sorted', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir
       try {
@@ -306,7 +345,9 @@ describe('di did', () => {
         logs.length = 0
         errors.length = 0
 
-        await makeDidCommand().parseAsync(['list'], { from: 'user' })
+        await makeDidCommand().parseAsync(['list', '--plain'], {
+          from: 'user'
+        })
 
         const expected = await storedDids(didsDir)
         assert.equal(logs.length, 2)
@@ -319,7 +360,7 @@ describe('di did', () => {
       }
     })
 
-    it('omits the .keys.json sidecar files', async () => {
+    it('omits the .keys.json and .meta.json sidecar files', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir
       try {
@@ -329,22 +370,57 @@ describe('di did', () => {
         logs.length = 0
         errors.length = 0
 
-        await makeDidCommand().parseAsync(['list'], { from: 'user' })
+        await makeDidCommand().parseAsync(['list', '--plain'], {
+          from: 'user'
+        })
 
         assert.equal(logs.length, 1)
         assert.ok(!logs[0].includes('.keys'))
+        assert.ok(!logs[0].includes('.meta'))
       } finally {
         await rm(didsDir, { recursive: true })
       }
     })
 
-    it('--json outputs the DIDs as a JSON array', async () => {
+    it('prints a metadata table by default', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir
       try {
-        await makeDidCommand().parseAsync(['create', '--save'], {
-          from: 'user'
-        })
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            '--save',
+            '--handle',
+            'issuer',
+            '--description',
+            'demo DID'
+          ],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['list'], { from: 'user' })
+
+        assert.equal(logs.length, 1)
+        const [header, separator, row] = logs[0].split('\n')
+        assert.match(header, /^HANDLE\s+METHOD\s+CREATED\s+DID\s+DESCRIPTION$/)
+        assert.match(separator, /^-+(\s+-+)+$/)
+        assert.match(row, /^issuer\s+key\s+\d{4}-\d{2}-\d{2}\s+did:key:/)
+        assert.match(row, /demo DID$/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--json outputs an array of objects with metadata', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
         logs.length = 0
         errors.length = 0
 
@@ -352,7 +428,12 @@ describe('di did', () => {
 
         const parsed = JSON.parse(logs[0])
         const expected = await storedDids(didsDir)
-        assert.deepEqual(parsed, expected)
+        assert.equal(parsed.length, 1)
+        assert.equal(parsed[0].did, expected[0])
+        assert.equal(parsed[0].method, 'key')
+        assert.equal(parsed[0].handle, 'issuer')
+        assert.match(parsed[0].created, /^\d{4}-\d{2}-\d{2}T/)
+        assert.equal(parsed[0].description, undefined)
       } finally {
         await rm(didsDir, { recursive: true })
       }
@@ -430,6 +511,244 @@ describe('di did', () => {
         assert.ok(errors[0].includes('did:key:z6MkUnknown'))
       } finally {
         await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('looks up a DID by handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', 'issuer'], { from: 'user' })
+
+        assert.equal(JSON.parse(logs[0]).id, did)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for an ambiguous handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        for (let i = 0; i < 2; i++) {
+          await makeDidCommand().parseAsync(
+            ['create', '--save', '--handle', 'dupe'],
+            { from: 'user' }
+          )
+        }
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['show', 'dupe'], { from: 'user' })
+
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('dupe'))
+        assert.ok(errors[0].includes('2 DIDs'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--meta prints a vertical metadata table', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            '--save',
+            '--handle',
+            'issuer',
+            '--description',
+            'demo DID'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did, '--meta'], {
+          from: 'user'
+        })
+
+        const lines = logs[0].split('\n')
+        assert.match(lines[0], /^FIELD\s+VALUE$/)
+        assert.ok(logs[0].includes(did))
+        assert.match(logs[0], /Method\s+key/)
+        assert.match(logs[0], /Handle\s+issuer/)
+        assert.match(logs[0], /Description\s+demo DID/)
+        assert.match(logs[0], /Keys\s+1/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--meta --json prints the metadata object', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did, '--meta', '--json'], {
+          from: 'user'
+        })
+
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.did, did)
+        assert.equal(parsed.method, 'key')
+        assert.equal(parsed.handle, 'issuer')
+        assert.equal(parsed.keys, 1)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('meta', () => {
+    it('prints the current metadata with no options', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['meta', did], { from: 'user' })
+
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.handle, 'issuer')
+        assert.match(parsed.created, /^\d{4}-\d{2}-\d{2}T/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('sets and clears handle and description', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['meta', did, '--handle', 'h1', '--description', 'd1'],
+          { from: 'user' }
+        )
+        assert.ok(errors[0].startsWith('Metadata saved to '))
+        let saved = JSON.parse(logs[0])
+        assert.equal(saved.handle, 'h1')
+        assert.equal(saved.description, 'd1')
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['meta', did, '--handle', ''], {
+          from: 'user'
+        })
+        saved = JSON.parse(logs[0])
+        assert.equal(saved.handle, undefined)
+        assert.equal(saved.description, 'd1')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('looks up a DID by handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['meta', 'issuer', '--description', 'updated'],
+          { from: 'user' }
+        )
+
+        const saved = JSON.parse(logs[0])
+        assert.equal(saved.handle, 'issuer')
+        assert.equal(saved.description, 'updated')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses to create metadata for an unsaved DID', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['meta', 'did:key:z6MkUnknown', '--handle', 'x'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('did:key:z6MkUnknown'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('add-key', () => {
+    it('updates the key-to-DID cache of a matching wallet key', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-wallet-'))
+      process.env.DIDS_DIR = didsDir
+      process.env.WALLET_DIR = walletDir
+      const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      try {
+        // Save a wallet key derived from a known seed.
+        process.env.SECRET_KEY_SEED = seed
+        await makeKeyCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        delete process.env.SECRET_KEY_SEED
+        logs.length = 0
+        errors.length = 0
+
+        // Create a did:web with a random (non-matching) key...
+        await makeDidCommand().parseAsync(
+          ['create', 'web', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        // ...then add a key derived from the wallet key's seed.
+        process.env.SECRET_KEY_SEED = seed
+        await makeDidCommand().parseAsync(['add-key', did], { from: 'user' })
+
+        const keysDir = join(walletDir, 'keys')
+        const metaName = (await readdir(keysDir)).find(name =>
+          name.endsWith('.meta.json')
+        ) as string
+        const meta = JSON.parse(await readFile(join(keysDir, metaName), 'utf8'))
+        assert.deepEqual(meta.dids, [did])
+      } finally {
+        delete process.env.WALLET_DIR
+        await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
       }
     })
   })

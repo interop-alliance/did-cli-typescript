@@ -21,10 +21,54 @@ DID.
 For example, for a DID of "did:method:abcd", the following files would be
 potentially created:
 
-- `~/.dids/method/did:method:abcd.json`
-- `~/.dids/method/did:method:abcd.keys.json`
-- `~/.dids/method/did:method:abcd.meta.json`
+- `~/.dids/method/did:method:abcd.json` -- the DID document
+- `~/.dids/method/did:method:abcd.keys.json` -- the signing key material
+- `~/.dids/method/did:method:abcd.meta.json` -- the metadata sidecar
 
 You can override the storage mechanism for each ledger method (to store JSON
 files in a different directory, or to use an in-memory `MockStore` for unit
 testing).
+
+## Metadata Sidecars
+
+User-editable metadata about stored keys and DIDs lives in `.meta.json`
+sidecar files, next to the item they describe. This keeps the stored items
+themselves spec-pure (key files are plain Multikey documents, DID files are
+plain DID documents), and means metadata edits never rewrite a file that
+holds secret key material.
+
+- Keys: `~/.wallet/keys/<storageId>.meta.json` (next to `<storageId>.json`)
+- DIDs: `~/.dids/<method>/<did>.meta.json` (next to `<did>.json`)
+
+A key sidecar looks like:
+
+```json
+{
+  "created": "2026-06-10T17:22:31.123Z",
+  "handle": "issuer-signing",
+  "description": "Production signing key for the demo issuer",
+  "dids": ["did:web:example.com"]
+}
+```
+
+A DID sidecar is the same, minus the `dids` field. All fields are optional and
+omitted when unset:
+
+- `created` -- ISO 8601 timestamp written when the item is saved. Items saved
+  before metadata support have no sidecar; `key meta` backfills a date-only
+  `created` from the `YYYY-MM-DD` prefix of the key's file name on first edit.
+- `handle` -- a short user-defined tag for telling items apart (set with
+  `--handle` on create, or via the `key meta` / `did meta` commands). Handles
+  are not required to be unique; commands that accept a handle exit with an
+  error when it is ambiguous.
+- `description` -- longer free-text description.
+- `dids` (keys only) -- a cache of the locally stored DIDs whose documents
+  reference the key. The value actually *displayed* by `key list` / `key show`
+  is always re-derived by scanning the saved DID documents for the key's
+  `publicKeyMultibase`, so the cache being stale is harmless. It is refreshed
+  whenever `did create --save` / `did add-key` saves a matching key, and on
+  every `key meta` write.
+
+A missing sidecar simply means "no metadata"; an orphaned sidecar (whose item
+was deleted by hand) is ignored. Note that CLI versions predating metadata
+support will mis-list a storage directory that contains `.meta.json` files.

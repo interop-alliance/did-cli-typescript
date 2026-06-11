@@ -4,6 +4,31 @@
 
 ### Added
 
+- Add metadata support for locally stored keys and DIDs, persisted as
+  `.meta.json` sidecar files next to the stored item (`~/.wallet/keys/
+  <storageId>.meta.json` and `~/.dids/<method>/<did>.meta.json`, following the
+  existing `.keys.json` sidecar pattern). Metadata fields: `created` (ISO 8601
+  timestamp written at `--save` time), `handle` (a short user-defined tag),
+  `description` (longer free text), and -- for keys -- `dids`, a cache of the
+  stored DIDs whose documents reference the key. Stored key files and DID
+  documents remain spec-pure Multikey / DID document JSON; a missing sidecar
+  means "no metadata" (no migration needed) and orphaned sidecars are ignored.
+- Add `--handle` / `--description` options to `key create --save` and
+  `did create --save` (exit `1` without `--save`), and new `key meta <id>` /
+  `did meta <did>` commands to show or edit metadata after the fact (no
+  options prints the current metadata; an empty string value clears a field;
+  metadata edits never rewrite the stored key/DID file). `key meta` backfills
+  `created` from the storage file name's date prefix for keys saved before
+  metadata support.
+- `key show`, `key meta`, `did show`, and `did meta` now also accept a
+  metadata handle in place of a fingerprint/DID (exit `1` when the handle is
+  ambiguous -- handles are not required to be unique).
+- Add `--meta` to `key show` and `did show` to display the item's metadata as
+  a vertical field/value table (or as JSON with `--meta --json`). The DIDs
+  shown for a key are always derived by scanning the locally stored DID
+  documents for the key's `publicKeyMultibase`, so they cannot go stale; the
+  cached `dids` list is refreshed by `did create --save`, `did add-key`, and
+  every `key meta` write.
 - Add `did show <did>` and `key show <id>` commands to display a locally stored
   DID document or key (aliases: `view`, `cat`). `did show` prints the stored DID
   document (which holds no secret material). `key show` looks up a stored key by
@@ -11,6 +36,18 @@
   it re-imports the stored key pair and re-exports the public half, so the secret
   key never appears in the output. These are distinct from a future `get`
   command, which will resolve DIDs/keys rather than read local storage.
+
+### Changed
+
+- **BREAKING**: `key list` and `did list` now print a metadata table by
+  default (`HANDLE | TYPE | CREATED | FINGERPRINT | DIDS | DESCRIPTION` for
+  keys; `HANDLE | METHOD | CREATED | DID | DESCRIPTION` for DIDs), ordered by
+  storage file name (chronological for keys) instead of by fingerprint. Pass
+  the new `--plain` flag for the previous one-item-per-line output.
+- **BREAKING**: `key list --json` and `did list --json` now output an array of
+  objects with metadata (`{fingerprint, storageId, type, curve?, created?,
+  handle?, description?, dids}` for keys; `{did, method, created?, handle?,
+  description?}` for DIDs) instead of an array of plain strings.
 
 ## 0.4.0 - 2026-06-09
 

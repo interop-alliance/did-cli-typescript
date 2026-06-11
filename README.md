@@ -93,33 +93,63 @@ ECDSA keys are serialized as Multikey, the same as Ed25519. Note that ECDSA key
 generation is non-deterministic (it cannot be derived from a seed), so
 `--with-seed` and `SECRET_KEY_SEED` are not supported with `--type ecdsa`.
 
+Save the key to local wallet storage (`~/.wallet/keys/` by default, or
+`$WALLET_DIR/keys/` if set) with `--save`. A `.meta.json` metadata sidecar is
+written next to the key, recording the creation timestamp; `--handle` (a short
+tag for telling keys apart) and `--description` add user-defined metadata to
+it (both require `--save`):
+
+```
+./di key create --save --handle issuer-signing --description 'Demo issuer signing key'
+Key saved to /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....json
+```
+
 #### List key pairs
 
-List the fingerprints (multibase-encoded public keys) of the key pairs saved in
-local wallet storage (via `key create --save`), one per line:
+List the key pairs saved in local wallet storage (via `key create --save`) as
+a table of their metadata. The DIDS column shows the locally stored DIDs whose
+documents reference the key, derived by scanning the saved DID documents:
 
 ```
 ./di key list
-z6Mkr...
-z6Mks...
+HANDLE          TYPE     CREATED     FINGERPRINT                   DIDS                 DESCRIPTION
+--------------  -------  ----------  ----------------------------  -------------------  -----------------------
+issuer-signing  ed25519  2026-06-10  z6MkrLBubwzwEv...MnCsdX2hM    did:key:z6MkrL...    Demo issuer signing key
 ```
 
-If no keys are stored, nothing is printed. Pass `--json` to output the
-fingerprints as a JSON array instead:
+If no keys are stored, nothing is printed. Pass `--json` to output the list as
+a JSON array of objects with metadata:
 
 ```
 ./di key list --json
 [
-  "z6Mkr...",
-  "z6Mks..."
+  {
+    "fingerprint": "z6Mkr...",
+    "storageId": "2026-06-10-ed25519-z6Mkr...",
+    "type": "ed25519",
+    "created": "2026-06-10T17:22:31.123Z",
+    "handle": "issuer-signing",
+    "description": "Demo issuer signing key",
+    "dids": ["did:key:z6Mkr..."]
+  }
 ]
+```
+
+Or pass `--plain` to print just the fingerprints (multibase-encoded public
+keys), one per line, sorted:
+
+```
+./di key list --plain
+z6Mkr...
+z6Mks...
 ```
 
 #### Show a key pair
 
 Display a key saved in local wallet storage, looked up by its fingerprint
-(`publicKeyMultibase`, as printed by `key list`). Only the public key object is
-shown -- the stored secret key is never included in the output:
+(`publicKeyMultibase`, as printed by `key list`) or by its metadata handle.
+Only the public key object is shown -- the stored secret key is never included
+in the output:
 
 ```
 ./di key show z6Mkr...
@@ -133,6 +163,46 @@ shown -- the stored secret key is never included in the output:
 ```
 
 Aliases: `view`, `cat`.
+
+Pass `--meta` to show the key's metadata instead of the public key object,
+including the DIDs the key participates in (derived from the locally stored
+DID documents):
+
+```
+./di key show issuer-signing --meta
+FIELD        VALUE
+-----------  ------------------------------------------------
+Fingerprint  z6Mkr...
+Type         ed25519
+Created      2026-06-10T17:22:31.123Z
+Handle       issuer-signing
+Description  Demo issuer signing key
+DIDs         did:key:z6Mkr...
+```
+
+`--meta --json` prints the same metadata as a JSON object.
+
+#### Edit key metadata
+
+Show or edit the metadata of a stored key with `key meta` (looked up by
+fingerprint or handle). With no options it prints the current metadata; with
+`--handle` / `--description` it updates the metadata sidecar (the key file
+itself is never rewritten). Passing an empty string clears a field:
+
+```
+./di key meta z6Mkr... --handle issuer-signing --description 'Demo issuer signing key'
+Metadata saved to /home/user/.wallet/keys/2026-06-10-ed25519-z6Mkr....meta.json
+{
+  "created": "2026-06-10T17:22:31.123Z",
+  "handle": "issuer-signing",
+  "description": "Demo issuer signing key"
+}
+
+./di key meta issuer-signing --description ''
+```
+
+Keys saved before metadata support get a sidecar created on first edit, with
+`created` backfilled from the date prefix of the key's file name.
 
 ### DID Management
 
@@ -192,16 +262,23 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di did create
 ```
 
 Save the DID document and key material to local storage with `--save`
-(written to `~/.dids/` by default, or `$DIDS_DIR` if set):
+(written to `~/.dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
+metadata sidecar is written next to the DID document, recording the creation
+timestamp; `--handle` and `--description` add user-defined metadata to it
+(both require `--save`):
 
 ```
-./di did create --save
+./di did create --save --handle demo-issuer
 DID saved to /home/user/.dids/key/did:key:z6Mkr....json
 {
   "id": "did:key:z6Mkr...",
   "didDocument": { ... }
 }
 ```
+
+If the DID's verification key also exists in the local wallet (e.g. both were
+derived from the same seed), saving the DID records the association in that
+key's metadata sidecar as well.
 
 #### Create a did:web DID
 
@@ -295,30 +372,45 @@ to derive the key deterministically. ECDSA keys are not seed-derivable, so
 
 #### List DIDs
 
-List the DIDs saved in local storage (via `id create --save`), one per line:
+List the DIDs saved in local storage (via `did create --save`) as a table of
+their metadata:
 
 ```
 ./di did list
-did:key:z6Mkr...
-did:key:z6Mks...
+HANDLE       METHOD  CREATED     DID                                           DESCRIPTION
+-----------  ------  ----------  --------------------------------------------  -----------
+demo-issuer  key     2026-06-10  did:key:z6MkrLBubwzwEvwms...6MHdf3EeQMnCsdX2hM
 ```
 
-If no DIDs are stored, nothing is printed. Pass `--json` to output the DIDs as
-a JSON array instead:
+If no DIDs are stored, nothing is printed. Pass `--json` to output the list as
+a JSON array of objects with metadata:
 
 ```
 ./di did list --json
 [
-  "did:key:z6Mkr...",
-  "did:key:z6Mks..."
+  {
+    "did": "did:key:z6Mkr...",
+    "method": "key",
+    "created": "2026-06-10T17:22:31.123Z",
+    "handle": "demo-issuer"
+  }
 ]
+```
+
+Or pass `--plain` to print just the DIDs, one per line, sorted:
+
+```
+./di did list --plain
+did:key:z6Mkr...
+did:key:z6Mks...
 ```
 
 #### Show a DID
 
-Display the DID document saved in local storage (via `did create --save`). The
-stored DID document holds no secret key material -- signing keys live in a
-separate key file -- so it is printed as-is:
+Display the DID document saved in local storage (via `did create --save`),
+looked up by DID or by its metadata handle. The stored DID document holds no
+secret key material -- signing keys live in a separate key file -- so it is
+printed as-is:
 
 ```
 ./di did show did:key:z6Mkr...
@@ -331,6 +423,39 @@ separate key file -- so it is printed as-is:
 ```
 
 Aliases: `view`, `cat`.
+
+Pass `--meta` to show the DID's metadata instead of the DID document:
+
+```
+./di did show demo-issuer --meta
+FIELD        VALUE
+-----------  ----------------------------------------------
+DID          did:key:z6Mkr...
+Method       key
+Handle       demo-issuer
+Created      2026-06-10T17:22:31.123Z
+Description
+Keys         1
+```
+
+`--meta --json` prints the same metadata as a JSON object.
+
+#### Edit DID metadata
+
+Show or edit the metadata of a stored DID with `did meta` (looked up by DID or
+handle). With no options it prints the current metadata; with `--handle` /
+`--description` it updates the metadata sidecar (the DID document itself is
+never rewritten). Passing an empty string clears a field:
+
+```
+./di did meta did:key:z6Mkr... --handle demo-issuer --description 'Issuer DID for the demo'
+Metadata saved to /home/user/.dids/key/did:key:z6Mkr....meta.json
+{
+  "created": "2026-06-10T17:22:31.123Z",
+  "handle": "demo-issuer",
+  "description": "Issuer DID for the demo"
+}
+```
 
 ### Verifiable Credentials
 

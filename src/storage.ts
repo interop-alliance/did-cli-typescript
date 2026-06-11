@@ -7,10 +7,34 @@ function getWalletDir(): string {
 }
 
 /**
+ * User-editable metadata stored in a `.meta.json` sidecar next to a wallet
+ * item or DID document. All fields are optional; a missing sidecar simply
+ * means "no metadata".
+ */
+export interface ItemMetadata {
+  /** ISO 8601 timestamp recorded when the item was saved. */
+  created?: string
+  /** Short user-defined tag for telling items apart. */
+  handle?: string
+  /** Longer free-text description. */
+  description?: string
+}
+
+/**
+ * Metadata for a stored key. `dids` caches the DIDs whose documents reference
+ * the key; the displayed value is always re-derived from the stored DID
+ * documents, so this cache may lag without harm.
+ */
+export interface KeyMetadata extends ItemMetadata {
+  dids?: string[]
+}
+
+/**
  * List the storage IDs of all items saved in a wallet collection.
  *
  * The storage ID of an item is its file name without the `.json` extension --
- * an internal addressing detail used to load the item back from storage. Returns
+ * an internal addressing detail used to load the item back from storage.
+ * `.meta.json` metadata sidecars are not items and are excluded. Returns
  * an empty array if the collection has no directory yet.
  *
  * @param collection {string}
@@ -28,7 +52,7 @@ export async function listCollection(collection: string): Promise<string[]> {
     throw err
   }
   return fileNames
-    .filter(name => name.endsWith('.json'))
+    .filter(name => name.endsWith('.json') && !name.endsWith('.meta.json'))
     .map(name => name.slice(0, -'.json'.length))
     .sort()
 }
@@ -60,6 +84,92 @@ export async function saveToCollection(
   return filePath
 }
 
+/**
+ * Load the `.meta.json` metadata sidecar of a wallet collection item.
+ *
+ * @param options {object}
+ * @param options.collection {string}
+ * @param options.storageId {string}
+ * @returns {Promise<KeyMetadata | undefined>} undefined when no sidecar exists.
+ */
+export async function loadMetaFromCollection({
+  collection,
+  storageId
+}: {
+  collection: string
+  storageId: string
+}): Promise<KeyMetadata | undefined> {
+  const filePath = join(getWalletDir(), collection, `${storageId}.meta.json`)
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8')) as KeyMetadata
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw err
+  }
+}
+
+/**
+ * Save the `.meta.json` metadata sidecar of a wallet collection item.
+ *
+ * @param options {object}
+ * @param options.collection {string}
+ * @param options.storageId {string}
+ * @param options.meta {KeyMetadata}
+ * @returns {Promise<string>} the sidecar file path.
+ */
+export async function saveMetaToCollection({
+  collection,
+  storageId,
+  meta
+}: {
+  collection: string
+  storageId: string
+  meta: KeyMetadata
+}): Promise<string> {
+  const dir = join(getWalletDir(), collection)
+  await mkdir(dir, { recursive: true })
+  const filePath = join(dir, `${storageId}.meta.json`)
+  await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf8')
+  return filePath
+}
+
+/**
+ * Find a stored wallet key by its publicKeyMultibase fingerprint.
+ *
+ * Fingerprints are not the file name (storage IDs carry a date/type prefix and
+ * may encode a full verification method id), so the lookup scans every key
+ * file in the collection.
+ *
+ * @param options {object}
+ * @param options.fingerprint {string}
+ * @returns {Promise<{storageId: string, key: object} | undefined>}
+ */
+export async function findStoredKey({
+  fingerprint
+}: {
+  fingerprint: string
+}): Promise<
+  | {
+      storageId: string
+      key: { publicKeyMultibase?: string; secretKeyMultibase?: string }
+    }
+  | undefined
+> {
+  const storageIds = await listCollection('keys')
+  for (const storageId of storageIds) {
+    const key = await loadFromCollection<{
+      publicKeyMultibase?: string
+      secretKeyMultibase?: string
+    }>('keys', storageId)
+    if (key.publicKeyMultibase === fingerprint) {
+      return { storageId, key }
+    }
+  }
+  return undefined
+}
+
 function getDidsDir(): string {
   return process.env.DIDS_DIR ?? join(homedir(), '.dids')
 }
@@ -68,9 +178,10 @@ function getDidsDir(): string {
  * List the DIDs saved in local storage, across all method subdirectories.
  *
  * Each saved DID is stored as `<did>.json` (the DID document) alongside a
- * `<did>.keys.json` key file; only the former is reported, and the DID is its
- * file name without the `.json` extension. Returns an empty array if no DIDs
- * have been saved yet.
+ * `<did>.keys.json` key file and an optional `<did>.meta.json` metadata
+ * sidecar; only the first is reported, and the DID is its file name without
+ * the `.json` extension. Returns an empty array if no DIDs have been saved
+ * yet.
  *
  * @returns {Promise<string[]>}
  */
@@ -92,7 +203,11 @@ export async function listDids(): Promise<string[]> {
     }
     const fileNames = await readdir(join(baseDir, methodEntry.name))
     for (const fileName of fileNames) {
-      if (!fileName.endsWith('.json') || fileName.endsWith('.keys.json')) {
+      if (
+        !fileName.endsWith('.json') ||
+        fileName.endsWith('.keys.json') ||
+        fileName.endsWith('.meta.json')
+      ) {
         continue
       }
       dids.push(fileName.slice(0, -'.json'.length))
@@ -129,6 +244,49 @@ export async function loadDidKeys<T = unknown>(did: string): Promise<T> {
   const method = did.split(':')[1]
   const filePath = join(getDidsDir(), method, `${did}.keys.json`)
   return JSON.parse(await readFile(filePath, 'utf8')) as T
+}
+
+/**
+ * Load the `<did>.meta.json` metadata sidecar saved alongside a DID document.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @returns {Promise<ItemMetadata | undefined>} undefined when no sidecar exists.
+ */
+export async function loadDidMeta({
+  did
+}: {
+  did: string
+}): Promise<ItemMetadata | undefined> {
+  const method = did.split(':')[1]
+  const filePath = join(getDidsDir(), method, `${did}.meta.json`)
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8')) as ItemMetadata
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw err
+  }
+}
+
+/**
+ * Save the `<did>.meta.json` metadata sidecar alongside a DID document.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.meta {ItemMetadata}
+ * @returns {Promise<string>} the sidecar file path.
+ */
+export async function saveDidMeta({
+  did,
+  meta
+}: {
+  did: string
+  meta: ItemMetadata
+}): Promise<string> {
+  const method = did.split(':')[1]
+  return saveToDids({ method, did, suffix: 'meta', data: meta })
 }
 
 /**
