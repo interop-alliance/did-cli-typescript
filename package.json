@@ -32,6 +32,7 @@
     "@interop/security-document-loader": "^9.3.0",
     "@interop/vc": "^11.0.3",
     "@interop/verifier-core": "^3.2.0",
+    "@interop/was-client": "^0.3.0",
     "@interop/zcap": "^11.0.2",
     "@scure/base": "^2.2.0",
     "commander": "^15.0.0"

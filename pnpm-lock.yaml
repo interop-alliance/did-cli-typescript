@@ -50,6 +50,9 @@ importers:
       '@interop/verifier-core':
         specifier: ^3.2.0
         version: 3.2.0
+      '@interop/was-client':
+        specifier: ^0.3.0
+        version: 0.3.0(@interop/jsonld-signatures@11.7.1)
       '@interop/zcap':
         specifier: ^11.0.2
         version: 11.0.2
@@ -547,6 +550,10 @@ packages:
 
   '@interop/verifier-core@3.2.0':
     resolution: {integrity: sha512-h4RxHLbODS+ZMBseCoxIcN4wnQqjHhaTxT0pdwwX30LsvObLJDqBxsr2rWZYlh+mUG8dRHVMSRNqQAPBNTr9aQ==}
+    engines: {node: '>=24.0'}
+
+  '@interop/was-client@0.3.0':
+    resolution: {integrity: sha512-UBNyXbA61mh3bZnyYOOYVmtv4DWNx+/P8PPyYuw+yZtzqTwOziidU6T8zzg+FJhN9YF4LVJzuEUuB0J68shxcw==}
     engines: {node: '>=24.0'}
 
   '@interop/zcap@11.0.2':
@@ -2290,6 +2297,17 @@ snapshots:
       klona: 2.0.6
       zod: 3.25.76
     transitivePeerDependencies:
+      - react-native-get-random-values
+
+  '@interop/was-client@0.3.0(@interop/jsonld-signatures@11.7.1)':
+    dependencies:
+      '@interop/data-integrity-core': 6.3.0
+      '@interop/ed25519-signature': 7.1.1(@interop/jsonld-signatures@11.7.1)
+      '@interop/ezcap': 7.2.0
+      '@interop/http-client': 1.0.3
+    transitivePeerDependencies:
+      - '@interop/jsonld-signatures'
+      - expo-crypto
       - react-native-get-random-values
 
   '@interop/zcap@11.0.2':

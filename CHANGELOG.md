@@ -4,6 +4,64 @@
 
 ### Added
 
+- Add a `was` command group: a CLI for Wallet Attached Storage (WAS) servers
+  via `@interop/was-client`, signing every request with a locally stored
+  `did:key` DID (Ed25519 keys only for now). Commands take a single positional
+  WAS path -- `SPACE[/COLLECTION[/RESOURCE]]` -- where the space part is a
+  local registry handle, a bare space id, or a full space https URL.
+  - Add `was space create/list/show/update/delete/forget/add` subcommands
+    (`update` aliases `configure`; `delete` aliases `rm`; `show` aliases
+    `view`/`cat`). `create --save` and `add` register the space in a local
+    space registry (`~/.wallet/was-spaces/`, with the usual `.meta.json`
+    handle/description sidecars); `space list` reads the registry (servers do
+    not implement List Spaces yet; `--remote` asks the server anyway), and
+    `forget` removes only the registry entry while `delete` deletes the space
+    on the server.
+  - Add `was collection create/list/show/update/delete` subcommands (group
+    alias `coll`; `update` aliases `configure`, `delete` aliases `rm`) and
+    `was resource add/put/get/list/delete` subcommands (group alias `res`,
+    same `delete` alias). Resource payloads come from a file argument or
+    stdin: `*.json` files (and content that parses to a JSON object/array)
+    are sent as JSON, anything else as binary `application/octet-stream`,
+    and an explicit `--content-type` sends the bytes as-is with that type.
+    `resource get` pretty-prints JSON to stdout and writes binary raw
+    (`--output <file>` to save either to a file).
+  - Add top-level shorthand verbs that dispatch on the path depth:
+    `was ls <path>` (collections of a space, or resources of a collection),
+    `was get` / `was put` (resource shorthands), and `was rm <path>`
+    (uniform delete of whatever the path points at).
+  - Add `was grant <path> --to <did> --action <verb...>` to delegate access
+    to a space, collection, or resource. Actions are HTTP verbs (lowercase
+    accepted); expiration via `--ttl` (default `1y`) or an explicit
+    `--expires`. Prints `{ delegatedCapability, encoded }` (the same shape
+    as `zcap delegate`); `--save` (with `--handle` / `--description`)
+    stores the capability in the existing zcap store (`~/.wallet/zcaps/`).
+  - Add `--capability <ref>` to `was ls`/`get`/`put`/`rm` and
+    `was resource add/get/put` for the receiving side of delegation: the
+    ref is a multibase-encoded capability string, a capability JSON file,
+    or the id/handle of a stored zcap. The capability's invocation target
+    supplies the server URL and the operation depth (no path argument
+    needed), and the signing DID falls back from `--did` / `WAS_DID` to the
+    capability's controller (the delegatee).
+  - Add `was policy show/set/clear` to manage access-control policies at
+    space, collection, or resource depth (`set` takes `--type <type>` for a
+    simple type-only policy, or a policy JSON file), plus the
+    `was publish <path>` / `was unpublish <path>` sugar: `publish` makes
+    the path world-readable (`PublicCanRead`) and prints its public URL;
+    `unpublish` reverts it to capability-only access.
+  - Add `was space export <space> [--output <file.tar>]` (tar to a file or
+    raw to stdout) and `was space import <space> [file.tar]` (tar from a
+    file or stdin; prints the import stats summary).
+  - Add an env-gated end-to-end integration test of the whole `was` flow
+    (space/collection/resource round-trip, delegation, capability read,
+    publish + unauthenticated fetch); it is skipped unless
+    `WAS_TEST_SERVER_URL` points at a running WAS server.
+  - Registered spaces supply the server URL and signing controller DID
+    defaults; otherwise they resolve from `--server` / `WAS_SERVER_URL` and
+    `--did` / `WAS_DID` (or the origin of a full space URL address).
+  - Exit codes: `0` success, `1` operation error (typed WAS errors,
+    not-found/not-visible reads), `2` input error (bad path syntax, unknown
+    handle/DID, missing server URL).
 - Bring `zcap` storage features in line with the `key` and `did` commands:
   - Add metadata support for locally stored zcaps, persisted as `.meta.json`
     sidecar files next to the stored capability

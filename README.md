@@ -822,6 +822,336 @@ Note that removing a capability from local storage does not revoke it -- a
 delegated capability that has already been handed to its delegatee remains
 valid until it expires (see `--ttl` / `--expires`).
 
+### Wallet Attached Storage (WAS)
+
+The `was` command group is a client for
+[Wallet Attached Storage](https://digitalcredentials.github.io/wallet-attached-storage-spec/)
+servers, which organize content as `Space > Collection > Resource` behind
+zcap-authorized HTTP. Every request is signed with a `did:key` DID stored in
+the local wallet (saved with `did create --save`; Ed25519 keys only for now).
+
+Commands address content with a single positional **WAS path**:
+
+```
+SPACE[/COLLECTION[/RESOURCE]]
+```
+
+where `SPACE` is one of:
+
+- a **registry handle** (e.g. `home`) of a space registered in the local
+  wallet (`~/.wallet/was-spaces/`), which also supplies the server URL and
+  signing DID defaults;
+- a **bare space id** (a server-generated uuid or urn), combined with
+  `--server` / `WAS_SERVER_URL`;
+- a **full space URL** (e.g. `https://was.example/space/8124...cf2e`), which
+  is self-contained -- the server URL is its origin. Collection and resource
+  segments can be appended to any of the three forms.
+
+The signing DID resolves from `--did` (a DID or stored-DID handle), the
+`WAS_DID` environment variable, or the controller recorded in the registry
+entry. Exit codes: `0` success, `1` operation error (a typed WAS error or a
+not-found/not-visible read -- the spec returns 404 for both), `2` input error
+(bad path, unknown handle/DID, missing server URL).
+
+#### Create a space
+
+Create a space on a WAS server (`--name`, a display name, is optional). Pass
+`--save` to register it in the local wallet, with the usual `--handle` /
+`--description` metadata; the handle is what makes every later command short:
+
+```
+./di was space create --name 'Home space' \
+  --server http://localhost:3002 --did did:key:z6Mkfeco... \
+  --save --handle home
+Space registered in /home/user/.wallet/was-spaces/81246131-69a4-45ab-9bff-9c946b59cf2e.json
+{
+  "id": "81246131-69a4-45ab-9bff-9c946b59cf2e",
+  "url": "http://localhost:3002/space/81246131-69a4-45ab-9bff-9c946b59cf2e",
+  "name": "Home space",
+  "controller": "did:key:z6Mkfeco..."
+}
+```
+
+Without `--save`, address the space later by its full URL (or register it
+afterwards with `was space add`).
+
+#### List, show, and manage spaces
+
+`was space list` lists the locally registered spaces (WAS servers do not
+implement server-side space listing yet; `--remote` asks anyway and surfaces
+the 501). `--json` and `--plain` work as in the other list commands:
+
+```
+./di was space list
+HANDLE  NAME        SPACE ID                              SERVER                 CREATED
+------  ----------  ------------------------------------  ---------------------  ----------
+home    Home space  81246131-69a4-45ab-9bff-9c946b59cf2e  http://localhost:3002  2026-06-11
+```
+
+`was space show` (aliases: `view`, `cat`) prints the Space Description from
+the server, or the local registry record with `--meta`:
+
+```
+./di was space show home
+{
+  "id": "81246131-69a4-45ab-9bff-9c946b59cf2e",
+  "type": ["Space"],
+  "name": "Home space",
+  "controller": "did:key:z6Mkfeco..."
+}
+```
+
+`was space update` (alias: `configure`) upserts description fields
+(`--name`), also refreshing the registry entry. `was space add` registers an
+*existing* remote space (a full space URL, or a bare id plus `--server`) in
+the local registry, verifying it with a describe first. The local/remote
+delete pair:
+
+- `was space delete <space>` (alias: `rm`) deletes the space **on the
+  server** (idempotent) and removes the registry entry;
+- `was space forget <space>` removes only the local registry entry.
+
+#### Manage collections
+
+The `collection` group (alias: `coll`) manages collections within a space.
+`create` takes a space address plus an optional `--name` and `--id` (the id
+is server-generated otherwise); `show`/`update`/`delete` take a
+`SPACE/COLLECTION` path:
+
+```
+./di was collection create home --name Credentials --id credentials
+{
+  "id": "credentials",
+  "url": "http://localhost:3002/space/8124...cf2e/credentials",
+  "name": "Credentials"
+}
+
+./di was collection list home
+ID           NAME         URL
+-----------  -----------  ---------------------------------------------------
+credentials  Credentials  http://localhost:3002/space/8124...cf2e/credentials
+
+./di was collection delete home/credentials
+Deleted http://localhost:3002/space/8124...cf2e/credentials on the server.
+```
+
+#### Add and read resources
+
+The `resource` group (alias: `res`) manages the content itself. Payloads come
+from a file argument or stdin: `*.json` files (and any input that parses to a
+JSON object or array) are sent as JSON, anything else as binary
+`application/octet-stream`, and an explicit `--content-type` sends the bytes
+as-is with that type (useful for e.g. `application/ld+json` or images).
+
+`add` posts to a collection and lets the server pick the resource id; `put`
+creates or replaces at a known id:
+
+```
+./di was resource add home/credentials vc.json
+{
+  "id": "d3c9...",
+  "url": "http://localhost:3002/space/8124...cf2e/credentials/d3c9...",
+  "contentType": "application/json"
+}
+
+./di was resource put home/credentials/vc-1 vc.json
+cat vc.json | ./di was resource put home/credentials/vc-1
+./di was resource put home/photos/pic-1 photo.png --content-type image/png
+```
+
+`get` pretty-prints JSON to stdout and writes binary raw (use `--output` for
+files); a missing or not-visible resource prints
+`Not found (or not visible to you): <url>` and exits `1`:
+
+```
+./di was resource get home/credentials/vc-1
+{
+  "name": "Alice"
+}
+
+./di was resource get home/photos/pic-1 --output photo.png
+```
+
+`list` renders the resources of a collection (`ID | CONTENT TYPE | URL`), and
+`delete` (alias: `rm`) removes one (idempotent).
+
+#### Shorthand verbs
+
+For day-to-day use, the top-level verbs dispatch on the path depth:
+
+```
+./di was ls home                        # collections of a space
+./di was ls home/credentials            # resources of a collection
+./di was get home/credentials/vc-1      # = resource get
+./di was put home/credentials/vc-1 vc.json   # = resource put
+./di was rm home/credentials/vc-1       # delete whatever the path points at
+./di was rm home                        # ... including a whole space
+```
+
+#### Delegate access (grant)
+
+`was grant` delegates access to a space, collection, or resource. Actions are
+HTTP verbs (`GET`, `PUT`, `POST`, `DELETE`; lowercase accepted), expiration
+comes from `--ttl` (default `1y`) or an explicit `--expires`, and the output
+is the signed capability plus its `encoded` multibase form -- the same shape
+as `zcap delegate`. `--save` (with `--handle` / `--description`) stores it in
+the zcap store (`~/.wallet/zcaps/`):
+
+```
+./di was grant home/credentials --to did:key:z6MkBob... --action GET PUT
+{
+  "delegatedCapability": {
+    "@context": [...],
+    "id": "urn:uuid:e03d4f97-...",
+    "controller": "did:key:z6MkBob...",
+    "invocationTarget": "http://localhost:3002/space/8124...cf2e/credentials",
+    "allowedAction": ["GET", "PUT"],
+    "expires": "2027-06-11T17:30:00Z",
+    "proof": { ... }
+  },
+  "encoded": "zkL8vet8M2mn..."
+}
+```
+
+Hand the `encoded` string (or the JSON) to the delegatee out-of-band.
+
+#### Use a received capability
+
+On the receiving side, `ls` / `get` / `put` / `rm` (and `resource
+add/get/put`) accept `--capability` instead of a path. The reference is one
+of:
+
+- the `encoded` multibase string from the grant output (`zkL8vet...`),
+- a path to a JSON file holding the capability, or
+- the capability id or metadata **handle of a zcap** stored in
+  `~/.wallet/zcaps/`.
+
+Note that a `--capability` reference is *not* a WAS path -- no space,
+collection, or resource address is given (or needed). The capability itself
+records what it grants access to in its `invocationTarget`, and that is what
+the command operates on:
+
+- a capability granted on a **resource** drives `get` / `put` / `rm`;
+- one granted on a **collection** drives `ls`, `resource add`, and `rm`;
+- one granted on a whole **space** drives `ls` and `rm`.
+
+A depth mismatch (e.g. `get` with a collection-scoped capability) is an
+input error. The server URL is taken from the invocation target's origin,
+and the signing DID defaults to the capability's controller (the delegatee)
+when that DID is stored locally -- so usually no flags are needed at all.
+
+In the examples below, `bob-share` is the metadata handle of a *stored zcap*
+(not a space or collection handle): say Alice granted Bob `GET`/`PUT` on the
+single resource `home/credentials/vc-1`, and the capability was saved with
+`--save --handle bob-share` (on Alice's machine via `was grant --save`; on
+Bob's machine he can pass the encoded string or a JSON file directly):
+
+```
+# Alice delegates one resource to Bob, keeping a tagged copy:
+./di was grant home/credentials/vc-1 --to did:key:z6MkBob... \
+  --action GET PUT --save --handle bob-share
+
+# Bob, with the encoded string he received out-of-band -- this reads the
+# resource the capability targets (home/credentials/vc-1):
+./di was get --capability zkL8vet8M2mn...
+{
+  "name": "Alice"
+}
+
+# The same via a capability JSON file, or a stored zcap's handle:
+./di was get --capability ./bob-share.json
+./di was get --capability bob-share
+
+# A resource-scoped capability also allows writing (it grants PUT):
+./di was put data.json --capability bob-share
+
+# Had the grant been on the whole collection (home/credentials), ls would
+# list it and `resource add` could post new resources into it:
+./di was ls --capability zkL8vet8M2mn...
+```
+
+#### Policies and public sharing
+
+By default all operations on a space requires a capability invocation. A
+**policy** can override this per space, collection, or resource; the common
+case is `PublicCanRead` -- the "share via public link" model. `was publish`
+is the sugar for it and prints the public URL; `was unpublish` reverts to
+capability-only access:
+
+```
+./di was publish home/credentials/vc-1
+Published (world-readable): http://localhost:3002/space/8124...cf2e/credentials/vc-1
+http://localhost:3002/space/8124...cf2e/credentials/vc-1
+
+curl http://localhost:3002/space/8124...cf2e/credentials/vc-1   # no auth needed
+```
+
+The generic primitives work at any depth: `was policy show <path>` prints the
+policy document (or `No policy set (or not visible to you)` with exit `1`),
+`was policy set <path> --type PublicCanRead` (or a policy JSON file for
+richer, server-defined policies), and `was policy clear <path>`.
+
+#### Export and import a space
+
+`was space export` downloads a whole space as a tar archive (to `--output`
+or raw to stdout); `was space import` merges a tar into a space (from a file
+or stdin) and prints the import stats:
+
+```
+./di was space export home --output home.tar
+Wrote 10240 bytes to home.tar
+
+./di was space import other-space home.tar
+{
+  "collectionsCreated": 1,
+  "collectionsSkipped": 0,
+  "resourcesCreated": 2,
+  "resourcesSkipped": 0,
+  "policiesCreated": 0,
+  "policiesSkipped": 0
+}
+```
+
+#### End-to-end smoke test
+
+To exercise the whole flow against a local server, start the reference
+[was-teaching-server](https://github.com/digitalcredentials/was-teaching-server)
+(the server URL must match byte-for-byte, including the port, since zcap
+invocation targets embed it):
+
+```
+SERVER_URL='http://localhost:3002' PORT=3002 pnpm dev
+```
+
+Then, in another shell:
+
+```
+export WAS_SERVER_URL=http://localhost:3002
+
+./di did create --save --handle alice
+./di was space create --name Demo --did alice --save --handle demo
+./di was collection create demo --name Docs --id docs
+echo '{"hello": "world"}' | ./di was put demo/docs/doc-1
+./di was get demo/docs/doc-1
+
+./di did create --save --handle bob          # the delegatee
+./di was grant demo/docs/doc-1 --to <bob's did> --action GET --did alice \
+  --save --handle bob-share
+./di was get --capability bob-share --did bob
+
+./di was publish demo/docs/doc-1             # prints the public URL
+curl <public url>                            # readable without auth
+
+./di was rm demo                             # clean up (deletes the space)
+```
+
+The same flow runs as an env-gated integration test: `npm test` skips it
+unless `WAS_TEST_SERVER_URL` points at a running server:
+
+```
+WAS_TEST_SERVER_URL=http://localhost:3002 npm run test:node
+```
+
 ## Contribute
 
 PRs accepted.

@@ -38,12 +38,13 @@ import { renderTable } from '../table.js'
 
 /**
  * Derives a filesystem-safe storage id from a capability id (the `urn:...`
- * value), replacing characters that are awkward in file names.
+ * value), replacing characters that are awkward in file names. Exported for
+ * reuse by `was grant --save`, which stores into the same zcap collection.
  *
  * @param capabilityId {string}
  * @returns {string}
  */
-function storageIdFor(capabilityId: string): string {
+export function storageIdFor(capabilityId: string): string {
   return capabilityId.replaceAll(':', '_').replaceAll('%', '_')
 }
 
@@ -61,7 +62,8 @@ function zcapTypeLabel({ zcap }: { zcap: StoredZcap }): string {
 
 /**
  * Write the metadata sidecar of a freshly saved zcap: the creation timestamp,
- * plus the handle and description when given.
+ * plus the handle and description when given. Exported for reuse by
+ * `was grant --save`.
  *
  * @param options {object}
  * @param options.storageId {string}
@@ -70,7 +72,7 @@ function zcapTypeLabel({ zcap }: { zcap: StoredZcap }): string {
  * @param [options.description] {string}
  * @returns {Promise<void>}
  */
-async function writeCreateMeta({
+export async function writeCreateMeta({
   storageId,
   created,
   handle,
