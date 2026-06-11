@@ -99,6 +99,20 @@ describe('storage', () => {
     })
   })
 
+  describe('DIDs directory default', () => {
+    it('defaults to $WALLET_DIR/dids when DIDS_DIR is unset', async () => {
+      delete process.env.DIDS_DIR
+      const did = 'did:key:z6MkExample'
+      const filePath = await saveToDids({
+        method: 'key',
+        did,
+        data: { id: did }
+      })
+      assert.ok(filePath.startsWith(join(walletDir, 'dids', 'key')))
+      assert.deepEqual(await listDids(), [did])
+    })
+  })
+
   describe('findStoredKey', () => {
     it('finds a stored key by fingerprint', async () => {
       await saveToCollection('keys', 'key-a', {

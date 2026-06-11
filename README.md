@@ -274,14 +274,14 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di did create
 ```
 
 Save the DID document and key material to local storage with `--save`
-(written to `~/.dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
+(written to `~/.wallet/dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
 metadata sidecar is written next to the DID document, recording the creation
 timestamp; `--handle` and `--description` add user-defined metadata to it
 (both require `--save`):
 
 ```
 ./di did create --save --handle demo-issuer
-DID saved to /home/user/.dids/key/did:key:z6Mkr....json
+DID saved to /home/user/.wallet/dids/key/did:key:z6Mkr....json
 {
   "id": "did:key:z6Mkr...",
   "didDocument": { ... }
@@ -330,12 +330,12 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv \
 ```
 
 Save the DID document and key material to local storage with `--save` (written
-to `~/.dids/web/` by default, or `$DIDS_DIR` if set). The key file is an object
-keyed by verification method id, so further keys can be appended later:
+to `~/.wallet/dids/web/` by default, or `$DIDS_DIR` if set). The key file is an
+object keyed by verification method id, so further keys can be appended later:
 
 ```
 ./di did create web --url https://example.com --save
-DID saved to /home/user/.dids/web/did:web:example.com.json
+DID saved to /home/user/.wallet/dids/web/did:web:example.com.json
 {
   "id": "did:web:example.com",
   "didDocument": { ... }
@@ -351,7 +351,7 @@ updated in place:
 
 ```
 ./di did add-key did:web:example.com
-DID saved to /home/user/.dids/web/did:web:example.com.json
+DID saved to /home/user/.wallet/dids/web/did:web:example.com.json
 {
   "id": "did:web:example.com",
   "didDocument": { ... }
@@ -461,7 +461,7 @@ never rewritten). Passing an empty string clears a field:
 
 ```
 ./di did meta did:key:z6Mkr... --handle demo-issuer --description 'Issuer DID for the demo'
-Metadata saved to /home/user/.dids/key/did:key:z6Mkr....meta.json
+Metadata saved to /home/user/.wallet/dids/key/did:key:z6Mkr....meta.json
 {
   "created": "2026-06-10T17:22:31.123Z",
   "handle": "demo-issuer",
@@ -478,9 +478,9 @@ the cached `dids` associations of any matching wallet keys:
 
 ```
 ./di did remove demo-issuer
-Removed /home/user/.dids/key/did:key:z6Mkr....json
-Removed /home/user/.dids/key/did:key:z6Mkr....keys.json
-Removed /home/user/.dids/key/did:key:z6Mkr....meta.json
+Removed /home/user/.wallet/dids/key/did:key:z6Mkr....json
+Removed /home/user/.wallet/dids/key/did:key:z6Mkr....keys.json
+Removed /home/user/.wallet/dids/key/did:key:z6Mkr....meta.json
 ```
 
 ### Verifiable Credentials

@@ -25,6 +25,11 @@
 
 ### Changed
 
+- **BREAKING**: Saved DIDs now live under the wallet directory:
+  `~/.wallet/dids/<method>/` instead of `~/.dids/<method>/`. Existing data can
+  be moved with `mv ~/.dids ~/.wallet/dids`. The `DIDS_DIR` environment
+  variable still overrides the DIDs location when set; its default is now
+  derived from `WALLET_DIR` (`$WALLET_DIR/dids`).
 - **BREAKING**: `zcap list` now prints a metadata table by default
   (`HANDLE | TYPE | CREATED | ID | DESCRIPTION`, where TYPE is `root` or
   `delegated`), matching `did list`. Pass the new `--plain` flag for the

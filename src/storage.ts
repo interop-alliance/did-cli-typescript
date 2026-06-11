@@ -217,7 +217,7 @@ export async function findStoredKey({
 }
 
 function getDidsDir(): string {
-  return process.env.DIDS_DIR ?? join(homedir(), '.dids')
+  return process.env.DIDS_DIR ?? join(getWalletDir(), 'dids')
 }
 
 /**

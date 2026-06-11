@@ -101,7 +101,10 @@ export function makeDidCommand(): Command {
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
-    .option('--save', 'save the DID document to local storage (~/.dids/)')
+    .option(
+      '--save',
+      'save the DID document to local storage (~/.wallet/dids/)'
+    )
     .option(
       '--handle <handle>',
       'short tag for the saved DID (requires --save)'
