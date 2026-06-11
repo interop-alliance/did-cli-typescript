@@ -1,5 +1,38 @@
 # History
 
+## 0.6.0 - TBD
+
+### Added
+
+- Bring `zcap` storage features in line with the `key` and `did` commands:
+  - Add metadata support for locally stored zcaps, persisted as `.meta.json`
+    sidecar files next to the stored capability
+    (`~/.wallet/zcaps/<storageId>.meta.json`). `zcap create --save` and
+    `zcap delegate --save` now write a sidecar with the `created` timestamp,
+    and accept `--handle` / `--description` (exit `1` without `--save`).
+  - Add `zcap show <id>` (aliases: `view`, `cat`) to print a stored capability
+    by capability id or metadata handle, with `--meta` to display its metadata
+    (plus controller, invocation target, and expiration) as a field/value
+    table, or as JSON with `--meta --json`.
+  - Add `zcap meta <id>` to show or edit the metadata of a stored zcap (no
+    options prints the current metadata; an empty string value clears a field;
+    metadata edits never rewrite the stored capability file).
+  - Add `zcap remove <id>` (aliases: `delete`, `rm`) to remove a stored zcap
+    and its metadata sidecar. Note that removal does not revoke a delegated
+    capability that has already been handed out.
+  - `zcap show`, `zcap meta`, and `zcap remove` accept a metadata handle in
+    place of a capability id (exit `1` when the handle is ambiguous).
+
+### Changed
+
+- **BREAKING**: `zcap list` now prints a metadata table by default
+  (`HANDLE | TYPE | CREATED | ID | DESCRIPTION`, where TYPE is `root` or
+  `delegated`), matching `did list`. Pass the new `--plain` flag for the
+  previous one-id-per-line output.
+- **BREAKING**: `zcap list --json` now outputs an array of objects with
+  metadata (`{id, type, created?, handle?, description?}`) instead of an
+  array of plain id strings.
+
 ## 0.5.0 - 2026-06-11
 
 ### Added

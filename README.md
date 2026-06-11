@@ -592,7 +592,10 @@ Both commands print the capability as JSON together with an `encoded` field --
 the capability serialized and `base58btc`-encoded with a multibase `z` prefix --
 which is the compact form you pass to `zcap delegate --capability` to delegate it
 further. Pass `--save` to also write the capability to local wallet storage
-(`~/.wallet/zcaps/` by default, or `$WALLET_DIR` if set). The exit code is `0` on
+(`~/.wallet/zcaps/` by default, or `$WALLET_DIR` if set); `--save` records the
+creation timestamp in a `.meta.json` metadata sidecar, and `--handle` /
+`--description` (which require `--save`) tag the saved capability the same way
+`key create --save` and `did create --save` do. The exit code is `0` on
 success and `1` on a creation / delegation or input error.
 
 #### Create a root capability
@@ -712,25 +715,112 @@ override it:
 
 #### List capabilities
 
-List the ids of the capabilities saved in local wallet storage (via
-`zcap create --save` or `zcap delegate --save`), one per line:
+List the capabilities saved in local wallet storage (via `zcap create --save`
+or `zcap delegate --save`) as a table of their metadata. The TYPE column shows
+whether the capability is a `root` or a `delegated` one:
 
 ```
 ./di zcap list
-urn:zcap:root:https%3A%2F%2Fexample.com%2Fa
-urn:zcap:root:https%3A%2F%2Fexample.com%2Fb
+HANDLE    TYPE  CREATED     ID                                            DESCRIPTION
+--------  ----  ----------  --------------------------------------------  -------------
+api-root  root  2026-06-11  urn:zcap:root:https%3...%2Fexample.com%2Fapi  Demo API root
 ```
 
 If no capabilities are stored, nothing is printed. Pass `--json` to output the
-ids as a JSON array instead:
+list as a JSON array of objects with metadata:
 
 ```
 ./di zcap list --json
 [
-  "urn:zcap:root:https%3A%2F%2Fexample.com%2Fa",
-  "urn:zcap:root:https%3A%2F%2Fexample.com%2Fb"
+  {
+    "id": "urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi",
+    "type": "root",
+    "created": "2026-06-11T17:22:31.123Z",
+    "handle": "api-root",
+    "description": "Demo API root"
+  }
 ]
 ```
+
+Or pass `--plain` to print just the capability ids, one per line, sorted:
+
+```
+./di zcap list --plain
+urn:zcap:root:https%3A%2F%2Fexample.com%2Fa
+urn:zcap:root:https%3A%2F%2Fexample.com%2Fb
+```
+
+#### Show a capability
+
+Display a capability saved in local wallet storage, looked up by its
+capability id (as printed by `zcap list`) or by its metadata handle:
+
+```
+./di zcap show api-root
+{
+  "@context": "https://w3id.org/zcap/v1",
+  "id": "urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi",
+  "controller": "did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR",
+  "invocationTarget": "https://example.com/api"
+}
+```
+
+Aliases: `view`, `cat`.
+
+Pass `--meta` to show the capability's metadata instead, along with its
+controller, invocation target, and (for delegated capabilities) expiration:
+
+```
+./di zcap show api-root --meta
+FIELD        VALUE
+-----------  --------------------------------------------------------
+ID           urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi
+Type         root
+Handle       api-root
+Created      2026-06-11T17:22:31.123Z
+Description  Demo API root
+Controller   did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR
+Target       https://example.com/api
+Expires
+```
+
+`--meta --json` prints the same metadata as a JSON object.
+
+#### Edit capability metadata
+
+Show or edit the metadata of a stored capability with `zcap meta` (looked up
+by capability id or handle). With no options it prints the current metadata;
+with `--handle` / `--description` it updates the metadata sidecar (the stored
+capability itself is never rewritten). Passing an empty string clears a field:
+
+```
+./di zcap meta urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi \
+  --handle api-root --description 'Demo API root'
+Metadata saved to /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
+{
+  "created": "2026-06-11T17:22:31.123Z",
+  "handle": "api-root",
+  "description": "Demo API root"
+}
+
+./di zcap meta api-root --description ''
+```
+
+#### Remove a capability
+
+Remove a stored capability with `zcap remove` (aliases: `delete`, `rm`),
+looked up by capability id or handle. Both the capability file and its
+`.meta.json` metadata sidecar are deleted:
+
+```
+./di zcap remove api-root
+Removed /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.json
+Removed /home/user/.wallet/zcaps/urn_zcap_root_https_3A_2F_2Fexample.com_2Fapi.meta.json
+```
+
+Note that removing a capability from local storage does not revoke it -- a
+delegated capability that has already been handed to its delegatee remains
+valid until it expires (see `--ttl` / `--expires`).
 
 ## Contribute
 

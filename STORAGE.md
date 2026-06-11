@@ -31,14 +31,15 @@ testing).
 
 ## Metadata Sidecars
 
-User-editable metadata about stored keys and DIDs lives in `.meta.json`
-sidecar files, next to the item they describe. This keeps the stored items
-themselves spec-pure (key files are plain Multikey documents, DID files are
-plain DID documents), and means metadata edits never rewrite a file that
-holds secret key material.
+User-editable metadata about stored keys, DIDs, and zcaps lives in
+`.meta.json` sidecar files, next to the item they describe. This keeps the
+stored items themselves spec-pure (key files are plain Multikey documents,
+DID files are plain DID documents, zcap files are plain capability JSON), and
+means metadata edits never rewrite a file that holds secret key material.
 
 - Keys: `~/.wallet/keys/<storageId>.meta.json` (next to `<storageId>.json`)
 - DIDs: `~/.dids/<method>/<did>.meta.json` (next to `<did>.json`)
+- zCaps: `~/.wallet/zcaps/<storageId>.meta.json` (next to `<storageId>.json`)
 
 A key sidecar looks like:
 
@@ -51,16 +52,16 @@ A key sidecar looks like:
 }
 ```
 
-A DID sidecar is the same, minus the `dids` field. All fields are optional and
-omitted when unset:
+A DID or zcap sidecar is the same, minus the `dids` field. All fields are
+optional and omitted when unset:
 
 - `created` -- ISO 8601 timestamp written when the item is saved. Items saved
   before metadata support have no sidecar; `key meta` backfills a date-only
   `created` from the `YYYY-MM-DD` prefix of the key's file name on first edit.
 - `handle` -- a short user-defined tag for telling items apart (set with
-  `--handle` on create, or via the `key meta` / `did meta` commands). Handles
-  are not required to be unique; commands that accept a handle exit with an
-  error when it is ambiguous.
+  `--handle` on create, or via the `key meta` / `did meta` / `zcap meta`
+  commands). Handles are not required to be unique; commands that accept a
+  handle exit with an error when it is ambiguous.
 - `description` -- longer free-text description.
 - `dids` (keys only) -- a cache of the locally stored DIDs whose documents
   reference the key. The value actually *displayed* by `key list` / `key show`

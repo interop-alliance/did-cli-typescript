@@ -2,7 +2,8 @@
  * Metadata derivation and resolution logic layered on top of the raw storage
  * helpers: parsing key storage IDs, deriving key-to-DID associations from the
  * stored DID documents, caching those associations in key metadata sidecars,
- * and resolving user-supplied key references (fingerprint or handle).
+ * and resolving user-supplied key, DID, and zcap references (fingerprint /
+ * DID / capability id, or metadata handle).
  */
 
 import {
@@ -187,6 +188,73 @@ export async function resolveDidRef({
     )
   }
   return matches[0]
+}
+
+/**
+ * A stored Authorization Capability (zcap), as loaded from wallet storage.
+ * Only the fields the CLI inspects are typed; the loaded object retains
+ * whatever else the stored JSON carries (e.g. `@context`, `proof`).
+ */
+export interface StoredZcap {
+  id?: string
+  controller?: string
+  invocationTarget?: string
+  parentCapability?: string
+  expires?: string
+}
+
+/**
+ * Resolve a user-supplied zcap reference -- a capability id (the `urn:...`
+ * value shown by `zcap list`) or a metadata handle -- to a stored zcap.
+ * Capability id matches take precedence; otherwise the metadata sidecars are
+ * searched for a matching handle. Throws when a handle matches more than one
+ * zcap (handles are not unique). Returns undefined when nothing matches.
+ *
+ * @param options {object}
+ * @param options.ref {string}
+ * @returns {Promise<{storageId: string, zcap: StoredZcap, meta?: KeyMetadata} | undefined>}
+ */
+export async function resolveZcapRef({ ref }: { ref: string }): Promise<
+  | {
+      storageId: string
+      zcap: StoredZcap
+      meta?: KeyMetadata
+    }
+  | undefined
+> {
+  const storageIds = await listCollection('zcaps')
+  for (const storageId of storageIds) {
+    const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
+    if (zcap.id === ref) {
+      const meta = await loadMetaFromCollection({
+        collection: 'zcaps',
+        storageId
+      })
+      return { storageId, zcap, meta }
+    }
+  }
+  const matches: { storageId: string; meta: KeyMetadata }[] = []
+  for (const storageId of storageIds) {
+    const meta = await loadMetaFromCollection({
+      collection: 'zcaps',
+      storageId
+    })
+    if (meta?.handle === ref) {
+      matches.push({ storageId, meta })
+    }
+  }
+  if (matches.length === 0) {
+    return undefined
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Handle "${ref}" matches ${matches.length} zcaps; ` +
+        'use the capability id instead.'
+    )
+  }
+  const { storageId, meta } = matches[0]
+  const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
+  return { storageId, zcap, meta }
 }
 
 /**
