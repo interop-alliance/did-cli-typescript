@@ -1,6 +1,6 @@
 {
   "name": "@interop/did-cli",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "DID CLI tool for DIDs, Verifiable Credentials, key pairs, and zcaps",
   "type": "module",
   "main": "dist/index.js",
