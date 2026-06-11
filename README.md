@@ -1,5 +1,8 @@
 # DID CLI wallet _(@interop/did-cli)_
 
+[![Node.js CI](https://github.com/interop-alliance/did-cli-typescript/workflows/CI/badge.svg)](https://github.com/interop-alliance/did-cli-typescript/actions?query=workflow%3A%22CI%22)
+[![NPM Version](https://img.shields.io/npm/v/@interop/did-cli.svg)](https://npm.im/@interop/did-cli)
+
 > A command line client for managing DIDs, VCs, zCaps, and corresponding cryptographic key pairs, written in Typescript.
 
 ## Table of Contents
