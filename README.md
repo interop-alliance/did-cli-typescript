@@ -492,10 +492,12 @@ cryptographic signature check, this also verifies expiration, revocation /
 status, and whether the issuer DID is recognized in any trusted registry
 (via `@interop/verifier-core` and `@digitalcredentials/issuer-registry-client`).
 
-The credential is read from a file argument or, if none is given, from stdin:
+The credential is read from a file argument, an http(s) URL, or, if neither
+is given, from stdin:
 
 ```
 ./di vc verify credential.json
+./di vc verify https://example.com/credentials/123.json
 cat credential.json | ./di vc verify
 ```
 
@@ -530,9 +532,10 @@ is unavailable.
 #### Issue a credential
 
 Issue (sign) an unsigned Verifiable Credential with a locally-stored DID, acting
-as a command-line wallet and issuer. The credential is read from a file argument
-or, if none is given, from stdin, and the issued credential is printed to
-stdout. If the input already carries a proof, issuing appends an additional one.
+as a command-line wallet and issuer. The credential is read from a file
+argument, an http(s) URL, or, if neither is given, from stdin, and the issued
+credential is printed to stdout. If the input already carries a proof, issuing
+appends an additional one.
 
 The DID to issue with is required (`--did`); it must have been saved locally (see
 `di did create --save`):
@@ -575,10 +578,150 @@ cryptosuite does not support P-521 (key creation warns about this). A suite that
 does not match the key type (e.g. `--suite eddsa-rdfc-2022` for an ECDSA key) is
 rejected. ECDSA credentials round-trip through `vc verify` (below).
 
+Pass `--save` to also store the issued credential in local wallet storage
+(`~/.wallet/credentials/` by default, or `$WALLET_DIR` if set); `--save`
+records the creation timestamp in a `.meta.json` metadata sidecar, and
+`--handle` / `--description` (which require `--save`) tag the saved credential
+the same way `zcap create --save` does:
+
+```
+./di vc issue credential.json --did did:key:z6Mk... --save --handle alumni
+Credential saved to /home/user/.wallet/credentials/sha256-1f4a....json
+```
+
 The exit code is scriptable: `0` when the credential was issued, `1` on an
 issuance error (an unauthorized key, an unknown suite, a missing DID / key
 file, or an issuer that does not match the signing DID), and `2` on a
 read/parse error.
+
+#### Import a credential
+
+Store an existing Verifiable Credential in local wallet storage with
+`vc import`. The credential is read from a file argument, an http(s) URL, or,
+if neither is given, from stdin. The input must structurally look like a
+credential (its `type` must include `VerifiableCredential`); it is stored
+as-is and is *not* verified on import (run `vc verify` for that). `--handle` /
+`--description` tag the saved credential:
+
+```
+./di vc import credential.json --handle alumni --description 'Alumni credential'
+./di vc import https://example.com/credentials/123.json
+cat credential.json | ./di vc import
+Credential saved to /home/user/.wallet/credentials/urn_uuid_9b1deb4d....json
+```
+
+The credential file is named after the credential's `id`; a credential
+without an `id` (the property is optional) is stored under a digest of its
+content, so re-importing it overwrites rather than duplicates. Re-importing a
+credential preserves the metadata its sidecar already carries.
+
+The exit code is scriptable: `0` when the credential was imported, `1` when
+the input is not a Verifiable Credential, and `2` on a fetch/read/parse error.
+
+#### List credentials
+
+List the credentials saved in local wallet storage (via `vc import` or
+`vc issue --save`) as a table of their metadata. The TYPE column shows the
+credential's most specific type (its first `type` entry other than the
+generic `VerifiableCredential`):
+
+```
+./di vc list
+HANDLE  TYPE                 ISSUER                          CREATED     ID                           DESCRIPTION
+------  -------------------  ------------------------------  ----------  ---------------------------  -----------------
+alumni  OpenBadgeCredential  did:key:z6MkExa...ampleIssuer    2026-06-11  urn:uuid:9b1deb4d-3b7d-4ba8  Alumni credential
+```
+
+If no credentials are stored, nothing is printed. Pass `--json` to output the
+list as a JSON array of objects with metadata:
+
+```
+./di vc list --json
+[
+  {
+    "id": "urn:uuid:9b1deb4d-3b7d-4ba8",
+    "type": "OpenBadgeCredential",
+    "issuer": "did:key:z6MkExampleIssuer",
+    "created": "2026-06-11T17:22:31.123Z",
+    "handle": "alumni",
+    "description": "Alumni credential"
+  }
+]
+```
+
+Or pass `--plain` to print just the credential ids, one per line, sorted. A
+credential without an `id` is listed by its storage id (the `sha256-...` file
+name), which `show` / `meta` / `remove` accept in place of a credential id.
+
+#### Show a credential
+
+Display a credential saved in local wallet storage, looked up by its
+credential id (as printed by `vc list`), its storage id, or its metadata
+handle:
+
+```
+./di vc show alumni
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "id": "urn:uuid:9b1deb4d-3b7d-4ba8",
+  "type": ["VerifiableCredential", "OpenBadgeCredential"],
+  ...
+}
+```
+
+Aliases: `view`, `cat`.
+
+Pass `--meta` to show the credential's metadata instead, along with its
+issuer, validity start, and expiration:
+
+```
+./di vc show alumni --meta
+FIELD        VALUE
+-----------  ----------------------------
+ID           urn:uuid:9b1deb4d-3b7d-4ba8
+Type         OpenBadgeCredential
+Handle       alumni
+Created      2026-06-11T17:22:31.123Z
+Description  Alumni credential
+Issuer       did:key:z6MkExampleIssuer
+Valid From   2026-01-01T00:00:00Z
+Expires
+```
+
+`--meta --json` prints the same metadata as a JSON object.
+
+#### Edit credential metadata
+
+Show or edit the metadata of a stored credential with `vc meta` (looked up by
+credential id, storage id, or handle). With no options it prints the current
+metadata; with `--handle` / `--description` it updates the metadata sidecar
+(the stored credential itself is never rewritten). Passing an empty string
+clears a field:
+
+```
+./di vc meta urn:uuid:9b1deb4d-3b7d-4ba8 \
+  --handle alumni --description 'Alumni credential'
+Metadata saved to /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
+{
+  "created": "2026-06-11T17:22:31.123Z",
+  "handle": "alumni",
+  "description": "Alumni credential"
+}
+
+./di vc meta alumni --description ''
+```
+
+#### Remove a credential
+
+Remove a stored credential with `vc remove` (aliases: `delete`, `rm`), looked
+up by credential id, storage id, or handle. Both the credential file and its
+`.meta.json` metadata sidecar are deleted:
+
+```
+./di vc remove alumni
+Removed /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.json
+Removed /home/user/.wallet/credentials/urn_uuid_9b1deb4d-3b7d-4ba8.meta.json
+```
 
 ### Authorization Capabilities (zCaps)
 

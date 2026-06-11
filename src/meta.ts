@@ -2,8 +2,8 @@
  * Metadata derivation and resolution logic layered on top of the raw storage
  * helpers: parsing key storage IDs, deriving key-to-DID associations from the
  * stored DID documents, caching those associations in key metadata sidecars,
- * and resolving user-supplied key, DID, and zcap references (fingerprint /
- * DID / capability id, or metadata handle).
+ * and resolving user-supplied key, DID, zcap, and credential references
+ * (fingerprint / DID / capability or credential id, or metadata handle).
  */
 
 import {
@@ -255,6 +255,93 @@ export async function resolveZcapRef({ ref }: { ref: string }): Promise<
   const { storageId, meta } = matches[0]
   const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
   return { storageId, zcap, meta }
+}
+
+/**
+ * A stored Verifiable Credential, as loaded from wallet storage. Only the
+ * fields the CLI inspects are typed; the loaded object retains whatever else
+ * the stored JSON carries (e.g. `@context`, `credentialSubject`, `proof`).
+ */
+export interface StoredCredential {
+  id?: string
+  type?: string | string[]
+  issuer?: string | { id?: string }
+  validFrom?: string
+  validUntil?: string
+  issuanceDate?: string
+  expirationDate?: string
+}
+
+/**
+ * Resolve a user-supplied credential reference -- a credential id, a storage
+ * id (the file name shown for id-less credentials), or a metadata handle --
+ * to a stored credential. Credential id matches take precedence, then storage
+ * id matches; otherwise the metadata sidecars are searched for a matching
+ * handle. Throws when a handle matches more than one credential (handles are
+ * not unique). Returns undefined when nothing matches.
+ *
+ * @param options {object}
+ * @param options.ref {string}
+ * @returns {Promise<{storageId: string, credential: StoredCredential, meta?: KeyMetadata} | undefined>}
+ */
+export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
+  | {
+      storageId: string
+      credential: StoredCredential
+      meta?: KeyMetadata
+    }
+  | undefined
+> {
+  const storageIds = await listCollection('credentials')
+  for (const storageId of storageIds) {
+    const credential = await loadFromCollection<StoredCredential>(
+      'credentials',
+      storageId
+    )
+    if (credential.id === ref) {
+      const meta = await loadMetaFromCollection({
+        collection: 'credentials',
+        storageId
+      })
+      return { storageId, credential, meta }
+    }
+  }
+  if (storageIds.includes(ref)) {
+    const credential = await loadFromCollection<StoredCredential>(
+      'credentials',
+      ref
+    )
+    const meta = await loadMetaFromCollection({
+      collection: 'credentials',
+      storageId: ref
+    })
+    return { storageId: ref, credential, meta }
+  }
+  const matches: { storageId: string; meta: KeyMetadata }[] = []
+  for (const storageId of storageIds) {
+    const meta = await loadMetaFromCollection({
+      collection: 'credentials',
+      storageId
+    })
+    if (meta?.handle === ref) {
+      matches.push({ storageId, meta })
+    }
+  }
+  if (matches.length === 0) {
+    return undefined
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Handle "${ref}" matches ${matches.length} credentials; ` +
+        'use the credential id instead.'
+    )
+  }
+  const { storageId, meta } = matches[0]
+  const credential = await loadFromCollection<StoredCredential>(
+    'credentials',
+    storageId
+  )
+  return { storageId, credential, meta }
 }
 
 /**

@@ -4,7 +4,7 @@ To work with DIDs, you'll need storage for keys, local DID docs, and
 notes.
 
 **By default, everything is stored under `~/.wallet/` -- DIDs in
-`~/.wallet/dids/<method>/`, other wallet items (keys, zcaps) in
+`~/.wallet/dids/<method>/`, other wallet items (keys, zcaps, credentials) in
 `~/.wallet/<collection>/`.**
 
 The wallet directory can be relocated with the `WALLET_DIR` environment
@@ -37,15 +37,20 @@ testing).
 
 ## Metadata Sidecars
 
-User-editable metadata about stored keys, DIDs, and zcaps lives in
-`.meta.json` sidecar files, next to the item they describe. This keeps the
+User-editable metadata about stored keys, DIDs, zcaps, and credentials lives
+in `.meta.json` sidecar files, next to the item they describe. This keeps the
 stored items themselves spec-pure (key files are plain Multikey documents,
-DID files are plain DID documents, zcap files are plain capability JSON), and
-means metadata edits never rewrite a file that holds secret key material.
+DID files are plain DID documents, zcap files are plain capability JSON,
+credential files are plain Verifiable Credentials), and means metadata edits
+never rewrite a file that holds secret key material.
 
 - Keys: `~/.wallet/keys/<storageId>.meta.json` (next to `<storageId>.json`)
 - DIDs: `~/.wallet/dids/<method>/<did>.meta.json` (next to `<did>.json`)
 - zCaps: `~/.wallet/zcaps/<storageId>.meta.json` (next to `<storageId>.json`)
+- Credentials: `~/.wallet/credentials/<storageId>.meta.json` (next to
+  `<storageId>.json`). The storage id is the credential's `id` (sanitized for
+  the filesystem), or a `sha256-...` digest of its content when the
+  credential has no `id`.
 
 A key sidecar looks like:
 

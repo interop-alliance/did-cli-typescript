@@ -80,6 +80,27 @@
     capability that has already been handed out.
   - `zcap show`, `zcap meta`, and `zcap remove` accept a metadata handle in
     place of a capability id (exit `1` when the handle is ambiguous).
+- Add local wallet storage for Verifiable Credentials
+  (`~/.wallet/credentials/`, with the usual `.meta.json` handle/description
+  sidecars), mirroring the zcap storage features:
+  - Add a `vc import` command that stores an existing credential, read from a
+    file argument, an http(s) URL, or stdin. The input's `type` must include
+    `VerifiableCredential`; it is stored as-is (not verified on import). The
+    file is named after the credential's `id`; an id-less credential is
+    stored under a digest of its content, so re-importing it overwrites
+    rather than duplicates. Exit codes: `0` imported, `1` not a credential,
+    `2` fetch/read/parse error.
+  - Add `--save` to `vc issue` to store the freshly issued credential;
+    `--handle` / `--description` tag it (exit `1` without `--save`).
+  - Add `vc list` (`--json` / `--plain`) to render a metadata table of the
+    stored credentials (`HANDLE | TYPE | ISSUER | CREATED | ID |
+    DESCRIPTION`), `vc show <id>` (aliases: `view`, `cat`; `--meta` for the
+    metadata, `--meta --json` for it as JSON), `vc meta <id>` to edit the
+    metadata sidecar, and `vc remove <id>` (aliases: `delete`, `rm`). All
+    accept a credential id, a storage id (for id-less credentials), or a
+    metadata handle.
+  - `vc verify` and `vc issue` also accept an http(s) URL as the credential
+    source now, in addition to a file argument or stdin.
 
 ### Changed
 
