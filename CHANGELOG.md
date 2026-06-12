@@ -1,5 +1,27 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- Add `ARCHITECTURE.md`, a codebase map (entry point, command-factory pattern,
+  module layout, and the command surface) for contributors, linked from
+  `CLAUDE.md` and the README.
+- Add `CONTRIBUTING.md` as the canonical home for code-style and contribution
+  conventions (moved out of `CLAUDE.md`, which now imports it).
+- Add `AGENTS.md` (an inline copy of `CONTRIBUTING.md`) so non-Claude coding
+  agents pick up the same project guidance.
+- Add an Environment Variables table to the README consolidating `WALLET_DIR`,
+  `DIDS_DIR`, `SECRET_KEY_SEED`, `WAS_DID`, `WAS_SERVER_URL`, and
+  `ZCAP_CONTROLLER_KEY_SEED`.
+
+### Changed
+
+- Split the `was` command module into `src/commands/was/` submodules (by noun:
+  `space`, `collection`, `resource`, `tree`, `policy`, `publish`, plus shared
+  helpers); `src/commands/was.ts` now holds only `makeWasCommand()`. Internal
+  refactor with no behavior change.
+
 ## 0.7.0-0.7.1 - 2026-06-11
 
 ### Changed

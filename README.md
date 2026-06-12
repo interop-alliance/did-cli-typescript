@@ -26,6 +26,21 @@ Help is available with the `--help/-h` command line option:
 ./di COMMAND -h
 ```
 
+### Environment Variables
+
+These environment variables configure storage locations and provide defaults
+or secret-key seeds for individual commands. Each is also documented inline in
+the relevant command section below.
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `WALLET_DIR` | all | Wallet collections directory (`keys/`, `zcaps/`, `credentials/`, `was-spaces/`). Defaults to `~/.config/did-cli-wallet/` (honors `XDG_CONFIG_HOME`). |
+| `DIDS_DIR` | `did` | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`. |
+| `SECRET_KEY_SEED` | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa`. |
+| `WAS_DID` | `was` | Default signing DID (or stored-DID handle) when `--did` is omitted. |
+| `WAS_SERVER_URL` | `was` | Default WAS server base URL when `--server` is omitted. |
+| `ZCAP_CONTROLLER_KEY_SEED` | `zcap` | Controller signing-key seed for delegating capabilities. |
+
 ### Key Management
 
 #### Create a key pair
@@ -1300,7 +1315,12 @@ WAS_TEST_SERVER_URL=http://localhost:3002 npm run test:node
 
 ## Contribute
 
-PRs accepted.
+PRs accepted. Please follow the code-style and contribution conventions in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+For a map of the codebase -- the module layout, the command-factory pattern,
+and the build/test commands -- see [ARCHITECTURE.md](ARCHITECTURE.md). Storage
+layout is documented in [STORAGE.md](STORAGE.md).
 
 If editing the Readme, please conform to the
 [standard-readme](https://github.com/RichardLitt/standard-readme) specification.
