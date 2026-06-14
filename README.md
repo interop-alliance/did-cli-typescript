@@ -849,8 +849,9 @@ ZCAP_CONTROLLER_KEY_SEED=z1AZK4h5w5YZkKYEgqtcFfvSbWQ3tZ3ZFgmLsXMZsTVoeK7 \
 ```
 
 To delegate an _existing_ capability further down the chain, pass it as
-`--capability` instead of `--url` -- either the `encoded` string from a previous
-delegation or a path to a JSON file containing the capability. Use
+`--capability` instead of `--url` -- the `encoded` string from a previous
+delegation, a path to a JSON file containing the capability, or the id or
+metadata handle of a zcap saved in local wallet storage. Use
 `--invocation-target` to attenuate (narrow) the parent's target to a sub-path:
 
 ```

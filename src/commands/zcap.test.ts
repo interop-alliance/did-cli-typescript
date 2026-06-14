@@ -341,6 +341,60 @@ describe('did zcap', () => {
         await rm(walletDir, { recursive: true })
       }
     })
+
+    it('delegates further from a stored zcap by metadata handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      process.env.WALLET_DIR = walletDir
+      try {
+        const { did } = await createStoredDid(didsDir)
+        const { did: delegatee } = await createStoredDid(didsDir)
+        const { did: subDelegatee } = await createStoredDid(didsDir)
+
+        await makeZcapCommand().parseAsync(
+          [
+            'delegate',
+            '--did',
+            did,
+            '--delegatee',
+            delegatee,
+            '--url',
+            'https://example.com/documents',
+            '--save',
+            '--handle',
+            'docs-share'
+          ],
+          { from: 'user' }
+        )
+        const { delegatedCapability: parent } = JSON.parse(logs[0])
+        logs.length = 0
+
+        await makeZcapCommand().parseAsync(
+          [
+            'delegate',
+            '--did',
+            delegatee,
+            '--delegatee',
+            subDelegatee,
+            '--capability',
+            'docs-share',
+            '--allow',
+            'read'
+          ],
+          { from: 'user' }
+        )
+
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const { delegatedCapability } = JSON.parse(logs[0])
+        assert.equal(delegatedCapability.controller, subDelegatee)
+        assert.equal(delegatedCapability.parentCapability, parent.id)
+        assert.deepEqual(delegatedCapability.allowedAction, ['read'])
+      } finally {
+        await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
+      }
+    })
   })
 
   describe('list', () => {
