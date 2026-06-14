@@ -4,6 +4,11 @@
 
 ### Added
 
+- Implement `did get <did>` (alias: `resolve`), which resolves a DID to its DID
+  document through `@interop/security-document-loader`'s document loader
+  (did:key offline, did:web fetched). A DID URL (a `did#fragment` key id)
+  dereferences straight to its verification method. Unlike `did show`, which
+  reads local storage, `did get` resolves live.
 - Add an `edv` command group with `encrypt` and `decrypt` subcommands
   (Layer 1: raw JWE). `edv encrypt [file]` encrypts stdin or a file to one or
   more X25519 recipients and emits a single flattened JWE (the `jwe` field of

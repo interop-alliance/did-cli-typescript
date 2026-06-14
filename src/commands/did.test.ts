@@ -297,18 +297,46 @@ describe('di did', () => {
     })
   })
 
-  describe('resolve', () => {
-    it('routes resolve with default output format', () => {
-      makeDidCommand().parse(['resolve', 'did:key:z123'], { from: 'user' })
-      assert.ok(logs[0].includes('did:key:z123'))
-      assert.ok(logs[0].includes('pretty'))
+  describe('get', () => {
+    it('resolves a did:key to its DID document', async () => {
+      // Create a did:key first, then resolve it (did:key is offline).
+      await makeDidCommand().parseAsync(['create'], { from: 'user' })
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+
+      await makeDidCommand().parseAsync(['get', did], { from: 'user' })
+      const document = JSON.parse(logs.join('\n'))
+      assert.equal(document.id, did)
+      assert.ok(Array.isArray(document.verificationMethod))
     })
 
-    it('respects --output flag', () => {
-      makeDidCommand().parse(['resolve', 'did:key:z123', '--output', 'json'], {
+    it('dereferences a did:key URL to its verification method', async () => {
+      await makeDidCommand().parseAsync(['create'], { from: 'user' })
+      const document = JSON.parse(logs[0]).didDocument
+      const keyId = document.verificationMethod[0].id
+      logs.length = 0
+
+      await makeDidCommand().parseAsync(['get', keyId], { from: 'user' })
+      const method = JSON.parse(logs.join('\n'))
+      assert.equal(method.id, keyId)
+      assert.equal(method.type, document.verificationMethod[0].type)
+    })
+
+    it('is aliased as resolve', async () => {
+      await makeDidCommand().parseAsync(['create'], { from: 'user' })
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+
+      await makeDidCommand().parseAsync(['resolve', did], { from: 'user' })
+      assert.equal(JSON.parse(logs.join('\n')).id, did)
+    })
+
+    it('exits with error when the DID cannot be resolved', async () => {
+      await makeDidCommand().parseAsync(['get', 'did:key:zNotAValidKey'], {
         from: 'user'
       })
-      assert.ok(logs[0].includes('json'))
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('Could not resolve'))
     })
   })
 

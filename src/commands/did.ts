@@ -5,6 +5,7 @@ import {
 } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
+import { securityLoader } from '@interop/security-document-loader'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
@@ -77,6 +78,15 @@ async function saveDidArtifacts({
   }
   console.error(`DID saved to ${docPath}`)
 }
+
+/**
+ * Document loader for DID / DID-URL resolution. A bare DID resolves to its DID
+ * document; a `did#fragment` URL is dereferenced straight to its
+ * verification-method node. Works for did:key (offline) and did:web (fetched).
+ * Built once and reused. (Per project convention, DID/JSON-LD resolution goes
+ * through `@interop/security-document-loader`, never a hand-rolled loader.)
+ */
+const documentLoader = securityLoader().build()
 
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
@@ -563,12 +573,26 @@ export function makeDidCommand(): Command {
     )
 
   did
-    .command('resolve <did>')
-    .description('Resolve a DID document')
-    .option('-o, --output <format>', 'output format (json|pretty)', 'pretty')
-    .action((did: string, options: { output: string }) => {
-      console.log(`Resolving ${did} (format: ${options.output})`)
-      // TODO: implement
+    .command('get <did>')
+    .aliases(['resolve'])
+    .description(
+      'Resolve a DID to its DID document, or a DID URL (a did#fragment key ' +
+        'id) to its verification method, via the security document loader'
+    )
+    .action(async (didOrKeyId: string) => {
+      let document: Record<string, unknown>
+      try {
+        ;({ document } = (await documentLoader(didOrKeyId)) as {
+          document: Record<string, unknown>
+        })
+      } catch (err) {
+        console.error(
+          `Could not resolve "${didOrKeyId}": ${(err as Error).message}`
+        )
+        process.exit(1)
+        return
+      }
+      console.log(JSON.stringify(document, null, 2))
     })
 
   did

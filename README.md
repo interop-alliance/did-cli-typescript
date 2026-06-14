@@ -488,6 +488,33 @@ did:key:z6Mkr...
 did:key:z6Mks...
 ```
 
+#### Resolve a DID
+
+Resolve a DID to its DID document through the security document loader. Unlike
+`did show` (which reads local storage), `did get` resolves live: did:key is
+resolved offline, did:web is fetched over HTTPS. Pass a DID URL (a
+`did#fragment` key id) to dereference straight to its verification method:
+
+```
+./di did get did:key:z6Mkr...
+{
+  "@context": [ ... ],
+  "id": "did:key:z6Mkr...",
+  "verificationMethod": [ ... ],
+  ...
+}
+
+./di did get did:key:z6Mkr...#z6Mkr...
+{
+  "id": "did:key:z6Mkr...#z6Mkr...",
+  "type": "Ed25519VerificationKey2020",
+  "controller": "did:key:z6Mkr...",
+  "publicKeyMultibase": "z6Mkr..."
+}
+```
+
+Alias: `resolve`.
+
 #### Show a DID
 
 Display the DID document saved in local storage (via `did create --save`),
