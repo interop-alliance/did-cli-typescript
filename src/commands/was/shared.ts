@@ -8,9 +8,9 @@ import { Option } from 'commander'
 import {
   WasError,
   type Collection,
-  type CollectionListing,
+  type CollectionsList,
   type Resource,
-  type ResourceListing,
+  type CollectionResourcesList,
   type Space
 } from '@interop/was-client'
 import { parseWasAddress } from '../../was/address.js'
@@ -260,7 +260,7 @@ function printListing<T extends { id: string }>({
  * Renders a collection listing as a table, raw JSON, or one id per line.
  *
  * @param options {object}
- * @param options.listing {CollectionListing}
+ * @param options.listing {CollectionsList}
  * @param [options.json] {boolean}
  * @param [options.plain] {boolean}
  * @returns {void}
@@ -270,7 +270,7 @@ export function printCollectionListing({
   json,
   plain
 }: {
-  listing: CollectionListing
+  listing: CollectionsList
   json?: boolean
   plain?: boolean
 }): void {
@@ -291,7 +291,7 @@ export function printCollectionListing({
  * Renders a resource listing as a table, raw JSON, or one id per line.
  *
  * @param options {object}
- * @param options.listing {ResourceListing}
+ * @param options.listing {CollectionResourcesList}
  * @param [options.json] {boolean}
  * @param [options.plain] {boolean}
  * @returns {void}
@@ -301,7 +301,7 @@ export function printResourceListing({
   json,
   plain
 }: {
-  listing: ResourceListing
+  listing: CollectionResourcesList
   json?: boolean
   plain?: boolean
 }): void {
