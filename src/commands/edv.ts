@@ -14,17 +14,16 @@
  * decryption failure (wrong key / not a recipient), 2 input error (no
  * recipient, unresolvable recipient/key, malformed input).
  */
-import { writeFile } from 'node:fs/promises'
 import { Command } from 'commander'
 import { Cipher } from '@interop/minimal-cipher'
-import { readInputBytes, writeBytesOutput } from '../was/io.js'
+import { readInputBytes, writeBytesOutput, writeJsonOutput } from '../was/io.js'
+import { runAndExit } from './was/shared.js'
 import {
   autoSelectKeyAgreementKey,
-  buildRecipients,
   loadKeyAgreementKey,
   resolveRecipient,
   resolveRecipientFile,
-  type RecipientKey
+  type KeyAgreementKey
 } from '../edv/recipients.js'
 
 /**
@@ -62,7 +61,7 @@ export async function runEncrypt({
   json?: boolean
   out?: string
 }): Promise<number> {
-  const keys: RecipientKey[] = []
+  const keys: KeyAgreementKey[] = []
   try {
     for (const ref of recipient) {
       keys.push(await resolveRecipient({ ref }))
@@ -80,8 +79,8 @@ export async function runEncrypt({
   }
 
   const bytes = await readInputBytes({ file })
-  const { recipients, keyResolver } = buildRecipients({ keys })
   const cipher = new Cipher()
+  const { recipients, keyResolver } = cipher.createRecipients({ keys })
 
   let jwe
   if (json) {
@@ -97,13 +96,7 @@ export async function runEncrypt({
     jwe = await cipher.encrypt({ data: bytes, recipients, keyResolver })
   }
 
-  const text = JSON.stringify(jwe, null, 2)
-  if (out) {
-    await writeFile(out, `${text}\n`, 'utf8')
-    console.error(`Wrote ${out}`)
-  } else {
-    console.log(text)
-  }
+  await writeJsonOutput({ value: jwe, output: out })
   return 0
 }
 
@@ -151,42 +144,26 @@ export async function runDecrypt({
   // A mismatched key throws ("no matching recipient"); a matched key whose
   // unwrap/decrypt fails returns null. Both are decryption failures, not
   // crashes, so report either as a clean non-zero exit.
-  const failed =
-    'Decryption failed: the key does not match any recipient of this JWE.'
-  if (json) {
-    let obj: object | null
-    try {
-      obj = await cipher.decryptObject({ jwe, keyAgreementKey })
-    } catch {
-      console.error(failed)
-      return 1
-    }
-    if (obj === null) {
-      console.error(failed)
-      return 1
-    }
-    const text = JSON.stringify(obj, null, 2)
-    if (out) {
-      await writeFile(out, `${text}\n`, 'utf8')
-      console.error(`Wrote ${out}`)
-    } else {
-      console.log(text)
-    }
-    return 0
+  let result: object | Uint8Array | null
+  try {
+    result = json
+      ? await cipher.decryptObject({ jwe, keyAgreementKey })
+      : await cipher.decrypt({ jwe, keyAgreementKey })
+  } catch {
+    result = null
+  }
+  if (result === null) {
+    console.error(
+      'Decryption failed: the key does not match any recipient of this JWE.'
+    )
+    return 1
   }
 
-  let data: Uint8Array | null
-  try {
-    data = await cipher.decrypt({ jwe, keyAgreementKey })
-  } catch {
-    console.error(failed)
-    return 1
+  if (json) {
+    await writeJsonOutput({ value: result, output: out })
+  } else {
+    await writeBytesOutput({ bytes: result as Uint8Array, output: out })
   }
-  if (data === null) {
-    console.error(failed)
-    return 1
-  }
-  await writeBytesOutput({ bytes: data, output: out })
   return 0
 }
 
@@ -222,12 +199,7 @@ export function makeEdvCommand(): Command {
           json?: boolean
           out?: string
         }
-      ) => {
-        const code = await runEncrypt({ file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
-      }
+      ) => runAndExit(runEncrypt({ file, ...options }))
     )
 
   edv
@@ -250,12 +222,7 @@ export function makeEdvCommand(): Command {
       async (
         file: string | undefined,
         options: { key?: string; json?: boolean; out?: string }
-      ) => {
-        const code = await runDecrypt({ file, ...options })
-        if (code !== 0) {
-          process.exit(code)
-        }
-      }
+      ) => runAndExit(runDecrypt({ file, ...options }))
     )
 
   return edv

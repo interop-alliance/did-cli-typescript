@@ -12,8 +12,9 @@
   only, via `@interop/minimal-cipher` with its default algorithm
   (`ECDH-ES+A256KW` key wrap, `XC20P` content encryption). A recipient
   (`-r/--recipient`, repeatable) is a raw X25519 `publicKeyMultibase`, a wallet
-  key fingerprint/handle, or a DID / DID URL (its `keyAgreement` key);
-  `--recipient-file` reads a key-document JSON. `--json` switches both commands
+  key fingerprint/handle, or a DID / DID URL (its `keyAgreement` key, typed
+  either `X25519KeyAgreementKey2020` or `Multikey`); `--recipient-file` reads a
+  key-document JSON. `--json` switches both commands
   to object semantics. On decrypt, the secret key is given with `-k/--key` or
   auto-selected from the wallet by matching a recipient `kid`; a non-recipient
   key exits non-zero with a clear error. The full EDV Document envelope,

@@ -2,10 +2,12 @@
  * Recipient and key-agreement resolution for the `edv encrypt`/`edv decrypt`
  * commands. Normalizes the several recipient reference forms (a raw X25519
  * `publicKeyMultibase`, a wallet key fingerprint or handle, a DID or DID URL,
- * and a key-document JSON file) to the static public-key shape the
- * `@interop/minimal-cipher` `keyResolver` must return, builds the recipients
- * array plus that resolver, and reconstructs a stored X25519 secret key into
- * the `{ id, deriveSecret }` key-agreement API the cipher decrypts with.
+ * and a key-document JSON file) into `X25519KeyAgreementKey2020` instances --
+ * the shape `@interop/minimal-cipher`'s `keyResolver` returns (the cipher reads
+ * `id` and `publicKeyMultibase` from a recipient on encrypt, and `id` and
+ * `deriveSecret` from the key on decrypt, all of which an instance provides).
+ * Builds the recipients array plus that resolver, and reconstructs stored keys
+ * for decrypt.
  */
 import { readFile } from 'node:fs/promises'
 import { securityLoader } from '@interop/security-document-loader'
@@ -15,9 +17,6 @@ import { resolveKeyRef } from '../meta.js'
 
 /** The X25519 key-agreement verification-method type minimal-cipher expects. */
 export const KEY_AGREEMENT_TYPE = 'X25519KeyAgreementKey2020'
-
-/** The key-wrap algorithm the `recommended` cipher version uses. */
-export const KEY_WRAP_ALG = 'ECDH-ES+A256KW'
 
 /**
  * Document loader for DID-URL recipient resolution: resolves a bare DID to its
@@ -29,14 +28,12 @@ export const KEY_WRAP_ALG = 'ECDH-ES+A256KW'
 const documentLoader = securityLoader().build()
 
 /**
- * A resolved recipient public key, in the static form minimal-cipher's
- * `keyResolver` must return and that the X25519 algorithm reads
- * `publicKeyMultibase` from.
+ * An X25519 key-agreement key instance with its `.id` (`kid`) populated. Used
+ * both as a resolved recipient (encrypt reads `id` + `publicKeyMultibase`) and
+ * as the decryption key (decrypt reads `id` + `deriveSecret`).
  */
-export interface RecipientKey {
+export type KeyAgreementKey = InstanceType<typeof X25519KeyAgreementKey2020> & {
   id: string
-  type: 'X25519KeyAgreementKey2020'
-  publicKeyMultibase: string
 }
 
 /** A stored X25519 key pair, as persisted by `key create --type x25519`. */
@@ -48,25 +45,22 @@ interface StoredKeyAgreementKey {
 }
 
 /**
- * Derive the `kid` for a recipient key: the verification-method `id` when the
- * key has one, otherwise a synthetic `did:key:<mb>#<mb>` built from the
- * multibase. The `kid` chosen at encrypt time must equal the `.id` of the key
- * used to decrypt for a round-trip to succeed, so encrypt and decrypt both
- * route every key through this function.
+ * Construct an X25519 key-agreement key from a verification method or stored
+ * key pair. `didKey: true` defaults a source with no `controller`/`id` to its
+ * `did:key` form, so the key class derives `.id` as `did:key:<mb>#<mb>` -- the
+ * `kid` encrypt and decrypt both match on -- while a source that already
+ * carries an `id`/`controller` (e.g. a DID verification method) keeps it. A
+ * `type: 'Multikey'` source is normalized via `fromMultikey`. The constructor
+ * validates the multibase header bytes.
  *
- * @param options {object}
- * @param [options.id] {string}
- * @param options.publicKeyMultibase {string}
- * @returns {string}
+ * @param source {Record<string, any>}
+ * @returns {Promise<KeyAgreementKey>}
  */
-function recipientKeyId({
-  id,
-  publicKeyMultibase
-}: {
-  id?: string
-  publicKeyMultibase: string
-}): string {
-  return id ?? `did:key:${publicKeyMultibase}#${publicKeyMultibase}`
+async function keyAgreementKeyFrom(
+  source: Record<string, any>
+): Promise<KeyAgreementKey> {
+  const key = await X25519KeyAgreementKey2020.from({ didKey: true, ...source })
+  return key as KeyAgreementKey
 }
 
 /**
@@ -108,32 +102,51 @@ async function resolveDidUrl({
 }
 
 /**
- * Validate that a verification method is a usable X25519 key-agreement key and
- * normalize it to a {@link RecipientKey}.
+ * True when a `publicKeyMultibase` carries the X25519 multicodec header. This
+ * is the type-agnostic discriminator for a usable key-agreement key: it accepts
+ * both an `X25519KeyAgreementKey2020` and a `Multikey` whose key is X25519,
+ * while rejecting an Ed25519/other key, regardless of the `type` string a DID
+ * document happens to use.
+ *
+ * @param publicKeyMultibase {string | undefined}
+ * @returns {boolean}
+ */
+function isX25519PublicKey(publicKeyMultibase?: string): boolean {
+  if (!publicKeyMultibase) {
+    return false
+  }
+  try {
+    // The constructor validates the X25519 header bytes and throws otherwise.
+    X25519KeyAgreementKey2020.fromFingerprint({
+      fingerprint: publicKeyMultibase
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Validate that a verification method is a usable X25519 key-agreement key
+ * (an `X25519KeyAgreementKey2020` or a `Multikey` whose public key is X25519)
+ * and construct it.
  *
  * @param options {object}
  * @param options.method {Record<string, any>}
  * @param options.ref {string}
- * @returns {RecipientKey}
+ * @returns {Promise<KeyAgreementKey>}
  */
-function toRecipientKey({
+async function toKeyAgreementKey({
   method,
   ref
 }: {
   method: Record<string, any>
   ref: string
-}): RecipientKey {
-  if (method.type !== KEY_AGREEMENT_TYPE || !method.publicKeyMultibase) {
+}): Promise<KeyAgreementKey> {
+  if (!isX25519PublicKey(method.publicKeyMultibase)) {
     throw new Error(`Recipient "${ref}" is not an ${KEY_AGREEMENT_TYPE} key.`)
   }
-  return {
-    id: recipientKeyId({
-      id: method.id,
-      publicKeyMultibase: method.publicKeyMultibase
-    }),
-    type: KEY_AGREEMENT_TYPE,
-    publicKeyMultibase: method.publicKeyMultibase
-  }
+  return keyAgreementKeyFrom(method)
 }
 
 /**
@@ -143,18 +156,18 @@ function toRecipientKey({
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<RecipientKey>}
+ * @returns {Promise<KeyAgreementKey>}
  */
 async function resolveDidRecipient({
   ref
 }: {
   ref: string
-}): Promise<RecipientKey> {
+}): Promise<KeyAgreementKey> {
   const { did, fragment } = splitFragment({ ref })
 
   // A fragment URL dereferences straight to its verification-method node.
   if (fragment !== undefined) {
-    return toRecipientKey({ method: await resolveDidUrl({ url: ref }), ref })
+    return toKeyAgreementKey({ method: await resolveDidUrl({ url: ref }), ref })
   }
 
   // A bare DID: pick the single keyAgreement key, dereferencing any entries
@@ -183,29 +196,28 @@ async function resolveDidRecipient({
         'use the did#fragment form to choose one.'
     )
   }
-  return toRecipientKey({ method: usable[0], ref })
+  return toKeyAgreementKey({ method: usable[0], ref })
 }
 
 /**
- * Resolve one `--recipient` value to a recipient public key. Resolution order:
- * a raw X25519 `publicKeyMultibase` (starts `z6LS`), then a DID / DID URL, then
- * a wallet key fingerprint or handle.
+ * Resolve one `--recipient` value to a recipient key. Resolution order: a raw
+ * X25519 `publicKeyMultibase` (starts `z6LS`), then a DID / DID URL, then a
+ * wallet key fingerprint or handle.
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<RecipientKey>}
+ * @returns {Promise<KeyAgreementKey>}
  */
 export async function resolveRecipient({
   ref
 }: {
   ref: string
-}): Promise<RecipientKey> {
+}): Promise<KeyAgreementKey> {
   if (ref.startsWith('z6LS')) {
-    return {
-      id: recipientKeyId({ publicKeyMultibase: ref }),
-      type: KEY_AGREEMENT_TYPE,
-      publicKeyMultibase: ref
-    }
+    return toKeyAgreementKey({
+      method: { type: KEY_AGREEMENT_TYPE, publicKeyMultibase: ref },
+      ref
+    })
   }
   if (ref.startsWith('did:')) {
     return resolveDidRecipient({ ref })
@@ -218,29 +230,22 @@ export async function resolveRecipient({
   if (stored.type !== KEY_AGREEMENT_TYPE) {
     throw new Error(`Wallet key "${ref}" is not an ${KEY_AGREEMENT_TYPE} key.`)
   }
-  return {
-    id: recipientKeyId({
-      id: stored.id,
-      publicKeyMultibase: stored.publicKeyMultibase as string
-    }),
-    type: KEY_AGREEMENT_TYPE,
-    publicKeyMultibase: stored.publicKeyMultibase as string
-  }
+  return keyAgreementKeyFrom(stored)
 }
 
 /**
  * Load and validate a key-document JSON file holding an X25519 public key, and
- * normalize it to a {@link RecipientKey}.
+ * construct its key-agreement key.
  *
  * @param options {object}
  * @param options.path {string}
- * @returns {Promise<RecipientKey>}
+ * @returns {Promise<KeyAgreementKey>}
  */
 export async function resolveRecipientFile({
   path
 }: {
   path: string
-}): Promise<RecipientKey> {
+}): Promise<KeyAgreementKey> {
   let method: Record<string, any>
   try {
     method = JSON.parse(await readFile(path, 'utf8'))
@@ -252,56 +257,7 @@ export async function resolveRecipientFile({
       }
     )
   }
-  return toRecipientKey({ method, ref: path })
-}
-
-/**
- * Build the minimal-cipher `recipients` array and the `keyResolver` closure
- * over the resolved recipient keys. `keyResolver({ id })` returns the static
- * public key for a recipient and throws when the id is unknown.
- *
- * @param options {object}
- * @param options.keys {RecipientKey[]}
- * @returns {{recipients: {header: {kid: string, alg: string}}[], keyResolver: Function}}
- */
-export function buildRecipients({ keys }: { keys: RecipientKey[] }): {
-  recipients: { header: { kid: string; alg: string } }[]
-  keyResolver: (options: { id?: string }) => Promise<RecipientKey>
-} {
-  const byId = new Map(keys.map(key => [key.id, key]))
-  const recipients = keys.map(key => ({
-    header: { kid: key.id, alg: KEY_WRAP_ALG }
-  }))
-  async function keyResolver({ id }: { id?: string }): Promise<RecipientKey> {
-    const key = id ? byId.get(id) : undefined
-    if (!key) {
-      throw new Error(`No public key for recipient "${id}".`)
-    }
-    return key
-  }
-  return { recipients, keyResolver }
-}
-
-/**
- * Reconstruct a stored X25519 key pair into the `{ id, deriveSecret }`
- * key-agreement API minimal-cipher decrypts with, setting `.id` to the same
- * `kid` encrypt would have used so `_findRecipient` matches.
- *
- * @param options {object}
- * @param options.stored {StoredKeyAgreementKey}
- * @returns {Promise<X25519KeyAgreementKey2020>}
- */
-async function reconstructKeyAgreementKey({
-  stored
-}: {
-  stored: StoredKeyAgreementKey
-}): Promise<InstanceType<typeof X25519KeyAgreementKey2020> & { id: string }> {
-  const key = await X25519KeyAgreementKey2020.from(stored)
-  key.id = recipientKeyId({
-    id: stored.id,
-    publicKeyMultibase: stored.publicKeyMultibase as string
-  })
-  return key as InstanceType<typeof X25519KeyAgreementKey2020> & { id: string }
+  return toKeyAgreementKey({ method, ref: path })
 }
 
 /**
@@ -311,13 +267,13 @@ async function reconstructKeyAgreementKey({
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<X25519KeyAgreementKey2020>}
+ * @returns {Promise<KeyAgreementKey>}
  */
 export async function loadKeyAgreementKey({
   ref
 }: {
   ref: string
-}): Promise<InstanceType<typeof X25519KeyAgreementKey2020> & { id: string }> {
+}): Promise<KeyAgreementKey> {
   const resolved = await resolveKeyRef({ ref })
   if (!resolved) {
     throw new Error(`No locally stored key found for "${ref}".`)
@@ -329,30 +285,30 @@ export async function loadKeyAgreementKey({
   if (!stored.privateKeyMultibase) {
     throw new Error(`Wallet key "${ref}" has no secret key to decrypt with.`)
   }
-  return reconstructKeyAgreementKey({ stored })
+  return keyAgreementKeyFrom(stored)
 }
 
 /**
  * Auto-select the decryption key when `--key` is omitted: scan the stored
- * X25519 secret keys and return the one whose `kid` matches a recipient of the
- * JWE. Throws when none match or more than one does.
+ * X25519 secret keys and return the one whose `id` (`kid`) matches a recipient
+ * of the JWE. Throws when none match or more than one does.
  *
  * @param options {object}
  * @param options.jwe {{recipients?: {header?: {kid?: string}}[]}}
- * @returns {Promise<X25519KeyAgreementKey2020>}
+ * @returns {Promise<KeyAgreementKey>}
  */
 export async function autoSelectKeyAgreementKey({
   jwe
 }: {
   jwe: { recipients?: { header?: { kid?: string } }[] }
-}): Promise<InstanceType<typeof X25519KeyAgreementKey2020> & { id: string }> {
+}): Promise<KeyAgreementKey> {
   const kids = new Set(
     (jwe.recipients ?? [])
       .map(recipient => recipient?.header?.kid)
       .filter((kid): kid is string => typeof kid === 'string')
   )
   const storageIds = await listCollection('keys')
-  const matches: StoredKeyAgreementKey[] = []
+  const matches: KeyAgreementKey[] = []
   for (const storageId of storageIds) {
     const stored = await loadFromCollection<StoredKeyAgreementKey>(
       'keys',
@@ -365,12 +321,9 @@ export async function autoSelectKeyAgreementKey({
     ) {
       continue
     }
-    const kid = recipientKeyId({
-      id: stored.id,
-      publicKeyMultibase: stored.publicKeyMultibase
-    })
-    if (kids.has(kid)) {
-      matches.push(stored)
+    const key = await keyAgreementKeyFrom(stored)
+    if (kids.has(key.id)) {
+      matches.push(key)
     }
   }
   if (matches.length === 0) {
@@ -385,5 +338,5 @@ export async function autoSelectKeyAgreementKey({
         'pass --key to choose one.'
     )
   }
-  return reconstructKeyAgreementKey({ stored: matches[0] })
+  return matches[0]
 }
