@@ -53,6 +53,8 @@ interface StubResponses {
   importStats?: object
   backends?: object[] | null
   quotas?: object | null
+  collectionBackend?: object | null
+  collectionQuota?: object | null
 }
 
 /**
@@ -175,6 +177,14 @@ function makeStubClient(responses: StubResponses = {}): {
             },
             async delete() {
               record('deleteCollection')
+            },
+            async backend() {
+              record('collectionBackend')
+              return responses.collectionBackend ?? null
+            },
+            async quota() {
+              record('collectionQuota')
+              return responses.collectionQuota ?? null
             },
             async add(data: unknown, options: object) {
               record('add', data, options)
@@ -582,6 +592,162 @@ describe('di was', () => {
           errors[0],
           /Deleted https:\/\/was\.example\/space\/space-1\/docs on the server\./
         )
+      })
+    })
+
+    describe('collection backend', () => {
+      it('renders the backend descriptor as a table', async () => {
+        const calls = await setUpStub({
+          collectionBackend: {
+            id: 'default',
+            name: 'Filesystem',
+            managedBy: 'server',
+            storageMode: ['document', 'blob'],
+            persistence: 'durable'
+          }
+        })
+        await makeWasCommand().parseAsync(
+          ['collection', 'backend', 'home/docs'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.equal(calls.collectionBackend.length, 1)
+        const table = logs.join('\n')
+        assert.match(table, /default/)
+        assert.match(table, /Filesystem/)
+        assert.match(table, /document, blob/)
+      })
+
+      it('outputs raw JSON with --json', async () => {
+        await setUpStub({
+          collectionBackend: { id: 'default', managedBy: 'server' }
+        })
+        await makeWasCommand().parseAsync(
+          ['collection', 'backend', 'home/docs', '--json'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(JSON.parse(logs.join('\n')), {
+          id: 'default',
+          managedBy: 'server'
+        })
+      })
+
+      it('exits 1 on a missing/unauthorized collection', async () => {
+        await setUpStub({ collectionBackend: null })
+        await makeWasCommand().parseAsync(
+          ['collection', 'backend', 'home/docs'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.match(
+          errors[0],
+          /Not found \(or not visible to you\): https:\/\/was\.example\/space\/space-1\/docs/
+        )
+      })
+
+      it('exits 2 for a space-only address', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(['collection', 'backend', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /must address a collection/)
+      })
+    })
+
+    describe('collection quota', () => {
+      it('renders the usage report as a table', async () => {
+        const calls = await setUpStub({
+          collectionQuota: {
+            id: 'default',
+            name: 'Filesystem',
+            managedBy: 'server',
+            state: 'ok',
+            usageBytes: 2048,
+            limit: { capacityBytes: 1048576, isUnlimited: false },
+            restrictedActions: [],
+            measuredAt: '2026-06-13T00:00:00Z'
+          }
+        })
+        await makeWasCommand().parseAsync(
+          ['collection', 'quota', 'home/docs'],
+          {
+            from: 'user'
+          }
+        )
+        assert.equal(exitCode, undefined)
+        assert.equal(calls.collectionQuota.length, 1)
+        const table = logs.join('\n')
+        assert.match(table, /default \(Filesystem\)/)
+        assert.match(table, /ok/)
+        assert.match(table, /2048/)
+        assert.match(table, /1048576/)
+      })
+
+      it('shows "unlimited" for an unlimited backend', async () => {
+        await setUpStub({
+          collectionQuota: {
+            id: 'default',
+            managedBy: 'server',
+            state: 'ok',
+            usageBytes: 0,
+            limit: { isUnlimited: true },
+            restrictedActions: [],
+            measuredAt: '2026-06-13T00:00:00Z'
+          }
+        })
+        await makeWasCommand().parseAsync(
+          ['collection', 'quota', 'home/docs'],
+          {
+            from: 'user'
+          }
+        )
+        assert.equal(exitCode, undefined)
+        assert.match(logs.join('\n'), /unlimited/)
+      })
+
+      it('outputs raw JSON with --json', async () => {
+        const usage = {
+          id: 'default',
+          managedBy: 'server',
+          state: 'ok',
+          usageBytes: 0,
+          limit: { isUnlimited: true },
+          restrictedActions: [],
+          measuredAt: '2026-06-13T00:00:00Z'
+        }
+        await setUpStub({ collectionQuota: usage })
+        await makeWasCommand().parseAsync(
+          ['collection', 'quota', 'home/docs', '--json'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(JSON.parse(logs.join('\n')), usage)
+      })
+
+      it('exits 1 on a missing/unauthorized collection', async () => {
+        await setUpStub({ collectionQuota: null })
+        await makeWasCommand().parseAsync(
+          ['collection', 'quota', 'home/docs'],
+          {
+            from: 'user'
+          }
+        )
+        assert.equal(exitCode, 1)
+        assert.match(
+          errors[0],
+          /Not found \(or not visible to you\): https:\/\/was\.example\/space\/space-1\/docs/
+        )
+      })
+
+      it('exits 2 for a space-only address', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(['collection', 'quota', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /must address a collection/)
       })
     })
 

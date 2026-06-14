@@ -1,8 +1,11 @@
 /**
- * `was collection` run functions: create, list, show, update, and delete a
+ * `was collection` run functions: create, list, show, update, delete, and the
+ * read-only `backend` (the storage backend the collection is stored on) and
+ * `quota` (the collection's storage usage, scoped to that backend) for a
  * collection within a space.
  */
 import { resolveWasTarget } from '../../was/client.js'
+import { renderTable } from '../../table.js'
 import {
   parseSpaceAddress,
   printCollectionListing,
@@ -229,5 +232,145 @@ export async function runCollectionDelete(options: {
     return 0
   } catch (err) {
     return reportError({ action: 'delete the collection', err })
+  }
+}
+
+/**
+ * Shows the storage backend a collection is stored on (its "Collection Backend
+ * Selected" descriptor). A missing/not-visible collection returns `null` (a
+ * 404), reported as not-found; a server without backend support surfaces its
+ * 501 as a typed error.
+ *
+ * @param options {object}
+ * @param options.address {string}   The collection address.
+ * @param [options.json] {boolean}   Output the raw backend JSON.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runCollectionBackend(options: {
+  address: string
+  json?: boolean
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    const target = requireCollectionTarget({
+      target: await resolveWasTarget({
+        address: options.address,
+        server: options.server,
+        did: options.did
+      }),
+      address: options.address
+    })
+    const backend = await target.client
+      .space(target.spaceId)
+      .collection(target.collectionId)
+      .backend()
+    if (backend === null) {
+      console.error(
+        'Not found (or not visible to you): ' +
+          wasUrl({
+            server: target.server,
+            spaceId: target.spaceId,
+            collectionId: target.collectionId
+          })
+      )
+      return 1
+    }
+    if (options.json) {
+      console.log(JSON.stringify(backend, null, 2))
+      return 0
+    }
+    const rows = [
+      ['ID', backend.id],
+      ['Name', backend.name ?? ''],
+      ['Managed By', backend.managedBy ?? ''],
+      ['Storage Mode', backend.storageMode?.join(', ') ?? ''],
+      ['Persistence', backend.persistence ?? '']
+    ]
+    console.log(
+      renderTable({
+        columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
+        rows
+      })
+    )
+    return 0
+  } catch (err) {
+    return reportError({ action: 'show the collection backend', err })
+  }
+}
+
+/**
+ * Shows a collection's storage usage report, scoped to its backend (one
+ * `BackendUsage` entry: state, usage, limit, and any restricted actions). A
+ * missing/not-visible collection returns `null` (a 404), reported as
+ * not-found; a backend that cannot account per-collection surfaces its 501 as
+ * a typed error.
+ *
+ * @param options {object}
+ * @param options.address {string}   The collection address.
+ * @param [options.json] {boolean}   Output the raw usage JSON.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runCollectionQuota(options: {
+  address: string
+  json?: boolean
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    const target = requireCollectionTarget({
+      target: await resolveWasTarget({
+        address: options.address,
+        server: options.server,
+        did: options.did
+      }),
+      address: options.address
+    })
+    const usage = await target.client
+      .space(target.spaceId)
+      .collection(target.collectionId)
+      .quota()
+    if (usage === null) {
+      console.error(
+        'Not found (or not visible to you): ' +
+          wasUrl({
+            server: target.server,
+            spaceId: target.spaceId,
+            collectionId: target.collectionId
+          })
+      )
+      return 1
+    }
+    if (options.json) {
+      console.log(JSON.stringify(usage, null, 2))
+      return 0
+    }
+    const rows = [
+      ['Backend', usage.name ? `${usage.id} (${usage.name})` : usage.id],
+      ['Managed By', usage.managedBy],
+      ['State', usage.state],
+      ['Usage (B)', String(usage.usageBytes)],
+      [
+        'Limit (B)',
+        usage.limit.isUnlimited
+          ? 'unlimited'
+          : String(usage.limit.capacityBytes ?? '')
+      ],
+      ['Restricted', usage.restrictedActions.join(', ')],
+      ['Measured At', usage.measuredAt]
+    ]
+    console.log(
+      renderTable({
+        columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
+        rows
+      })
+    )
+    return 0
+  } catch (err) {
+    return reportError({ action: 'get the collection quota', err })
   }
 }

@@ -4,6 +4,13 @@
 
 ### Added
 
+- Add `was collection backend` and `was collection quota`, surfacing the
+  `GET /space/:spaceId/:collectionId/backend` and
+  `GET /space/:spaceId/:collectionId/quota` endpoints (the storage backend a
+  collection is stored on, and the collection's storage usage scoped to that
+  backend). Both render a table by default and take `--json` for the raw
+  response; a missing/not-visible collection is reported as not-found, and a
+  server (or backend) that does not implement the endpoint (a 501) as an error.
 - Add `was space backends` and `was space quotas`, surfacing the
   `GET /space/:spaceId/backends` and `GET /space/:spaceId/quotas` endpoints
   (the storage backends available within a space, and the space's storage

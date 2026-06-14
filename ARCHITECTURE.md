@@ -119,7 +119,7 @@ di zcap revoke <id>             revoke a delegated capability
 di wallet ls|list               list all wallet collections and items
 
 di was space <create|list|show|update|delete|forget|add|backends|quotas|export|import>
-di was collection|coll <create|list|show|update|delete>
+di was collection|coll <create|list|show|update|delete|backend|quota>
 di was resource|res <add|put|get|list|delete>
 di was ls|get|put|rm [path]     depth-dispatching shorthands
 di was policy <show|set|clear>  manage access-control policies

@@ -12,7 +12,8 @@
  * Subcommand groups: `space` (`create`, `list`, `show`, `update` alias
  * `configure`, `delete`, `forget`, `add`, `backends`, `quotas`),
  * `collection` (alias `coll`;
- * `create`, `list`, `show`, `update`, `delete`), and `resource` (alias
+ * `create`, `list`, `show`, `update`, `delete`, `backend`, `quota`), and
+ * `resource` (alias
  * `res`; `add`, `put`, `get`, `list`, `delete`). The top-level shorthand
  * verbs `ls`, `get`, `put`, and `rm` dispatch on the path depth, mirroring
  * the client's uniform-verbs-at-every-level design. Resource payloads come
@@ -48,9 +49,11 @@ import {
   runSpaceUpdate
 } from './was/space.js'
 import {
+  runCollectionBackend,
   runCollectionCreate,
   runCollectionDelete,
   runCollectionList,
+  runCollectionQuota,
   runCollectionShow,
   runCollectionUpdate
 } from './was/collection.js'
@@ -389,6 +392,41 @@ export function makeWasCommand(): Command {
     .action(
       async (address: string, options: { server?: string; did?: string }) => {
         await runAndExit(runCollectionDelete({ address, ...options }))
+      }
+    )
+
+  collection
+    .command('backend <path>')
+    .description(
+      'Show the storage backend a collection is stored on (SPACE/COLLECTION)'
+    )
+    .option('--json', 'output the raw backend JSON')
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string,
+        options: { json?: boolean; server?: string; did?: string }
+      ) => {
+        await runAndExit(runCollectionBackend({ address, ...options }))
+      }
+    )
+
+  collection
+    .command('quota <path>')
+    .description(
+      "Show a collection's storage usage, scoped to its backend " +
+        '(SPACE/COLLECTION)'
+    )
+    .option('--json', 'output the raw usage JSON')
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string,
+        options: { json?: boolean; server?: string; did?: string }
+      ) => {
+        await runAndExit(runCollectionQuota({ address, ...options }))
       }
     )
 
