@@ -33,7 +33,7 @@ export function parseKeyStorageId({ storageId }: { storageId: string }): {
   curve?: string
 } {
   const match = storageId.match(
-    /^(\d{4}-\d{2}-\d{2})-(ed25519|ecdsa|x25519)(?:-(p\d{3}))?-/
+    /^(\d{4}-\d{2}-\d{2})-(ed25519|ecdsa|x25519|hmac)(?:-(p\d{3}))?-/
   )
   if (!match) {
     return {}
@@ -358,7 +358,11 @@ export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
 export async function resolveKeyRef({ ref }: { ref: string }): Promise<
   | {
       storageId: string
-      key: { publicKeyMultibase?: string; secretKeyMultibase?: string }
+      key: {
+        id?: string
+        publicKeyMultibase?: string
+        secretKeyMultibase?: string
+      }
       meta?: KeyMetadata
     }
   | undefined
@@ -390,6 +394,7 @@ export async function resolveKeyRef({ ref }: { ref: string }): Promise<
   }
   const { storageId, meta } = matches[0]
   const key = await loadFromCollection<{
+    id?: string
     publicKeyMultibase?: string
     secretKeyMultibase?: string
   }>('keys', storageId)

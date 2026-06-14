@@ -44,7 +44,7 @@ live in their own directory, `src/commands/was/` (see the module map), while
 | --- | --- |
 | `src/index.ts` | Executable entry point; builds the `di` program and registers command groups. |
 | `src/commands/` | Command factories: `did`, `edv`, `key`, `vc`, `wallet`, `was`, `zcap`. |
-| `src/edv/` | EDV / minimal-cipher support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt), `document.ts` (the EDV Document envelope -- `generateDocumentId`, envelope detection, and the `{ content, meta }` payload), and `stream.ts` (chunked-stream encrypt/decrypt and the `*.edvdoc/` bundle layout). |
+| `src/edv/` | EDV support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt), `core.ts` (EDV Document encrypt/decrypt and blinded indexing delegated to `@interop/edv-client`'s `EdvClientCore`), `document.ts` (the decrypted payload type and envelope detection), `hmac.ts` (wallet resolution of the `Sha256HmacKey2019` blinding key), and `stream.ts` (chunked-stream encrypt/decrypt and the `*.edvdoc/` bundle layout). |
 | `src/commands/was/` | The `was` group's `run*` functions, split by noun: `space`, `collection`, `resource`, `tree` (the `ls`/`rm` shorthands), `policy`, `publish` (publish/unpublish/grant), and `shared` (option factories, address parsing, listing renderers). |
 | `src/storage.ts` | Wallet + DID-document file I/O: `listCollection`, `loadFromCollection`, `saveToCollection`, and `.meta.json` sidecars. |
 | `src/meta.ts` | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`. |

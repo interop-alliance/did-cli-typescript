@@ -15,7 +15,11 @@
  *    `document.json` carries a `stream: { sequence, chunks }` descriptor and
  *    whose `chunks/<index>.jwe.json` hold the input encrypted as fixed-size
  *    chunks; Layer 2, Phase 2.
- * HMAC-blinded indexing is Layer 2, Phase 3.
+ * In `--document`/`--stream` mode, `--index` blinds indexable attributes into
+ * the envelope's `indexed` array with a wallet HMAC key (Layer 2, Phase 3).
+ *
+ * The EDV Document envelope (and its blinded `indexed` array) is assembled and
+ * unwrapped by `@interop/edv-client`'s `EdvClientCore` via `../edv/core.ts`.
  *
  * Data goes to stdout, diagnostics to stderr. Exit codes: 0 success, 1
  * decryption failure (wrong key / not a recipient), 2 input error (no
@@ -24,7 +28,12 @@
 import { stat } from 'node:fs/promises'
 import { Command, InvalidArgumentError } from 'commander'
 import { Cipher } from '@interop/minimal-cipher'
-import type { IEncryptedDocument, IJWE } from '@interop/data-integrity-core'
+import type {
+  IEDVDocument,
+  IEncryptedDocument,
+  IHMAC,
+  IJWE
+} from '@interop/data-integrity-core'
 import { readInputBytes, writeBytesOutput, writeJsonOutput } from '../was/io.js'
 import { runAndExit } from './was/shared.js'
 import {
@@ -34,12 +43,14 @@ import {
   resolveRecipientFile,
   type KeyAgreementKey
 } from '../edv/recipients.js'
+import { isEncryptedDocument, type DocumentPayload } from '../edv/document.js'
 import {
-  buildDocumentPayload,
-  generateDocumentId,
-  isEncryptedDocument,
-  type DocumentPayload
-} from '../edv/document.js'
+  decryptDocument,
+  encryptDocument,
+  type IndexDeclaration,
+  type UpdateBase
+} from '../edv/core.js'
+import { resolveHmac } from '../edv/hmac.js'
 import {
   decryptChunks,
   encryptToChunks,
@@ -108,9 +119,9 @@ function recipientRefFromKid(kid: string): string {
 /**
  * Merge the recipients of an existing document into the freshly resolved keys
  * for an `--update`, re-resolving each prior recipient from its `kid` and
- * skipping any already covered. This mirrors `EdvClientCore._encrypt`'s
- * recipient-union behavior, so an update can add a recipient without
- * re-specifying the existing ones.
+ * skipping any already covered. This lets an update add a recipient without
+ * re-specifying the existing ones; the merged set is passed to the core so its
+ * key resolver covers every recipient of the resulting JWE.
  *
  * @param options {object}
  * @param options.keys {KeyAgreementKey[]}   Keys resolved from `--recipient(s)`.
@@ -169,150 +180,6 @@ async function loadEnvelope({
 }
 
 /**
- * Resolve the encrypt-time envelope fields for a new or updated document: a
- * fresh id at `sequence` 0, or -- with `--update` -- the existing document's id,
- * its incremented sequence, its preserved `indexed`, and its recipients merged
- * into `keys`.
- *
- * @param options {object}
- * @param options.keys {KeyAgreementKey[]}
- * @param [options.update] {string}   Path to the document being updated.
- * @returns {Promise<{id, sequence, indexed, encryptKeys}>}
- */
-async function resolveEnvelopeFields({
-  keys,
-  update
-}: {
-  keys: KeyAgreementKey[]
-  update?: string
-}): Promise<{
-  id: string
-  sequence: number
-  indexed: IEncryptedDocument['indexed']
-  encryptKeys: KeyAgreementKey[]
-}> {
-  if (update === undefined) {
-    return {
-      id: await generateDocumentId(),
-      sequence: 0,
-      indexed: [],
-      encryptKeys: keys
-    }
-  }
-  const existing = await loadEnvelope({ path: update })
-  if (!existing) {
-    throw new Error(`--update target "${update}" is not an EDV Document.`)
-  }
-  return {
-    id: existing.id,
-    sequence: existing.sequence + 1,
-    indexed: existing.indexed ?? [],
-    encryptKeys: await mergeUpdateRecipients({ keys, existing })
-  }
-}
-
-/**
- * Encrypt stdin or a file to one or more X25519 recipients. By default emits a
- * raw JWE (Layer 1); `--document` wraps the JWE in an EDV Document envelope
- * `{ id, sequence, indexed, jwe }` (input encrypted as `content`); `--stream`
- * writes a bundle directory whose chunks hold the input as a chunked stream.
- *
- * @param options {object}
- * @param [options.file] {string}   Input file; stdin when omitted.
- * @param options.recipient {string[]}   Recipient refs (`--recipient`).
- * @param options.recipientFile {string[]}   Key-document files.
- * @param [options.json] {boolean}   Parse input as JSON (`encryptObject`).
- * @param [options.document] {boolean}   Emit a full EDV Document envelope.
- * @param [options.stream] {boolean}   Emit a chunked-stream bundle directory.
- * @param [options.chunkSize] {number}   Bytes per chunk for `--stream`.
- * @param [options.meta] {string}   JSON `meta` object for the document.
- * @param [options.update] {string}   Existing document (file or bundle) to
- *   update: reuse its `id`, increment `sequence`, and merge its recipients.
- * @param [options.out] {string}   Output file/bundle; stdout when omitted.
- * @returns {Promise<number>}
- */
-export async function runEncrypt({
-  file,
-  recipient,
-  recipientFile,
-  json,
-  document,
-  stream,
-  chunkSize,
-  meta,
-  update,
-  out
-}: {
-  file?: string
-  recipient: string[]
-  recipientFile: string[]
-  json?: boolean
-  document?: boolean
-  stream?: boolean
-  chunkSize?: number
-  meta?: string
-  update?: string
-  out?: string
-}): Promise<number> {
-  const envelopeMode = Boolean(document) || Boolean(stream)
-  if (!envelopeMode && (meta !== undefined || update !== undefined)) {
-    console.error('--meta and --update require --document or --stream.')
-    return 2
-  }
-
-  const keys: KeyAgreementKey[] = []
-  try {
-    for (const ref of recipient) {
-      keys.push(await resolveRecipient({ ref }))
-    }
-    for (const path of recipientFile) {
-      keys.push(await resolveRecipientFile({ path }))
-    }
-  } catch (err) {
-    console.error((err as Error).message)
-    return 2
-  }
-  if (keys.length === 0) {
-    console.error('At least one --recipient or --recipient-file is required.')
-    return 2
-  }
-
-  const bytes = await readInputBytes({ file })
-  const cipher = new Cipher()
-
-  if (stream) {
-    return runEncryptStream({
-      bytes,
-      keys,
-      meta,
-      update,
-      chunkSize,
-      out,
-      cipher
-    })
-  }
-  if (document) {
-    return runEncryptDocument({ bytes, keys, meta, update, out, cipher })
-  }
-
-  const { recipients, keyResolver } = cipher.createRecipients({ keys })
-  let jwe
-  if (json) {
-    const obj = parseJson(bytes)
-    if (obj === null || typeof obj !== 'object') {
-      console.error('--json was given but the input is not valid JSON.')
-      return 2
-    }
-    jwe = await cipher.encryptObject({ obj, recipients, keyResolver })
-  } else {
-    jwe = await cipher.encrypt({ data: bytes, recipients, keyResolver })
-  }
-
-  await writeJsonOutput({ value: jwe, output: out })
-  return 0
-}
-
-/**
  * Parse a JSON-object command option, throwing a clear error when the value is
  * not valid JSON or not an object.
  *
@@ -341,33 +208,244 @@ function parseJsonObjectOption({
 }
 
 /**
+ * The encrypt-time context shared by `--document` and `--stream`: the parsed
+ * `--meta`, the resolved blinding `hmac` and `--index` declarations, and the
+ * envelope `base` -- absent for a fresh document, or (with `--update`) the
+ * existing one's id/sequence/`indexed`, with its recipients merged into
+ * `encryptKeys`.
+ */
+interface EncryptContext {
+  metaObject?: Record<string, unknown>
+  hmac?: IHMAC
+  indexes?: IndexDeclaration[]
+  base?: UpdateBase
+  encryptKeys: KeyAgreementKey[]
+}
+
+/**
+ * Resolve the encrypt-time context for an envelope (document/stream) write:
+ * parse `--meta`, build the `--index`/`--unique` declarations and resolve the
+ * blinding `--hmac` key when indexing, and -- for `--update` -- load the prior
+ * document for its id/sequence/`indexed` and merge its recipients.
+ *
+ * @param options {object}
+ * @param options.keys {KeyAgreementKey[]}   Keys resolved from `--recipient(s)`.
+ * @param [options.meta] {string}
+ * @param [options.update] {string}
+ * @param options.index {string[]}   Indexable attribute paths.
+ * @param [options.unique] {boolean}   Mark every `--index` attribute unique.
+ * @param [options.hmac] {string}   Blinding-key ref; auto-selected when omitted.
+ * @returns {Promise<EncryptContext>}
+ */
+async function resolveEncryptContext({
+  keys,
+  meta,
+  update,
+  index,
+  unique,
+  hmac
+}: {
+  keys: KeyAgreementKey[]
+  meta?: string
+  update?: string
+  index: string[]
+  unique?: boolean
+  hmac?: string
+}): Promise<EncryptContext> {
+  const metaObject =
+    meta !== undefined
+      ? parseJsonObjectOption({ value: meta, label: '--meta' })
+      : undefined
+  const indexes =
+    index.length > 0
+      ? index.map(attribute => ({ attribute, unique: Boolean(unique) }))
+      : undefined
+  const hmacKey = indexes ? await resolveHmac({ ref: hmac }) : undefined
+
+  if (update === undefined) {
+    return { metaObject, hmac: hmacKey, indexes, encryptKeys: keys }
+  }
+  const existing = await loadEnvelope({ path: update })
+  if (!existing) {
+    throw new Error(`--update target "${update}" is not an EDV Document.`)
+  }
+  return {
+    metaObject,
+    hmac: hmacKey,
+    indexes,
+    base: {
+      id: existing.id,
+      sequence: existing.sequence,
+      indexed: existing.indexed ?? []
+    },
+    encryptKeys: await mergeUpdateRecipients({ keys, existing })
+  }
+}
+
+/**
+ * Encrypt stdin or a file to one or more X25519 recipients. By default emits a
+ * raw JWE (Layer 1); `--document` wraps the JWE in an EDV Document envelope
+ * `{ id, sequence, indexed, jwe }` (input encrypted as `content`); `--stream`
+ * writes a bundle directory whose chunks hold the input as a chunked stream.
+ *
+ * @param options {object}
+ * @param [options.file] {string}   Input file; stdin when omitted.
+ * @param options.recipient {string[]}   Recipient refs (`--recipient`).
+ * @param options.recipientFile {string[]}   Key-document files.
+ * @param [options.json] {boolean}   Parse input as JSON (`encryptObject`).
+ * @param [options.document] {boolean}   Emit a full EDV Document envelope.
+ * @param [options.stream] {boolean}   Emit a chunked-stream bundle directory.
+ * @param [options.chunkSize] {number}   Bytes per chunk for `--stream`.
+ * @param [options.meta] {string}   JSON `meta` object for the document.
+ * @param options.index {string[]}   Indexable attribute paths (`--index`).
+ * @param [options.unique] {boolean}   Mark every `--index` attribute unique.
+ * @param [options.hmac] {string}   Blinding-key ref for `--index`.
+ * @param [options.update] {string}   Existing document (file or bundle) to
+ *   update: reuse its `id`, increment `sequence`, and merge its recipients.
+ * @param [options.out] {string}   Output file/bundle; stdout when omitted.
+ * @returns {Promise<number>}
+ */
+export async function runEncrypt({
+  file,
+  recipient,
+  recipientFile,
+  json,
+  document,
+  stream,
+  chunkSize,
+  meta,
+  index,
+  unique,
+  hmac,
+  update,
+  out
+}: {
+  file?: string
+  recipient: string[]
+  recipientFile: string[]
+  json?: boolean
+  document?: boolean
+  stream?: boolean
+  chunkSize?: number
+  meta?: string
+  index: string[]
+  unique?: boolean
+  hmac?: string
+  update?: string
+  out?: string
+}): Promise<number> {
+  const envelopeMode = Boolean(document) || Boolean(stream)
+  if (!envelopeMode && (meta !== undefined || update !== undefined)) {
+    console.error('--meta and --update require --document or --stream.')
+    return 2
+  }
+  if (!envelopeMode && index.length > 0) {
+    console.error('--index requires --document or --stream.')
+    return 2
+  }
+  if (hmac !== undefined && index.length === 0) {
+    console.error('--hmac requires --index.')
+    return 2
+  }
+
+  const keys: KeyAgreementKey[] = []
+  try {
+    for (const ref of recipient) {
+      keys.push(await resolveRecipient({ ref }))
+    }
+    for (const path of recipientFile) {
+      keys.push(await resolveRecipientFile({ path }))
+    }
+  } catch (err) {
+    console.error((err as Error).message)
+    return 2
+  }
+  if (keys.length === 0) {
+    console.error('At least one --recipient or --recipient-file is required.')
+    return 2
+  }
+
+  const bytes = await readInputBytes({ file })
+  const cipher = new Cipher()
+
+  if (stream) {
+    return runEncryptStream({
+      bytes,
+      keys,
+      meta,
+      index,
+      unique,
+      hmac,
+      update,
+      chunkSize,
+      out,
+      cipher
+    })
+  }
+  if (document) {
+    return runEncryptDocument({
+      bytes,
+      keys,
+      meta,
+      index,
+      unique,
+      hmac,
+      update,
+      out
+    })
+  }
+
+  const { recipients, keyResolver } = cipher.createRecipients({ keys })
+  let jwe
+  if (json) {
+    const obj = parseJson(bytes)
+    if (obj === null || typeof obj !== 'object') {
+      console.error('--json was given but the input is not valid JSON.')
+      return 2
+    }
+    jwe = await cipher.encryptObject({ obj, recipients, keyResolver })
+  } else {
+    jwe = await cipher.encrypt({ data: bytes, recipients, keyResolver })
+  }
+
+  await writeJsonOutput({ value: jwe, output: out })
+  return 0
+}
+
+/**
  * The `--document` branch of `runEncrypt`: parse the input as the document's
- * `content`, attach optional `--meta`, mint or carry over the envelope id and
- * sequence, encrypt `{ content, meta }`, and emit the envelope.
+ * `content`, attach optional `--meta` and blinded `--index` entries, mint or
+ * carry over the envelope id/sequence, and emit the encrypted envelope.
  *
  * @param options {object}
  * @param options.bytes {Uint8Array}
  * @param options.keys {KeyAgreementKey[]}
  * @param [options.meta] {string}
+ * @param options.index {string[]}
+ * @param [options.unique] {boolean}
+ * @param [options.hmac] {string}
  * @param [options.update] {string}
  * @param [options.out] {string}
- * @param options.cipher {Cipher}
  * @returns {Promise<number>}
  */
 async function runEncryptDocument({
   bytes,
   keys,
   meta,
+  index,
+  unique,
+  hmac,
   update,
-  out,
-  cipher
+  out
 }: {
   bytes: Uint8Array
   keys: KeyAgreementKey[]
   meta?: string
+  index: string[]
+  unique?: boolean
+  hmac?: string
   update?: string
   out?: string
-  cipher: Cipher
 }): Promise<number> {
   const content = parseJson(bytes)
   if (content === null || typeof content !== 'object') {
@@ -375,38 +453,33 @@ async function runEncryptDocument({
     return 2
   }
 
-  let metaObject: Record<string, unknown> | undefined
-  let fields
+  let context
   try {
-    metaObject =
-      meta !== undefined
-        ? parseJsonObjectOption({ value: meta, label: '--meta' })
-        : undefined
-    fields = await resolveEnvelopeFields({ keys, update })
+    context = await resolveEncryptContext({
+      keys,
+      meta,
+      update,
+      index,
+      unique,
+      hmac
+    })
   } catch (err) {
     console.error((err as Error).message)
     return 2
   }
 
-  const { recipients, keyResolver } = cipher.createRecipients({
-    keys: fields.encryptKeys
-  })
-  const payload = buildDocumentPayload({
-    content: content as Record<string, unknown>,
-    meta: metaObject
-  })
-  const jwe = await cipher.encryptObject({
-    obj: payload,
-    recipients,
-    keyResolver
-  })
-
-  const envelope: IEncryptedDocument = {
-    id: fields.id,
-    sequence: fields.sequence,
-    indexed: fields.indexed,
-    jwe
+  const doc: IEDVDocument = { content: content as Record<string, unknown> }
+  if (context.metaObject) {
+    doc.meta = context.metaObject
   }
+
+  const envelope = await encryptDocument({
+    doc,
+    keys: context.encryptKeys,
+    hmac: context.hmac,
+    indexes: context.indexes,
+    base: context.base
+  })
   await writeJsonOutput({ value: envelope, output: out })
   return 0
 }
@@ -421,6 +494,9 @@ async function runEncryptDocument({
  * @param options.bytes {Uint8Array}
  * @param options.keys {KeyAgreementKey[]}
  * @param [options.meta] {string}
+ * @param options.index {string[]}
+ * @param [options.unique] {boolean}
+ * @param [options.hmac] {string}
  * @param [options.update] {string}
  * @param [options.chunkSize] {number}
  * @param [options.out] {string}
@@ -431,6 +507,9 @@ async function runEncryptStream({
   bytes,
   keys,
   meta,
+  index,
+  unique,
+  hmac,
   update,
   chunkSize,
   out,
@@ -439,6 +518,9 @@ async function runEncryptStream({
   bytes: Uint8Array
   keys: KeyAgreementKey[]
   meta?: string
+  index: string[]
+  unique?: boolean
+  hmac?: string
   update?: string
   chunkSize?: number
   out?: string
@@ -449,50 +531,54 @@ async function runEncryptStream({
     return 2
   }
 
-  let metaObject: Record<string, unknown> | undefined
-  let fields
+  let context
   try {
-    metaObject =
-      meta !== undefined
-        ? parseJsonObjectOption({ value: meta, label: '--meta' })
-        : undefined
-    fields = await resolveEnvelopeFields({ keys, update })
+    context = await resolveEncryptContext({
+      keys,
+      meta,
+      update,
+      index,
+      unique,
+      hmac
+    })
   } catch (err) {
     console.error((err as Error).message)
     return 2
   }
 
-  // The stream's encrypt transformer mutates its recipients array (it injects an
-  // ephemeral key), so build a separate recipients set for the document jwe.
-  const forChunks = cipher.createRecipients({ keys: fields.encryptKeys })
+  // The chunk `sequence` must equal the document's final sequence; the core
+  // sets a new document to 0 and increments an updated one, so compute the same
+  // value here to stamp the chunks (which are encrypted before the envelope).
+  const sequence = context.base ? context.base.sequence + 1 : 0
+
+  // The stream's encrypt transformer mutates its recipients array (it injects
+  // an ephemeral key), so build a recipients set just for the chunks; the core
+  // builds its own for the document jwe.
+  const forChunks = cipher.createRecipients({ keys: context.encryptKeys })
   const chunks = await encryptToChunks({
     cipher,
     data: bytes,
     recipients: forChunks.recipients,
     keyResolver: forChunks.keyResolver,
     chunkSize,
-    sequence: fields.sequence
-  })
-  const stream = { sequence: fields.sequence, chunks: chunks.length }
-
-  const payload: DocumentPayload = { content: {}, stream }
-  if (metaObject) {
-    payload.meta = metaObject
-  }
-  const forDocument = cipher.createRecipients({ keys: fields.encryptKeys })
-  const jwe = await cipher.encryptObject({
-    obj: payload,
-    recipients: forDocument.recipients,
-    keyResolver: forDocument.keyResolver
+    sequence
   })
 
-  const envelope: IEncryptedDocument = {
-    id: fields.id,
-    sequence: fields.sequence,
-    indexed: fields.indexed,
-    stream,
-    jwe
+  const doc: IEDVDocument = {
+    content: {},
+    stream: { sequence, chunks: chunks.length }
   }
+  if (context.metaObject) {
+    doc.meta = context.metaObject
+  }
+
+  const envelope = await encryptDocument({
+    doc,
+    keys: context.encryptKeys,
+    hmac: context.hmac,
+    indexes: context.indexes,
+    base: context.base
+  })
   await writeDocumentBundle({ dir: out, document: envelope, chunks })
   console.error(
     `Wrote bundle ${out} (${chunks.length} chunk${chunks.length === 1 ? '' : 's'})`
@@ -545,10 +631,7 @@ export async function runDecrypt({
     console.error('--document was given but the input is not an EDV Document.')
     return 2
   }
-  // A document's payload (`{ content, meta }`) is always an object, so decrypt
-  // it with object semantics regardless of `--json`; a bare JWE honors `--json`.
   const jwe = (envelope ? envelope.jwe : parsed) as IJWE
-  const asObject = Boolean(envelope) || Boolean(json)
 
   let keyAgreementKey
   try {
@@ -558,13 +641,34 @@ export async function runDecrypt({
     return 2
   }
 
+  // An EDV Document envelope is unwrapped through the core (its payload is
+  // always the `{ content, meta }` object); a bare JWE honors `--json`.
+  if (envelope) {
+    let payload: DocumentPayload
+    try {
+      payload = await decryptDocument({
+        encryptedDoc: envelope,
+        keyAgreementKey
+      })
+    } catch {
+      console.error(
+        'Decryption failed: the key does not match any recipient of this ' +
+          'document.'
+      )
+      return 1
+    }
+    reportDocumentSidecars({ payload })
+    await writeJsonOutput({ value: payload.content, output: out })
+    return 0
+  }
+
   const cipher = new Cipher()
   // A mismatched key throws ("no matching recipient"); a matched key whose
   // unwrap/decrypt fails returns null. Both are decryption failures, not
   // crashes, so report either as a clean non-zero exit.
   let result: object | Uint8Array | null
   try {
-    result = asObject
+    result = json
       ? await cipher.decryptObject({ jwe, keyAgreementKey })
       : await cipher.decrypt({ jwe, keyAgreementKey })
   } catch {
@@ -577,11 +681,7 @@ export async function runDecrypt({
     return 1
   }
 
-  if (envelope) {
-    const payload = result as DocumentPayload
-    reportDocumentSidecars({ payload })
-    await writeJsonOutput({ value: payload.content, output: out })
-  } else if (asObject) {
+  if (json) {
     await writeJsonOutput({ value: result, output: out })
   } else {
     await writeBytesOutput({ bytes: result as Uint8Array, output: out })
@@ -671,13 +771,10 @@ async function runDecryptBundle({
   const cipher = new Cipher()
   let bytes: Uint8Array
   try {
-    const payload = (await cipher.decryptObject({
-      jwe: document.jwe,
+    const payload = await decryptDocument({
+      encryptedDoc: document,
       keyAgreementKey
-    })) as DocumentPayload | null
-    if (payload === null) {
-      throw new Error('document jwe did not decrypt')
-    }
+    })
     reportDocumentSidecars({ payload })
     bytes = await decryptChunks({ cipher, chunks, keyAgreementKey })
   } catch {
@@ -733,6 +830,19 @@ export function makeEdvCommand(): Command {
       'a JSON meta object to store in the document (requires --document/--stream)'
     )
     .option(
+      '--index <attribute>',
+      'an indexable attribute path (e.g. content.type) to HMAC-blind into the ' +
+        'document indexed array; requires --document/--stream (repeatable)',
+      collect,
+      []
+    )
+    .option('--unique', 'mark every --index attribute as unique')
+    .option(
+      '--hmac <ref>',
+      'the wallet HMAC key (id or handle) to blind --index attributes with; ' +
+        'auto-selected when the wallet has exactly one'
+    )
+    .option(
       '--update <path>',
       'an existing EDV Document (file or bundle) to update: reuse its id, ' +
         'increment its sequence, and merge its recipients'
@@ -753,6 +863,9 @@ export function makeEdvCommand(): Command {
           stream?: boolean
           chunkSize?: number
           meta?: string
+          index: string[]
+          unique?: boolean
+          hmac?: string
           update?: string
           out?: string
         }
