@@ -81,7 +81,7 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di key create
 ```
 
 Specify an explicit key type with `--type` (defaults to `ed25519`; supported:
-`ed25519`, `ecdsa`, `x25519`):
+`ed25519`, `ecdsa`, `x25519`, `hmac`):
 
 ```
 SECRET_KEY_SEED=z1Aaj5A4UCsd... ./di key create --type ed25519
@@ -131,6 +131,28 @@ private key in multibase encoding:
 
 Like ECDSA, X25519 key generation is non-deterministic, so `--with-seed` and
 `SECRET_KEY_SEED` are not supported with `--type x25519`.
+
+Generate a `Sha256HmacKey2019` HMAC key -- a 32-byte symmetric secret used to
+HMAC-blind EDV index attributes (see [Blinded indexing](#blinded-indexing---index))
+-- with `--type hmac`:
+
+```
+./di key create --type hmac
+```
+
+It is serialized with the secret carried as an `oct` JWK (it has no public
+half), identified by a random `urn:uuid:` id:
+
+```json
+{
+  "id": "urn:uuid:...",
+  "type": "Sha256HmacKey2019",
+  "secretKeyJwk": { "kty": "oct", "alg": "HS256", "k": "..." }
+}
+```
+
+HMAC key generation is non-deterministic, so `--with-seed` and `SECRET_KEY_SEED`
+are not supported with `--type hmac`.
 
 Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by default, or
 `$WALLET_DIR/keys/` if set) with `--save`. A `.meta.json` metadata sidecar is
@@ -1540,6 +1562,38 @@ are reported on stderr).
 ```
 ./di edv decrypt photo.edvdoc/ -o photo.png
 ```
+
+#### Blinded indexing (`--index`)
+
+In `--document`/`--stream` mode, `--index <attribute>` populates the envelope's
+`indexed` array so a document is searchable the way an EDV / WAS server indexes
+it -- without the server learning the cleartext. The attribute name and value
+are **HMAC-blinded**: a `Sha256HmacKey2019` key signs them, so the same key over
+the same value always yields the same opaque entry (matchable across documents),
+but the cleartext never leaves the client.
+
+First create an HMAC key in the wallet (a 32-byte secret, no public half):
+
+```
+./di key create --type hmac --save --handle vault-index
+```
+
+Then declare one or more indexable attribute paths (dotted paths into `content`
+or `meta`). The HMAC key is auto-selected when the wallet holds exactly one;
+otherwise pass `--hmac <id|handle>`. `--unique` marks every `--index` attribute
+as unique.
+
+```
+echo '{"type":"Person","name":"alice"}' | \
+  ./di edv encrypt --document --json -r alice-kak \
+    --index content.type --index content.name --hmac vault-index -o doc.edvdoc.json
+```
+
+The resulting envelope carries `indexed: [{ hmac: { id, type }, sequence,
+attributes: [{ name, value, unique? }] }]`, where each `name`/`value` is the
+blinded (opaque) form. The envelope and its blinded entries are assembled by
+[`@interop/edv-client`](https://www.npmjs.com/package/@interop/edv-client)'s
+`EdvClientCore`, so they match what an EDV server expects byte-for-byte.
 
 ## Contribute
 

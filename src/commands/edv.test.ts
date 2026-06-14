@@ -60,6 +60,19 @@ describe('edv', () => {
     return JSON.parse(logs[0])
   }
 
+  /**
+   * Create a saved HMAC wallet key and return its exported key object
+   * (id, type, secretKeyJwk).
+   */
+  async function createHmacKey(): Promise<{ id: string; type: string }> {
+    logs.length = 0
+    errors.length = 0
+    await makeKeyCommand().parseAsync(['create', '--type', 'hmac', '--save'], {
+      from: 'user'
+    })
+    return JSON.parse(logs[0])
+  }
+
   it('round-trips a JSON object encrypted to a wallet key', async () => {
     const key = await createX25519Key()
     const inputPath = join(walletDir, 'in.json')
@@ -493,5 +506,191 @@ describe('edv', () => {
     )
     assert.equal(exitCode, 1)
     assert.ok(errors.join('\n').toLowerCase().includes('decryption failed'))
+  })
+
+  it('blinds an --index attribute into the document indexed array', async () => {
+    const key = await createX25519Key()
+    const hmac = await createHmacKey()
+    const inputPath = join(walletDir, 'in.json')
+    const docPath = join(walletDir, 'out.edvdoc.json')
+    await writeFile(
+      inputPath,
+      JSON.stringify({ type: 'Person', name: 'alice' })
+    )
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--index',
+        'content.type',
+        '-o',
+        docPath
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+
+    const envelope = JSON.parse(await readFile(docPath, 'utf8'))
+    assert.equal(envelope.indexed.length, 1)
+    const entry = envelope.indexed[0]
+    assert.equal(entry.hmac.id, hmac.id)
+    assert.equal(entry.hmac.type, 'Sha256HmacKey2019')
+    assert.equal(entry.sequence, 0)
+    assert.equal(entry.attributes.length, 1)
+    const attribute = entry.attributes[0]
+    // The blinded name/value must not leak the cleartext attribute or value.
+    assert.ok(typeof attribute.name === 'string' && attribute.name.length > 0)
+    assert.ok(typeof attribute.value === 'string' && attribute.value.length > 0)
+    assert.ok(!attribute.name.includes('content.type'))
+    assert.ok(!attribute.value.includes('Person'))
+
+    // The content still round-trips.
+    logs.length = 0
+    await makeEdvCommand().parseAsync(['decrypt', docPath], { from: 'user' })
+    assert.deepEqual(JSON.parse(logs.join('\n')), {
+      type: 'Person',
+      name: 'alice'
+    })
+  })
+
+  it('produces stable blinded entries across runs with the same HMAC key', async () => {
+    const key = await createX25519Key()
+    await createHmacKey()
+    const inputPath = join(walletDir, 'in.json')
+    await writeFile(inputPath, JSON.stringify({ type: 'Person' }))
+
+    const blind = async (): Promise<{ name: string; value: string }> => {
+      logs.length = 0
+      const outPath = join(walletDir, `o-${Math.random()}.edvdoc.json`)
+      await makeEdvCommand().parseAsync(
+        [
+          'encrypt',
+          inputPath,
+          '--document',
+          '-r',
+          key.publicKeyMultibase,
+          '--index',
+          'content.type',
+          '-o',
+          outPath
+        ],
+        { from: 'user' }
+      )
+      const envelope = JSON.parse(await readFile(outPath, 'utf8'))
+      return envelope.indexed[0].attributes[0]
+    }
+
+    const first = await blind()
+    const second = await blind()
+    // Same HMAC key + same attribute/value => identical blinded entry, so a
+    // server can match on it across documents.
+    assert.equal(first.name, second.name)
+    assert.equal(first.value, second.value)
+  })
+
+  it('marks an attribute unique with --unique', async () => {
+    const key = await createX25519Key()
+    await createHmacKey()
+    const inputPath = join(walletDir, 'in.json')
+    const docPath = join(walletDir, 'out.edvdoc.json')
+    await writeFile(inputPath, JSON.stringify({ type: 'Person' }))
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--index',
+        'content.type',
+        '--unique',
+        '-o',
+        docPath
+      ],
+      { from: 'user' }
+    )
+    const envelope = JSON.parse(await readFile(docPath, 'utf8'))
+    assert.equal(envelope.indexed[0].attributes[0].unique, true)
+  })
+
+  it('preserves the blinded entry across an --update and bumps its sequence', async () => {
+    const key = await createX25519Key()
+    await createHmacKey()
+    const inputPath = join(walletDir, 'in.json')
+    const v0Path = join(walletDir, 'v0.edvdoc.json')
+    const v1Path = join(walletDir, 'v1.edvdoc.json')
+    await writeFile(inputPath, JSON.stringify({ type: 'Person' }))
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--index',
+        'content.type',
+        '-o',
+        v0Path
+      ],
+      { from: 'user' }
+    )
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--index',
+        'content.type',
+        '--update',
+        v0Path,
+        '-o',
+        v1Path
+      ],
+      { from: 'user' }
+    )
+    const v1 = JSON.parse(await readFile(v1Path, 'utf8'))
+    assert.equal(v1.sequence, 1)
+    assert.equal(v1.indexed.length, 1)
+    assert.equal(v1.indexed[0].sequence, 1)
+  })
+
+  it('rejects --index without --document/--stream', async () => {
+    const inputPath = join(walletDir, 'in.json')
+    await writeFile(inputPath, JSON.stringify({ a: 1 }))
+    await makeEdvCommand().parseAsync(
+      ['encrypt', inputPath, '-r', 'z6LSdummy', '--index', 'content.a'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.ok(errors.join('\n').includes('--index requires'))
+  })
+
+  it('errors clearly when --index is used with no HMAC key in the wallet', async () => {
+    const key = await createX25519Key()
+    const inputPath = join(walletDir, 'in.json')
+    await writeFile(inputPath, JSON.stringify({ type: 'Person' }))
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--index',
+        'content.type'
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.ok(errors.join('\n').includes('No HMAC key'))
   })
 })

@@ -6,6 +6,7 @@ import {
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
+import { SHA256HMACKey } from '@interop/data-integrity-core'
 import {
   listCollection,
   loadFromCollection,
@@ -106,7 +107,7 @@ export function makeKeyCommand(): Command {
     .description('Create a new key')
     .option(
       '-t, --type <type>',
-      'key type (supported: ed25519, ecdsa, x25519)',
+      'key type (supported: ed25519, ecdsa, x25519, hmac)',
       'ed25519'
     )
     .option(
@@ -274,10 +275,45 @@ export function makeKeyCommand(): Command {
             console.log(JSON.stringify(exported, null, 2))
             break
           }
+          case 'hmac': {
+            if (options.withSeed) {
+              console.error(
+                '--with-seed is not supported for hmac keys; HMAC key ' +
+                  'generation is non-deterministic and cannot be derived ' +
+                  'from a seed.'
+              )
+              process.exit(1)
+              return
+            }
+            const hmac = await SHA256HMACKey.generate()
+            const exported = await hmac.export({ secretKey: true })
+            if (options.save) {
+              const now = new Date()
+              const date = now.toISOString().slice(0, 10)
+              const storageId = `${date}-hmac-${exported.id}`.replaceAll(
+                ':',
+                '_'
+              )
+              const filePath = await saveToCollection(
+                'keys',
+                storageId,
+                exported
+              )
+              await writeCreateMeta({
+                storageId,
+                created: now.toISOString(),
+                handle: options.handle,
+                description: options.description
+              })
+              console.error(`Key saved to ${filePath}`)
+            }
+            console.log(JSON.stringify(exported, null, 2))
+            break
+          }
           default:
             console.error(
               `Unknown key type: ${options.type}. ` +
-                'Supported: ed25519, ecdsa, x25519'
+                'Supported: ed25519, ecdsa, x25519, hmac'
             )
             process.exit(1)
         }
@@ -325,11 +361,14 @@ export function makeKeyCommand(): Command {
       }[] = []
       // Storage IDs carry a YYYY-MM-DD prefix, so this order is chronological.
       for (const storageId of storageIds) {
-        const key = await loadFromCollection<{ publicKeyMultibase?: string }>(
-          'keys',
-          storageId
-        )
-        if (!key.publicKeyMultibase) {
+        const key = await loadFromCollection<{
+          id?: string
+          publicKeyMultibase?: string
+        }>('keys', storageId)
+        // Asymmetric keys are identified by their publicKeyMultibase
+        // fingerprint; an HMAC key has no public half, so fall back to its id.
+        const fingerprint = key.publicKeyMultibase ?? key.id
+        if (!fingerprint) {
           continue
         }
         const meta = await loadMetaFromCollection({
@@ -338,14 +377,14 @@ export function makeKeyCommand(): Command {
         })
         const parsed = parseKeyStorageId({ storageId })
         entries.push({
-          fingerprint: key.publicKeyMultibase,
+          fingerprint,
           storageId,
           type: parsed.type,
           curve: parsed.curve,
           created: meta?.created ?? parsed.date,
           handle: meta?.handle,
           description: meta?.description,
-          dids: fingerprintDids.get(key.publicKeyMultibase) ?? []
+          dids: fingerprintDids.get(fingerprint) ?? []
         })
       }
 
@@ -408,7 +447,9 @@ export function makeKeyCommand(): Command {
         process.exit(1)
         return
       }
-      if (!resolved?.key.publicKeyMultibase) {
+      // An HMAC key has no public fingerprint, so fall back to its id.
+      const fingerprint = resolved?.key.publicKeyMultibase ?? resolved?.key.id
+      if (!resolved || !fingerprint) {
         console.error(`No locally stored key found for ${id}`)
         process.exit(1)
         return
@@ -416,7 +457,6 @@ export function makeKeyCommand(): Command {
       const storedKey = resolved.key
 
       if (options.meta) {
-        const fingerprint = storedKey.publicKeyMultibase as string
         const parsed = parseKeyStorageId({ storageId: resolved.storageId })
         const created = resolved.meta?.created ?? parsed.date
         // The displayed DIDs are always derived from the stored DID documents,
@@ -459,7 +499,11 @@ export function makeKeyCommand(): Command {
       // Re-import the stored key pair and re-export the public half only, so the
       // secret key material never leaves storage in the displayed output.
       let publicKey
-      if (
+      if ((storedKey as { type?: string }).type === 'Sha256HmacKey2019') {
+        // A symmetric HMAC key has no public half; show only its safe fields,
+        // never the secret material.
+        publicKey = { id: storedKey.id, type: 'Sha256HmacKey2019' }
+      } else if (
         (storedKey as { type?: string }).type === 'X25519KeyAgreementKey2020'
       ) {
         publicKey = await (

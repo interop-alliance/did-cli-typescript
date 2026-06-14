@@ -273,6 +273,74 @@ describe('did key', () => {
       }
     })
 
+    it('generates a Sha256HmacKey2019 hmac key', async () => {
+      await makeKeyCommand().parseAsync(['create', '--type', 'hmac'], {
+        from: 'user'
+      })
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.type, 'Sha256HmacKey2019')
+      assert.match(parsed.id, /^urn:uuid:/)
+      // The symmetric secret is carried as an `oct` JWK.
+      assert.equal(parsed.secretKeyJwk.kty, 'oct')
+      // An HMAC key has no public/private multibase fingerprint.
+      assert.equal(parsed.publicKeyMultibase, undefined)
+    })
+
+    it('exits with error for hmac --with-seed', async () => {
+      await makeKeyCommand().parseAsync(
+        ['create', '--type', 'hmac', '--with-seed'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
+    it('saves an hmac key with an hmac-tagged filename and round-trips show', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'hmac', '--save', '--handle', 'blinder'],
+          { from: 'user' }
+        )
+        const created = JSON.parse(logs[0])
+        const filePath = errors[0].slice('Key saved to '.length)
+        const filename = filePath.slice(filePath.lastIndexOf('/') + 1)
+        // filename format: YYYY-MM-DD-hmac-urn_uuid_<uuid>.json
+        assert.match(filename, /^\d{4}-\d{2}-\d{2}-hmac-urn_uuid_.*\.json$/)
+
+        // `key show` finds it by handle and never prints the secret JWK.
+        logs.length = 0
+        await makeKeyCommand().parseAsync(['show', 'blinder'], { from: 'user' })
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.id, created.id)
+        assert.equal(shown.type, 'Sha256HmacKey2019')
+        assert.equal(shown.secretKeyJwk, undefined)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('lists a saved hmac key with its hmac type', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'hmac', '--save'],
+          {
+            from: 'user'
+          }
+        )
+        logs.length = 0
+        await makeKeyCommand().parseAsync(['list', '--json'], { from: 'user' })
+        const entries = JSON.parse(logs.join('\n'))
+        assert.equal(entries.length, 1)
+        assert.equal(entries[0].type, 'hmac')
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
     it('exits with error for --handle without --save', async () => {
       await makeKeyCommand().parseAsync(['create', '--handle', 'x'], {
         from: 'user'

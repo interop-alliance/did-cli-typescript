@@ -198,11 +198,12 @@ export async function removeFromCollection({
 }
 
 /**
- * Find a stored wallet key by its publicKeyMultibase fingerprint.
+ * Find a stored wallet key by its publicKeyMultibase fingerprint or its key id.
  *
- * Fingerprints are not the file name (storage IDs carry a date/type prefix and
- * may encode a full verification method id), so the lookup scans every key
- * file in the collection.
+ * Neither identifier is the file name (storage IDs carry a date/type prefix and
+ * may encode a full verification method id), so the lookup scans every key file
+ * in the collection. Matching by `id` lets symmetric keys with no public
+ * fingerprint (e.g. an HMAC key) be resolved.
  *
  * @param options {object}
  * @param options.fingerprint {string}
@@ -215,17 +216,22 @@ export async function findStoredKey({
 }): Promise<
   | {
       storageId: string
-      key: { publicKeyMultibase?: string; secretKeyMultibase?: string }
+      key: {
+        id?: string
+        publicKeyMultibase?: string
+        secretKeyMultibase?: string
+      }
     }
   | undefined
 > {
   const storageIds = await listCollection('keys')
   for (const storageId of storageIds) {
     const key = await loadFromCollection<{
+      id?: string
       publicKeyMultibase?: string
       secretKeyMultibase?: string
     }>('keys', storageId)
-    if (key.publicKeyMultibase === fingerprint) {
+    if (key.publicKeyMultibase === fingerprint || key.id === fingerprint) {
       return { storageId, key }
     }
   }

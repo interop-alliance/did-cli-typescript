@@ -41,6 +41,26 @@
   recognizes a bundle directory, reassembles the chunks in order, and writes the
   original bytes to `-o`/stdout (reporting `content`/`meta`/`stream` on stderr).
   HMAC-blinded indexing remains deferred to Layer 2, Phase 3.
+- Add HMAC-blinded indexing to `edv` (Layer 2, Phase 3). In
+  `--document`/`--stream` mode, `--index <attribute>` (repeatable; a dotted path
+  into `content`/`meta`) populates the envelope's `indexed` array with entries
+  whose attribute names and values are HMAC-blinded, so a document is searchable
+  the way an EDV / WAS server indexes it without the server learning the
+  cleartext. `--unique` marks every `--index` attribute unique; `--hmac <ref>`
+  selects the blinding key (auto-selected when the wallet holds exactly one). The
+  same key over the same value yields a stable blinded entry, matchable across
+  documents. The EDV Document envelope and its blinded `indexed` array are now
+  assembled and unwrapped by `@interop/edv-client`'s `EdvClientCore` (a new
+  dependency), converging on the reference implementation rather than the
+  hand-rolled envelope used in Phases 1-2.
+- Add `key create --type hmac`, generating a `Sha256HmacKey2019` HMAC key (a
+  32-byte symmetric secret used to blind EDV index attributes) via
+  `@interop/data-integrity-core`'s `SHA256HMACKey`. The key has no public half;
+  it is serialized with its secret as an `oct` JWK and identified by a random
+  `urn:uuid:` id. HMAC keys list with an `hmac` type label, and `key show`
+  prints only their `id`/`type` (never the secret). Like ecdsa/x25519, HMAC
+  generation is non-deterministic, so `--with-seed` / `SECRET_KEY_SEED` are not
+  supported.
 
 ## 0.8.0 - 2026-06-13
 
