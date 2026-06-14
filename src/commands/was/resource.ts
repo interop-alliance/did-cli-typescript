@@ -1,10 +1,15 @@
 /**
  * `was resource` run functions: add (server-generated id), put (upsert at a
- * known id), get (JSON or binary), list, and delete. Each addressing-capable
- * verb accepts either a path or a `--capability` targeting the resource or
- * its collection.
+ * known id), get (JSON or binary), list, delete, and the resource-metadata
+ * verbs `meta get` / `meta put`. Each addressing-capable verb accepts either
+ * a path or a `--capability` targeting the resource or its collection.
  */
-import { type Collection, type Resource } from '@interop/was-client'
+import { readFile } from 'node:fs/promises'
+import {
+  type Collection,
+  type Resource,
+  type ResourceMetadataCustom
+} from '@interop/was-client'
 import { resolveWasTarget } from '../../was/client.js'
 import { resolveCapabilityTarget } from '../../was/capability.js'
 import { readPayload, writeResourceOutput } from '../../was/io.js'
@@ -16,6 +21,66 @@ import {
   requireResourceTarget,
   wasUrl
 } from './shared.js'
+
+/**
+ * Resolves a single resource handle and its URL from either a path address
+ * or a `--capability` targeting a resource -- the shared addressing logic of
+ * the resource verbs that operate on one resource (`put`, `get`, `meta`).
+ *
+ * @param options {object}
+ * @param [options.address] {string}   The resource address.
+ * @param [options.capability] {string}   A capability reference instead of
+ *   a path.
+ * @param options.verb {string}   The verb name, for the capability-depth
+ *   error message.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<{resource: Resource, url: string}>}
+ */
+async function resolveResourceHandle({
+  address,
+  capability,
+  verb,
+  server,
+  did
+}: {
+  address?: string
+  capability?: string
+  verb: string
+  server?: string
+  did?: string
+}): Promise<{ resource: Resource; url: string }> {
+  assertOneAddressing({ address, capability })
+  if (capability) {
+    const resolved = await resolveCapabilityTarget({ ref: capability, did })
+    if (resolved.depth !== 'resource') {
+      throw new Error(
+        `The capability targets a ${resolved.depth}; ` +
+          `${verb} needs a resource capability.`
+      )
+    }
+    return { resource: resolved.handle, url: resolved.url }
+  }
+  const target = requireResourceTarget({
+    target: await resolveWasTarget({
+      address: address as string,
+      server,
+      did
+    }),
+    address: address as string
+  })
+  const resource = target.client
+    .space(target.spaceId)
+    .collection(target.collectionId)
+    .resource(target.resourceId)
+  const url = wasUrl({
+    server: target.server,
+    spaceId: target.spaceId,
+    collectionId: target.collectionId,
+    resourceId: target.resourceId
+  })
+  return { resource, url }
+}
 
 /**
  * Adds a resource to a collection (server-generated id) and prints the
@@ -108,42 +173,10 @@ export async function runResourcePut(options: {
   did?: string
 }): Promise<number> {
   try {
-    assertOneAddressing(options)
-    let resource: Resource
-    let url: string
-    if (options.capability) {
-      const resolved = await resolveCapabilityTarget({
-        ref: options.capability,
-        did: options.did
-      })
-      if (resolved.depth !== 'resource') {
-        throw new Error(
-          `The capability targets a ${resolved.depth}; ` +
-            'put needs a resource capability.'
-        )
-      }
-      resource = resolved.handle
-      url = resolved.url
-    } else {
-      const target = requireResourceTarget({
-        target: await resolveWasTarget({
-          address: options.address as string,
-          server: options.server,
-          did: options.did
-        }),
-        address: options.address as string
-      })
-      resource = target.client
-        .space(target.spaceId)
-        .collection(target.collectionId)
-        .resource(target.resourceId)
-      url = wasUrl({
-        server: target.server,
-        spaceId: target.spaceId,
-        collectionId: target.collectionId,
-        resourceId: target.resourceId
-      })
-    }
+    const { resource, url } = await resolveResourceHandle({
+      ...options,
+      verb: 'put'
+    })
     const payload = await readPayload({
       file: options.file,
       contentType: options.contentType
@@ -183,42 +216,10 @@ export async function runResourceGet(options: {
   did?: string
 }): Promise<number> {
   try {
-    assertOneAddressing(options)
-    let resource: Resource
-    let url: string
-    if (options.capability) {
-      const resolved = await resolveCapabilityTarget({
-        ref: options.capability,
-        did: options.did
-      })
-      if (resolved.depth !== 'resource') {
-        throw new Error(
-          `The capability targets a ${resolved.depth}; ` +
-            'get needs a resource capability.'
-        )
-      }
-      resource = resolved.handle
-      url = resolved.url
-    } else {
-      const target = requireResourceTarget({
-        target: await resolveWasTarget({
-          address: options.address as string,
-          server: options.server,
-          did: options.did
-        }),
-        address: options.address as string
-      })
-      resource = target.client
-        .space(target.spaceId)
-        .collection(target.collectionId)
-        .resource(target.resourceId)
-      url = wasUrl({
-        server: target.server,
-        spaceId: target.spaceId,
-        collectionId: target.collectionId,
-        resourceId: target.resourceId
-      })
-    }
+    const { resource, url } = await resolveResourceHandle({
+      ...options,
+      verb: 'get'
+    })
     const data = await resource.get()
     if (data === null) {
       console.error(`Not found (or not visible to you): ${url}`)
@@ -228,6 +229,155 @@ export async function runResourceGet(options: {
     return 0
   } catch (err) {
     return reportError({ action: 'get the resource', err })
+  }
+}
+
+/**
+ * Reads a resource's metadata object (server-managed `contentType` / `size` /
+ * timestamps plus the user-writable `custom`) and pretty-prints it. The
+ * resource comes from a path or a `--capability` targeting one.
+ *
+ * @param options {object}
+ * @param [options.address] {string}   The resource address.
+ * @param [options.capability] {string}   A capability reference instead of
+ *   a path.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runResourceMetaGet(options: {
+  address?: string
+  capability?: string
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    const { resource, url } = await resolveResourceHandle({
+      ...options,
+      verb: 'meta get'
+    })
+    const meta = await resource.meta()
+    if (meta === null) {
+      console.error(`Not found (or not visible to you): ${url}`)
+      return 1
+    }
+    console.log(JSON.stringify(meta, null, 2))
+    return 0
+  } catch (err) {
+    return reportError({ action: 'get the resource metadata', err })
+  }
+}
+
+/**
+ * Parses the repeatable `--tag key=value` flags into a tags record. Returns
+ * `undefined` when no `--tag` was given (so the caller can leave tags
+ * untouched).
+ *
+ * @param rawTags {string[]}   The raw `key=value` strings, as collected.
+ * @returns {Record<string, string> | undefined}
+ */
+function parseTags(rawTags: string[]): Record<string, string> | undefined {
+  if (rawTags.length === 0) {
+    return undefined
+  }
+  const tags: Record<string, string> = {}
+  for (const entry of rawTags) {
+    const separator = entry.indexOf('=')
+    const key = separator === -1 ? entry : entry.slice(0, separator)
+    if (separator === -1 || key === '') {
+      throw new Error(`Invalid --tag "${entry}"; expected key=value.`)
+    }
+    tags[key] = entry.slice(separator + 1)
+  }
+  return tags
+}
+
+/**
+ * Parses the `--json` escape hatch -- inline JSON, or a path to a JSON file
+ * when the value does not itself parse -- into a `custom` metadata object.
+ *
+ * @param input {string}   Inline JSON or a JSON file path.
+ * @returns {Promise<ResourceMetadataCustom>}
+ */
+async function parseCustomJson(input: string): Promise<ResourceMetadataCustom> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(input)
+  } catch {
+    let contents: string
+    try {
+      contents = await readFile(input, 'utf8')
+    } catch {
+      throw new Error(
+        `--json is neither valid JSON nor a readable file: ${input}`
+      )
+    }
+    parsed = JSON.parse(contents)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('--json must be a JSON object (the custom metadata).')
+  }
+  return parsed as ResourceMetadataCustom
+}
+
+/**
+ * Updates a resource's user-writable metadata and prints the resulting
+ * metadata. `--name`/`--tag` are read-modify-write sugar that preserve the
+ * other field; giving both, or `--json`, is a full `custom` replacement so
+ * any omitted property is cleared. The resource comes from a path or a
+ * `--capability` targeting one.
+ *
+ * @param options {object}
+ * @param [options.address] {string}   The resource address.
+ * @param [options.capability] {string}   A capability reference instead of
+ *   a path.
+ * @param [options.name] {string}   The resource's display name.
+ * @param options.tag {string[]}   Repeatable `key=value` tag pairs.
+ * @param [options.json] {string}   Full `custom` JSON (inline or a file
+ *   path); mutually exclusive with `--name`/`--tag`.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runResourceMetaPut(options: {
+  address?: string
+  capability?: string
+  name?: string
+  tag: string[]
+  json?: string
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    const tags = parseTags(options.tag)
+    const hasName = options.name !== undefined
+    const hasTags = tags !== undefined
+    const hasJson = options.json !== undefined
+    if (hasJson && (hasName || hasTags)) {
+      throw new Error('Provide either --json or --name/--tag, not both.')
+    }
+    if (!hasJson && !hasName && !hasTags) {
+      throw new Error('Provide --name, --tag <key=value>, or --json.')
+    }
+    const { resource, url } = await resolveResourceHandle({
+      ...options,
+      verb: 'meta put'
+    })
+    if (hasJson) {
+      await resource.setMeta({ custom: await parseCustomJson(options.json!) })
+    } else if (hasName && hasTags) {
+      await resource.setMeta({ custom: { name: options.name, tags } })
+    } else if (hasName) {
+      await resource.setName(options.name!)
+    } else {
+      await resource.setTags(tags!)
+    }
+    console.error(`Updated metadata for ${url}`)
+    const meta = await resource.meta()
+    console.log(JSON.stringify(meta, null, 2))
+    return 0
+  } catch (err) {
+    return reportError({ action: 'update the resource metadata', err })
   }
 }
 

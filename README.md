@@ -1186,6 +1186,40 @@ files); a missing or not-visible resource prints
 `list` renders the resources of a collection (`ID | CONTENT TYPE | URL`), and
 `delete` (alias: `rm`) removes one (idempotent).
 
+#### Resource metadata (name and tags)
+
+The `resource-meta` group (alias: `meta`) reads and updates a resource's
+metadata. `get` prints the whole metadata object -- the server-managed
+`contentType`, `size`, and timestamps plus the user-writable `custom` (its
+`name` and `tags`):
+
+```
+./di was resource-meta get home/credentials/vc-1
+```
+
+`put` updates the user-writable `custom`. `--name` sets the display name shown
+in collection listings and `--tag key=value` (repeatable) sets annotations;
+used on their own each is non-destructive -- `--name` preserves existing tags
+and `--tag` preserves the existing name:
+
+```
+./di was resource-meta put home/credentials/vc-1 --name 'Diploma'
+./di was resource-meta put home/credentials/vc-1 --tag year=2026 --tag status=verified
+```
+
+Giving both `--name` and `--tag` together replaces `custom` wholesale (any
+field you do not pass is cleared). The `--json` escape hatch takes the full
+`custom` object as inline JSON or a JSON file path, for the same full
+replacement (pass `--json '{}'` to clear everything):
+
+```
+./di was resource-meta put home/credentials/vc-1 \
+  --json '{"name":"Diploma","tags":{"year":"2026"}}'
+./di was resource-meta put home/credentials/vc-1 --json custom.json
+```
+
+After a successful update the command prints the resulting metadata.
+
 #### Shorthand verbs
 
 For day-to-day use, the top-level verbs dispatch on the path depth:

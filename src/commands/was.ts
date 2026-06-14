@@ -12,9 +12,10 @@
  * Subcommand groups: `space` (`create`, `list`, `show`, `update` alias
  * `configure`, `delete`, `forget`, `add`, `backends`, `quotas`),
  * `collection` (alias `coll`;
- * `create`, `list`, `show`, `update`, `delete`, `backend`, `quota`), and
+ * `create`, `list`, `show`, `update`, `delete`, `backend`, `quota`),
  * `resource` (alias
- * `res`; `add`, `put`, `get`, `list`, `delete`). The top-level shorthand
+ * `res`; `add`, `put`, `get`, `list`, `delete`), and `resource-meta`
+ * (alias `meta`; `get`, `put`). The top-level shorthand
  * verbs `ls`, `get`, `put`, and `rm` dispatch on the path depth, mirroring
  * the client's uniform-verbs-at-every-level design. Resource payloads come
  * from a file argument or stdin, with JSON-vs-binary detection in
@@ -62,6 +63,8 @@ import {
   runResourceDelete,
   runResourceGet,
   runResourceList,
+  runResourceMetaGet,
+  runResourceMetaPut,
   runResourcePut
 } from './was/resource.js'
 import { runLs, runRm } from './was/tree.js'
@@ -522,7 +525,7 @@ export function makeWasCommand(): Command {
     )
 
   resource
-    .command('list <path>')
+    .command('list <collection>')
     .description('List the resources in a collection (SPACE/COLLECTION)')
     .option('--json', 'output the raw listing JSON')
     .option('--plain', 'output one resource id per line, sorted')
@@ -555,6 +558,71 @@ export function makeWasCommand(): Command {
     )
 
   was.addCommand(resource)
+
+  const resourceMeta = new Command('resource-meta')
+    .alias('meta')
+    .description("Read and update a resource's metadata (custom name and tags)")
+
+  resourceMeta
+    .command('get [path]')
+    .description(
+      "Show a resource's metadata: content type, size, timestamps, and " +
+        'custom name/tags'
+    )
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string | undefined,
+        options: { capability?: string; server?: string; did?: string }
+      ) => {
+        await runAndExit(runResourceMetaGet({ address, ...options }))
+      }
+    )
+
+  resourceMeta
+    .command('put [path]')
+    .description(
+      "Update a resource's custom metadata: --name and/or --tag key=value " +
+        '(both repeatable-friendly and non-destructive), or --json for a ' +
+        'full replacement'
+    )
+    .option(
+      '--name <name>',
+      "the resource's display name (preserves existing tags)"
+    )
+    .option(
+      '--tag <pair>',
+      'a custom tag as key=value; repeatable (preserves the existing name)',
+      (value: string, previous: string[]) => previous.concat(value),
+      []
+    )
+    .option(
+      '--json <jsonOrFile>',
+      'full custom-metadata replacement as inline JSON or a JSON file path ' +
+        '(clears any omitted field)'
+    )
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string | undefined,
+        options: {
+          name?: string
+          tag: string[]
+          json?: string
+          capability?: string
+          server?: string
+          did?: string
+        }
+      ) => {
+        await runAndExit(runResourceMetaPut({ address, ...options }))
+      }
+    )
+
+  was.addCommand(resourceMeta)
 
   was
     .command('ls [path]')

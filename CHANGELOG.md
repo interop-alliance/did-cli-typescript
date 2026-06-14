@@ -4,6 +4,16 @@
 
 ### Added
 
+- Add `was resource-meta get` and `was resource-meta put` (group alias
+  `meta`), surfacing the Resource Metadata endpoint (`GET`/`PUT .../meta`).
+  `get` prints the whole metadata object (server-managed `contentType`,
+  `size`, and timestamps plus the user-writable `custom` name/tags); a
+  missing/not-visible resource is reported as not-found. `put` updates
+  `custom`: `--name` and `--tag key=value` (repeatable) are non-destructive on
+  their own (they preserve the other field via the client's `setName` /
+  `setTags`), while passing both, or the `--json` escape hatch (inline JSON or
+  a file path), is a full `custom` replacement. Both verbs also accept
+  `--capability` targeting the resource.
 - Add `was collection backend` and `was collection quota`, surfacing the
   `GET /space/:spaceId/:collectionId/backend` and
   `GET /space/:spaceId/:collectionId/quota` endpoints (the storage backend a
@@ -38,6 +48,9 @@
   `space`, `collection`, `resource`, `tree`, `policy`, `publish`, plus shared
   helpers); `src/commands/was.ts` now holds only `makeWasCommand()`. Internal
   refactor with no behavior change.
+- Rename the `was resource list` positional from `<path>` to `<collection>`,
+  matching the sibling `was collection list <space>` and clarifying that the
+  argument is the parent collection being enumerated.
 
 ## 0.7.0-0.7.1 - 2026-06-11
 
