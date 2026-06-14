@@ -2,7 +2,9 @@
  * `was space` run functions: create, list (local registry, or `--remote`),
  * show (server description or `--meta` registry record), update, delete
  * (server + registry), forget (registry only), add (register an existing
- * remote space), and export/import of a whole space as a tar archive.
+ * remote space), backends (the storage backends available within a space),
+ * quotas (the space's storage report grouped by backend), and export/import
+ * of a whole space as a tar archive.
  */
 import { buildWasClient, resolveWasTarget } from '../../was/client.js'
 import { readInputBytes, writeBytesOutput } from '../../was/io.js'
@@ -404,6 +406,137 @@ export async function runSpaceAdd(options: {
     return 0
   } catch (err) {
     return reportError({ action: 'add the space', err })
+  }
+}
+
+/**
+ * Lists the storage backends available within a space. The reference server
+ * ships a single server-configured backend (registered as `default`); a
+ * server without backend support returns `null` (a 501), reported as an
+ * error.
+ *
+ * @param options {object}
+ * @param options.address {string}   The space address.
+ * @param [options.json] {boolean}   Output the raw backends JSON.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runSpaceBackends(options: {
+  address: string
+  json?: boolean
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    parseSpaceAddress(options.address)
+    const target = await resolveWasTarget({
+      address: options.address,
+      server: options.server,
+      did: options.did
+    })
+    const backends = await target.client.space(target.spaceId).backends()
+    if (backends === null) {
+      console.error(
+        'This server does not support listing backends (501 Not Implemented).'
+      )
+      return 1
+    }
+    if (options.json) {
+      console.log(JSON.stringify(backends, null, 2))
+      return 0
+    }
+    if (backends.length === 0) {
+      return 0
+    }
+    const rows = backends.map(backend => [
+      backend.id,
+      backend.name ?? '',
+      backend.managedBy ?? '',
+      backend.storageMode?.join(', ') ?? '',
+      backend.persistence ?? ''
+    ])
+    console.log(
+      renderTable({
+        columns: [
+          { header: 'ID', maxWidth: 24 },
+          { header: 'NAME', maxWidth: 20 },
+          { header: 'MANAGED BY' },
+          { header: 'STORAGE MODE' },
+          { header: 'PERSISTENCE' }
+        ],
+        rows
+      })
+    )
+    return 0
+  } catch (err) {
+    return reportError({ action: 'list the space backends', err })
+  }
+}
+
+/**
+ * Shows a space's storage quota report, grouped by backend (one row per
+ * backend: state, usage, limit, and any restricted actions). A server
+ * without quota support returns `null` (a 501), reported as an error.
+ *
+ * @param options {object}
+ * @param options.address {string}   The space address.
+ * @param [options.json] {boolean}   Output the raw quota report JSON.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runSpaceQuotas(options: {
+  address: string
+  json?: boolean
+  server?: string
+  did?: string
+}): Promise<number> {
+  try {
+    parseSpaceAddress(options.address)
+    const target = await resolveWasTarget({
+      address: options.address,
+      server: options.server,
+      did: options.did
+    })
+    const report = await target.client.space(target.spaceId).quotas()
+    if (report === null) {
+      console.error(
+        'This server does not support quota reports (501 Not Implemented).'
+      )
+      return 1
+    }
+    if (options.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return 0
+    }
+    if (report.backends.length === 0) {
+      return 0
+    }
+    const rows = report.backends.map(backend => [
+      backend.name ? `${backend.id} (${backend.name})` : backend.id,
+      backend.state,
+      String(backend.usageBytes),
+      backend.limit.isUnlimited
+        ? 'unlimited'
+        : String(backend.limit.capacityBytes ?? ''),
+      backend.restrictedActions.join(', ')
+    ])
+    console.log(
+      renderTable({
+        columns: [
+          { header: 'BACKEND', maxWidth: 28 },
+          { header: 'STATE' },
+          { header: 'USAGE (B)' },
+          { header: 'LIMIT (B)' },
+          { header: 'RESTRICTED' }
+        ],
+        rows
+      })
+    )
+    return 0
+  } catch (err) {
+    return reportError({ action: 'get the space quotas', err })
   }
 }
 

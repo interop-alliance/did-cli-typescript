@@ -4,6 +4,12 @@
 
 ### Added
 
+- Add `was space backends` and `was space quotas`, surfacing the
+  `GET /space/:spaceId/backends` and `GET /space/:spaceId/quotas` endpoints
+  (the storage backends available within a space, and the space's storage
+  report grouped by backend). Both render a table by default and take `--json`
+  for the raw response; a server that does not implement the endpoint (a 501)
+  is reported as an error.
 - Add `ARCHITECTURE.md`, a codebase map (entry point, command-factory pattern,
   module layout, and the command surface) for contributors, linked from
   `CLAUDE.md` and the README.
