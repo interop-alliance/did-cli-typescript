@@ -1,5 +1,24 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- Add an `edv` command group with `encrypt` and `decrypt` subcommands
+  (Layer 1: raw JWE). `edv encrypt [file]` encrypts stdin or a file to one or
+  more X25519 recipients and emits a single flattened JWE (the `jwe` field of
+  an EDV Document) to stdout or an `-o` file (convention `*.jwe.json`);
+  `edv decrypt [file]` reverses it. Encryption is public-key (key-agreement)
+  only, via `@interop/minimal-cipher` with its default algorithm
+  (`ECDH-ES+A256KW` key wrap, `XC20P` content encryption). A recipient
+  (`-r/--recipient`, repeatable) is a raw X25519 `publicKeyMultibase`, a wallet
+  key fingerprint/handle, or a DID / DID URL (its `keyAgreement` key);
+  `--recipient-file` reads a key-document JSON. `--json` switches both commands
+  to object semantics. On decrypt, the secret key is given with `-k/--key` or
+  auto-selected from the wallet by matching a recipient `kid`; a non-recipient
+  key exits non-zero with a clear error. The full EDV Document envelope,
+  chunked streams, and HMAC-blinded indexing are deferred to Layer 2.
+
 ## 0.8.0 - 2026-06-13
 
 ### Added
