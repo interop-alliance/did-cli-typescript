@@ -7,6 +7,7 @@ import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
+import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
 import {
   listDids,
   loadDidDocument,
@@ -383,7 +384,8 @@ export function makeDidCommand(): Command {
     )
     .option(
       '-t, --type <type>',
-      'key type (supported: ed25519, ecdsa)',
+      'key type (supported: ed25519, ecdsa, x25519); x25519 keys are wired ' +
+        'into keyAgreement only',
       'ed25519'
     )
     .option(
@@ -414,11 +416,33 @@ export function makeDidCommand(): Command {
           console.error('add-key is only supported for did:web DIDs')
           process.exit(1)
         }
-        if (options.type !== 'ed25519' && options.type !== 'ecdsa') {
+        if (
+          options.type !== 'ed25519' &&
+          options.type !== 'ecdsa' &&
+          options.type !== 'x25519'
+        ) {
           console.error(
-            `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
+            `Unknown key type: ${options.type}. ` +
+              'Supported: ed25519, ecdsa, x25519'
           )
           process.exit(1)
+        }
+        // x25519 keys are key agreement keys; they can only be wired into the
+        // keyAgreement verification relationship.
+        let purposes = options.purpose
+        if (options.type === 'x25519') {
+          if (
+            purposes &&
+            purposes.some(purpose => purpose !== 'keyAgreement')
+          ) {
+            console.error(
+              'x25519 keys can only be added to the keyAgreement ' +
+                'verification relationship'
+            )
+            process.exit(1)
+            return
+          }
+          purposes = ['keyAgreement']
         }
 
         let didDocument: Record<string, unknown>
@@ -431,8 +455,8 @@ export function makeDidCommand(): Command {
           process.exit(1)
         }
 
-        // ed25519 keys are derived from a seed; ecdsa keys are generated
-        // non-deterministically and have no seed.
+        // ed25519 keys are derived from a seed; ecdsa and x25519 keys are
+        // generated non-deterministically and have no seed.
         let secretKeySeed: string | undefined
         let keyPair: any
         const didWebDriver = didWeb.driver()
@@ -446,7 +470,7 @@ export function makeDidCommand(): Command {
             : undefined
           keyPair = await Ed25519VerificationKey.generate({ seed: seedBytes })
           didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
-        } else {
+        } else if (options.type === 'ecdsa') {
           if (options.withSeed) {
             console.error(
               '--with-seed is not supported for ecdsa keys; ECDSA key ' +
@@ -467,6 +491,17 @@ export function makeDidCommand(): Command {
           }
           warnIfNotVcIssuanceCapable({ curve })
           keyPair = await EcdsaMultikey.generate({ curve })
+        } else {
+          if (options.withSeed) {
+            console.error(
+              '--with-seed is not supported for x25519 keys; X25519 key ' +
+                'generation is non-deterministic and cannot be derived ' +
+                'from a seed.'
+            )
+            process.exit(1)
+            return
+          }
+          keyPair = await X25519KeyAgreementKey2020.generate()
         }
 
         const keyPairs = new Map<string, any>()
@@ -475,20 +510,23 @@ export function makeDidCommand(): Command {
             didDocument,
             keyPairs,
             keyPair,
-            purposes: options.purpose
+            purposes
           })
         } catch (err) {
           console.error((err as Error).message)
           process.exit(1)
         }
 
-        // Merge the new key into the stored keys file (keyed by VM id).
+        // Merge the new key into the stored keys file (keyed by VM id). X25519
+        // keys export their private half as `privateKeyMultibase`, the other
+        // suites as `secretKeyMultibase`.
         const addedFingerprints: (string | undefined)[] = []
         for (const [methodId, addedKey] of keyPairs) {
-          const exportedKey = (await addedKey.export({
-            publicKey: true,
-            secretKey: true
-          })) as { publicKeyMultibase?: string }
+          const exportedKey = (await addedKey.export(
+            options.type === 'x25519'
+              ? { publicKey: true, privateKey: true }
+              : { publicKey: true, secretKey: true }
+          )) as { publicKeyMultibase?: string }
           exportedKeys[methodId] = exportedKey
           addedFingerprints.push(exportedKey.publicKeyMultibase)
         }

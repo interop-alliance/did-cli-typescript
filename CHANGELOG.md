@@ -10,6 +10,11 @@
   type label and `key show` re-exports the public key only. Like ecdsa, x25519
   generation is non-deterministic, so `--with-seed` / `SECRET_KEY_SEED` are not
   supported.
+- Add `did add-key --type x25519` support for `did:web`, adding an
+  `X25519KeyAgreementKey2020` to the DID document. Because x25519 keys are key
+  agreement (encryption) keys, they are wired into the `keyAgreement`
+  verification relationship only; a `--purpose` other than `keyAgreement` is
+  rejected, and (as with ecdsa) `--with-seed` is not supported.
 - Add `was resource-meta get` and `was resource-meta put` (group alias
   `meta`), surfacing the Resource Metadata endpoint (`GET`/`PUT .../meta`).
   `get` prints the whole metadata object (server-managed `contentType`,

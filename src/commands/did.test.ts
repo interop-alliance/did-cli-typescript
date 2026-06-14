@@ -879,5 +879,109 @@ describe('di did', () => {
         await rm(walletDir, { recursive: true })
       }
     })
+
+    it('wires an x25519 key into keyAgreement only', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'web', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['add-key', did, '--type', 'x25519'],
+          {
+            from: 'user'
+          }
+        )
+        const didDocument = JSON.parse(logs[0]).didDocument
+
+        // The key lands in keyAgreement, with the X25519 verification type...
+        assert.equal(didDocument.keyAgreement.length, 1)
+        assert.equal(
+          didDocument.keyAgreement[0].type,
+          'X25519KeyAgreementKey2020'
+        )
+        // ...and in none of the signing/invocation relationships.
+        for (const purpose of [
+          'authentication',
+          'assertionMethod',
+          'capabilityDelegation',
+          'capabilityInvocation'
+        ]) {
+          const entries = didDocument[purpose] ?? []
+          assert.equal(
+            entries.some(
+              (entry: { type?: string }) =>
+                entry?.type === 'X25519KeyAgreementKey2020'
+            ),
+            false,
+            `x25519 key should not appear in ${purpose}`
+          )
+        }
+
+        // The stored keys file keeps the private half as privateKeyMultibase.
+        const keysFile = JSON.parse(
+          await readFile(join(didsDir, 'web', `${did}.keys.json`), 'utf8')
+        )
+        const x25519Key = Object.values(keysFile).find(
+          (key): key is { type?: string; privateKeyMultibase?: string } =>
+            (key as { type?: string }).type === 'X25519KeyAgreementKey2020'
+        )
+        assert.ok(x25519Key?.privateKeyMultibase)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects an x25519 key with a non-keyAgreement purpose', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'web', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['add-key', did, '--type', 'x25519', '--purpose', 'authentication'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('keyAgreement'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('exits with error for x25519 --with-seed', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'web', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['add-key', did, '--type', 'x25519', '--with-seed'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('--with-seed'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
   })
 })

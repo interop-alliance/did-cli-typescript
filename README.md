@@ -412,10 +412,20 @@ By default the new key is Ed25519; pass `--type ecdsa` (with an optional
 ./di did add-key did:web:example.com --type ecdsa --curve p384
 ```
 
+Pass `--type x25519` to add an X25519 (Curve25519) key agreement key. X25519
+keys are encryption/key-exchange keys, not signing keys, so they are wired into
+the `keyAgreement` relationship only -- a `--purpose` other than `keyAgreement`
+is rejected:
+
+```
+./di did add-key did:web:example.com --type x25519
+```
+
 For Ed25519 keys, the new key is derived from a seed (as with `did create`):
 pass `--with-seed` to generate (and print) a fresh seed, or set `SECRET_KEY_SEED`
-to derive the key deterministically. ECDSA keys are not seed-derivable, so
-`--with-seed` is not supported with `--type ecdsa`:
+to derive the key deterministically. ECDSA and X25519 keys are not
+seed-derivable, so `--with-seed` is not supported with `--type ecdsa` or
+`--type x25519`:
 
 ```
 ./di did add-key did:web:example.com --with-seed
