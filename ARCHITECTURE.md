@@ -44,7 +44,7 @@ live in their own directory, `src/commands/was/` (see the module map), while
 | --- | --- |
 | `src/index.ts` | Executable entry point; builds the `di` program and registers command groups. |
 | `src/commands/` | Command factories: `did`, `edv`, `key`, `vc`, `wallet`, `was`, `zcap`. |
-| `src/edv/` | EDV / minimal-cipher support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt) and `document.ts` (the EDV Document envelope -- `generateDocumentId`, envelope detection, and the `{ content, meta }` payload). |
+| `src/edv/` | EDV / minimal-cipher support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt), `document.ts` (the EDV Document envelope -- `generateDocumentId`, envelope detection, and the `{ content, meta }` payload), and `stream.ts` (chunked-stream encrypt/decrypt and the `*.edvdoc/` bundle layout). |
 | `src/commands/was/` | The `was` group's `run*` functions, split by noun: `space`, `collection`, `resource`, `tree` (the `ls`/`rm` shorthands), `policy`, `publish` (publish/unpublish/grant), and `shared` (option factories, address parsing, listing renderers). |
 | `src/storage.ts` | Wallet + DID-document file I/O: `listCollection`, `loadFromCollection`, `saveToCollection`, and `.meta.json` sidecars. |
 | `src/meta.ts` | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`. |
@@ -117,8 +117,8 @@ di zcap meta <id>               show/edit a capability's local metadata
 di zcap remove|delete|rm <id>   remove a stored capability
 di zcap revoke <id>             revoke a delegated capability
 
-di edv encrypt [file]           encrypt to X25519 recipients (raw JWE, or an EDV Document with --document)
-di edv decrypt [file]           decrypt a JWE or EDV Document with a stored X25519 key
+di edv encrypt [file]           encrypt to X25519 recipients (raw JWE, an EDV Document with --document, or a chunked bundle with --stream)
+di edv decrypt [file]           decrypt a JWE, EDV Document, or stream bundle with a stored X25519 key
 
 di wallet ls|list               list all wallet collections and items
 

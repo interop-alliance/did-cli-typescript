@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeEdvCommand } from './edv.js'
@@ -386,6 +386,109 @@ describe('edv', () => {
     )
     await makeEdvCommand().parseAsync(
       ['decrypt', jwePath, '--json', '--key', keyB.publicKeyMultibase],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 1)
+    assert.ok(errors.join('\n').toLowerCase().includes('decryption failed'))
+  })
+
+  it('round-trips a chunked stream bundle with --stream', async () => {
+    const key = await createX25519Key()
+    const inputPath = join(walletDir, 'big.bin')
+    const bundlePath = join(walletDir, 'bundle.edvdoc')
+    const outPath = join(walletDir, 'out.bin')
+    // 2500 bytes at a 1000-byte chunk size => 3 chunks (ceil).
+    const bytes = Buffer.alloc(2500)
+    for (let index = 0; index < bytes.length; index++) {
+      bytes[index] = (index * 7) % 256
+    }
+    await writeFile(inputPath, bytes)
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--stream',
+        '-r',
+        key.publicKeyMultibase,
+        '--chunk-size',
+        '1000',
+        '--meta',
+        JSON.stringify({ name: 'big.bin' }),
+        '-o',
+        bundlePath
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+
+    const document = JSON.parse(
+      await readFile(join(bundlePath, 'document.json'), 'utf8')
+    )
+    assert.match(document.id, /^z[1-9A-HJ-NP-Za-km-z]+$/)
+    assert.equal(document.sequence, 0)
+    assert.deepEqual(document.stream, { sequence: 0, chunks: 3 })
+
+    const chunkFiles = (await readdir(join(bundlePath, 'chunks'))).filter(
+      name => name.endsWith('.jwe.json')
+    )
+    assert.equal(chunkFiles.length, 3)
+    const chunk0 = JSON.parse(
+      await readFile(join(bundlePath, 'chunks', '0.jwe.json'), 'utf8')
+    )
+    assert.equal(chunk0.sequence, 0)
+    assert.equal(chunk0.index, 0)
+    assert.equal(chunk0.jwe.recipients[0].header.alg, 'ECDH-ES+A256KW')
+    assert.equal(
+      chunk0.jwe.recipients[0].header.kid,
+      `did:key:${key.publicKeyMultibase}#${key.publicKeyMultibase}`
+    )
+
+    errors.length = 0
+    await makeEdvCommand().parseAsync(['decrypt', bundlePath, '-o', outPath], {
+      from: 'user'
+    })
+    assert.equal(exitCode, undefined)
+    assert.deepEqual(await readFile(outPath), bytes)
+    // meta and the stream descriptor are reported on stderr.
+    assert.ok(errors.join('\n').includes('"name":"big.bin"'))
+  })
+
+  it('--stream requires -o/--out', async () => {
+    const key = await createX25519Key()
+    const inputPath = join(walletDir, 'big.bin')
+    await writeFile(inputPath, Buffer.alloc(10))
+    await makeEdvCommand().parseAsync(
+      ['encrypt', inputPath, '--stream', '-r', key.publicKeyMultibase],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.ok(errors.join('\n').includes('-o'))
+  })
+
+  it('fails to decrypt a bundle with a non-recipient key', async () => {
+    const keyA = await createX25519Key()
+    const keyB = await createX25519Key()
+    const inputPath = join(walletDir, 'big.bin')
+    const bundlePath = join(walletDir, 'bundle.edvdoc')
+    await writeFile(inputPath, Buffer.alloc(1500, 9))
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--stream',
+        '-r',
+        keyA.publicKeyMultibase,
+        '--chunk-size',
+        '1000',
+        '-o',
+        bundlePath
+      ],
+      { from: 'user' }
+    )
+    await makeEdvCommand().parseAsync(
+      ['decrypt', bundlePath, '--key', keyB.publicKeyMultibase],
       { from: 'user' }
     )
     assert.equal(exitCode, 1)

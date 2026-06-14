@@ -2,19 +2,27 @@
  * `edv` command -- encrypt to and decrypt from X25519 recipients using the
  * EDV / minimal-cipher serialization.
  *
- * Layer 1: the encrypt output is a single raw JWE (the `jwe` field of an EDV
- * Document), printed as JSON to stdout or written to an `-o` file (convention:
- * `*.jwe.json`); decrypt reverses it. Public-key (key-agreement) encryption
- * only: recipients are one or more X25519 public keys, given as a raw
- * `publicKeyMultibase`, a wallet key fingerprint/handle, a DID / DID URL, or a
- * key-document JSON file. The full EDV Document envelope, chunked streams, and
- * HMAC-blinded indexing are Layer 2.
+ * Public-key (key-agreement) encryption only: recipients are one or more X25519
+ * public keys, given as a raw `publicKeyMultibase`, a wallet key
+ * fingerprint/handle, a DID / DID URL, or a key-document JSON file. Three output
+ * shapes:
+ *  - default -- a single raw JWE (the `jwe` field of an EDV Document), to stdout
+ *    or an `-o` file (convention `*.jwe.json`); Layer 1.
+ *  - `--document` -- a full EDV Document envelope `{ id, sequence, indexed, jwe }`
+ *    (convention `*.edvdoc.json`), encrypting the input as the document
+ *    `content`; Layer 2, Phase 1.
+ *  - `--stream` -- a bundle directory (convention `*.edvdoc/`) whose
+ *    `document.json` carries a `stream: { sequence, chunks }` descriptor and
+ *    whose `chunks/<index>.jwe.json` hold the input encrypted as fixed-size
+ *    chunks; Layer 2, Phase 2.
+ * HMAC-blinded indexing is Layer 2, Phase 3.
  *
  * Data goes to stdout, diagnostics to stderr. Exit codes: 0 success, 1
  * decryption failure (wrong key / not a recipient), 2 input error (no
  * recipient, unresolvable recipient/key, malformed input).
  */
-import { Command } from 'commander'
+import { stat } from 'node:fs/promises'
+import { Command, InvalidArgumentError } from 'commander'
 import { Cipher } from '@interop/minimal-cipher'
 import type { IEncryptedDocument, IJWE } from '@interop/data-integrity-core'
 import { readInputBytes, writeBytesOutput, writeJsonOutput } from '../was/io.js'
@@ -32,6 +40,12 @@ import {
   isEncryptedDocument,
   type DocumentPayload
 } from '../edv/document.js'
+import {
+  decryptChunks,
+  encryptToChunks,
+  readDocumentBundle,
+  writeDocumentBundle
+} from '../edv/stream.js'
 
 /**
  * Collect a repeatable option value into an array (commander reducer).
@@ -42,6 +56,20 @@ import {
  */
 function collect(value: string, previous: string[]): string[] {
   return previous.concat(value)
+}
+
+/**
+ * Parse and validate the `--chunk-size` option (a positive integer of bytes).
+ *
+ * @param value {string}
+ * @returns {number}
+ */
+function parseChunkSize(value: string): number {
+  const bytes = Number(value)
+  if (!Number.isInteger(bytes) || bytes <= 0) {
+    throw new InvalidArgumentError('--chunk-size must be a positive integer.')
+  }
+  return bytes
 }
 
 /**
@@ -110,10 +138,84 @@ async function mergeUpdateRecipients({
 }
 
 /**
+ * True when a path exists and is a directory (an EDV Document bundle).
+ *
+ * @param path {string}
+ * @returns {Promise<boolean>}
+ */
+async function isDirectory(path: string): Promise<boolean> {
+  return (await stat(path).catch(() => undefined))?.isDirectory() ?? false
+}
+
+/**
+ * Load an existing EDV Document to update, from either a single `.edvdoc.json`
+ * file or a bundle directory (`document.json` inside it). Returns `undefined`
+ * when the source is neither.
+ *
+ * @param options {object}
+ * @param options.path {string}
+ * @returns {Promise<IEncryptedDocument | undefined>}
+ */
+async function loadEnvelope({
+  path
+}: {
+  path: string
+}): Promise<IEncryptedDocument | undefined> {
+  if (await isDirectory(path)) {
+    return (await readDocumentBundle({ dir: path })).document
+  }
+  const parsed = parseJson(await readInputBytes({ file: path }))
+  return isEncryptedDocument(parsed) ? parsed : undefined
+}
+
+/**
+ * Resolve the encrypt-time envelope fields for a new or updated document: a
+ * fresh id at `sequence` 0, or -- with `--update` -- the existing document's id,
+ * its incremented sequence, its preserved `indexed`, and its recipients merged
+ * into `keys`.
+ *
+ * @param options {object}
+ * @param options.keys {KeyAgreementKey[]}
+ * @param [options.update] {string}   Path to the document being updated.
+ * @returns {Promise<{id, sequence, indexed, encryptKeys}>}
+ */
+async function resolveEnvelopeFields({
+  keys,
+  update
+}: {
+  keys: KeyAgreementKey[]
+  update?: string
+}): Promise<{
+  id: string
+  sequence: number
+  indexed: IEncryptedDocument['indexed']
+  encryptKeys: KeyAgreementKey[]
+}> {
+  if (update === undefined) {
+    return {
+      id: await generateDocumentId(),
+      sequence: 0,
+      indexed: [],
+      encryptKeys: keys
+    }
+  }
+  const existing = await loadEnvelope({ path: update })
+  if (!existing) {
+    throw new Error(`--update target "${update}" is not an EDV Document.`)
+  }
+  return {
+    id: existing.id,
+    sequence: existing.sequence + 1,
+    indexed: existing.indexed ?? [],
+    encryptKeys: await mergeUpdateRecipients({ keys, existing })
+  }
+}
+
+/**
  * Encrypt stdin or a file to one or more X25519 recipients. By default emits a
- * raw JWE (Layer 1); with `--document` it wraps the JWE in an EDV Document
- * envelope `{ id, sequence, indexed, jwe }`, encrypting the input as the
- * document's `content`.
+ * raw JWE (Layer 1); `--document` wraps the JWE in an EDV Document envelope
+ * `{ id, sequence, indexed, jwe }` (input encrypted as `content`); `--stream`
+ * writes a bundle directory whose chunks hold the input as a chunked stream.
  *
  * @param options {object}
  * @param [options.file] {string}   Input file; stdin when omitted.
@@ -121,10 +223,12 @@ async function mergeUpdateRecipients({
  * @param options.recipientFile {string[]}   Key-document files.
  * @param [options.json] {boolean}   Parse input as JSON (`encryptObject`).
  * @param [options.document] {boolean}   Emit a full EDV Document envelope.
+ * @param [options.stream] {boolean}   Emit a chunked-stream bundle directory.
+ * @param [options.chunkSize] {number}   Bytes per chunk for `--stream`.
  * @param [options.meta] {string}   JSON `meta` object for the document.
- * @param [options.update] {string}   Existing `.edvdoc.json` to update: reuse
- *   its `id`, increment `sequence`, and merge its recipients.
- * @param [options.out] {string}   Output file; stdout when omitted.
+ * @param [options.update] {string}   Existing document (file or bundle) to
+ *   update: reuse its `id`, increment `sequence`, and merge its recipients.
+ * @param [options.out] {string}   Output file/bundle; stdout when omitted.
  * @returns {Promise<number>}
  */
 export async function runEncrypt({
@@ -133,6 +237,8 @@ export async function runEncrypt({
   recipientFile,
   json,
   document,
+  stream,
+  chunkSize,
   meta,
   update,
   out
@@ -142,12 +248,15 @@ export async function runEncrypt({
   recipientFile: string[]
   json?: boolean
   document?: boolean
+  stream?: boolean
+  chunkSize?: number
   meta?: string
   update?: string
   out?: string
 }): Promise<number> {
-  if (!document && (meta !== undefined || update !== undefined)) {
-    console.error('--meta and --update require --document.')
+  const envelopeMode = Boolean(document) || Boolean(stream)
+  if (!envelopeMode && (meta !== undefined || update !== undefined)) {
+    console.error('--meta and --update require --document or --stream.')
     return 2
   }
 
@@ -171,6 +280,17 @@ export async function runEncrypt({
   const bytes = await readInputBytes({ file })
   const cipher = new Cipher()
 
+  if (stream) {
+    return runEncryptStream({
+      bytes,
+      keys,
+      meta,
+      update,
+      chunkSize,
+      out,
+      cipher
+    })
+  }
   if (document) {
     return runEncryptDocument({ bytes, keys, meta, update, out, cipher })
   }
@@ -190,6 +310,34 @@ export async function runEncrypt({
 
   await writeJsonOutput({ value: jwe, output: out })
   return 0
+}
+
+/**
+ * Parse a JSON-object command option, throwing a clear error when the value is
+ * not valid JSON or not an object.
+ *
+ * @param options {object}
+ * @param options.value {string}
+ * @param options.label {string}   The option name, for the error message.
+ * @returns {Record<string, unknown>}
+ */
+function parseJsonObjectOption({
+  value,
+  label
+}: {
+  value: string
+  label: string
+}): Record<string, unknown> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error(`${label} is not valid JSON.`)
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error(`${label} must be a JSON object.`)
+  }
+  return parsed as Record<string, unknown>
 }
 
 /**
@@ -228,48 +376,20 @@ async function runEncryptDocument({
   }
 
   let metaObject: Record<string, unknown> | undefined
-  if (meta !== undefined) {
-    let parsedMeta: unknown
-    try {
-      parsedMeta = JSON.parse(meta)
-    } catch {
-      console.error('--meta is not valid JSON.')
-      return 2
-    }
-    if (parsedMeta === null || typeof parsedMeta !== 'object') {
-      console.error('--meta must be a JSON object.')
-      return 2
-    }
-    metaObject = parsedMeta as Record<string, unknown>
-  }
-
-  let id: string
-  let sequence: number
-  let indexed: IEncryptedDocument['indexed']
-  let encryptKeys = keys
-  if (update !== undefined) {
-    const parsed = parseJson(await readInputBytes({ file: update }))
-    if (!isEncryptedDocument(parsed)) {
-      console.error(`--update target "${update}" is not an EDV Document.`)
-      return 2
-    }
-    id = parsed.id
-    sequence = parsed.sequence + 1
-    indexed = parsed.indexed ?? []
-    try {
-      encryptKeys = await mergeUpdateRecipients({ keys, existing: parsed })
-    } catch (err) {
-      console.error((err as Error).message)
-      return 2
-    }
-  } else {
-    id = await generateDocumentId()
-    sequence = 0
-    indexed = []
+  let fields
+  try {
+    metaObject =
+      meta !== undefined
+        ? parseJsonObjectOption({ value: meta, label: '--meta' })
+        : undefined
+    fields = await resolveEnvelopeFields({ keys, update })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 2
   }
 
   const { recipients, keyResolver } = cipher.createRecipients({
-    keys: encryptKeys
+    keys: fields.encryptKeys
   })
   const payload = buildDocumentPayload({
     content: content as Record<string, unknown>,
@@ -281,8 +401,102 @@ async function runEncryptDocument({
     keyResolver
   })
 
-  const envelope: IEncryptedDocument = { id, sequence, indexed, jwe }
+  const envelope: IEncryptedDocument = {
+    id: fields.id,
+    sequence: fields.sequence,
+    indexed: fields.indexed,
+    jwe
+  }
   await writeJsonOutput({ value: envelope, output: out })
+  return 0
+}
+
+/**
+ * The `--stream` branch of `runEncrypt`: encrypt the input as a chunked stream
+ * and write a bundle directory whose `document.json` carries a
+ * `stream: { sequence, chunks }` descriptor (its `content` is `{}`; the bytes
+ * live in the chunk JWEs). Requires `-o/--out` (the bundle directory).
+ *
+ * @param options {object}
+ * @param options.bytes {Uint8Array}
+ * @param options.keys {KeyAgreementKey[]}
+ * @param [options.meta] {string}
+ * @param [options.update] {string}
+ * @param [options.chunkSize] {number}
+ * @param [options.out] {string}
+ * @param options.cipher {Cipher}
+ * @returns {Promise<number>}
+ */
+async function runEncryptStream({
+  bytes,
+  keys,
+  meta,
+  update,
+  chunkSize,
+  out,
+  cipher
+}: {
+  bytes: Uint8Array
+  keys: KeyAgreementKey[]
+  meta?: string
+  update?: string
+  chunkSize?: number
+  out?: string
+  cipher: Cipher
+}): Promise<number> {
+  if (!out) {
+    console.error('--stream requires -o/--out (the bundle directory to write).')
+    return 2
+  }
+
+  let metaObject: Record<string, unknown> | undefined
+  let fields
+  try {
+    metaObject =
+      meta !== undefined
+        ? parseJsonObjectOption({ value: meta, label: '--meta' })
+        : undefined
+    fields = await resolveEnvelopeFields({ keys, update })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 2
+  }
+
+  // The stream's encrypt transformer mutates its recipients array (it injects an
+  // ephemeral key), so build a separate recipients set for the document jwe.
+  const forChunks = cipher.createRecipients({ keys: fields.encryptKeys })
+  const chunks = await encryptToChunks({
+    cipher,
+    data: bytes,
+    recipients: forChunks.recipients,
+    keyResolver: forChunks.keyResolver,
+    chunkSize,
+    sequence: fields.sequence
+  })
+  const stream = { sequence: fields.sequence, chunks: chunks.length }
+
+  const payload: DocumentPayload = { content: {}, stream }
+  if (metaObject) {
+    payload.meta = metaObject
+  }
+  const forDocument = cipher.createRecipients({ keys: fields.encryptKeys })
+  const jwe = await cipher.encryptObject({
+    obj: payload,
+    recipients: forDocument.recipients,
+    keyResolver: forDocument.keyResolver
+  })
+
+  const envelope: IEncryptedDocument = {
+    id: fields.id,
+    sequence: fields.sequence,
+    indexed: fields.indexed,
+    stream,
+    jwe
+  }
+  await writeDocumentBundle({ dir: out, document: envelope, chunks })
+  console.error(
+    `Wrote bundle ${out} (${chunks.length} chunk${chunks.length === 1 ? '' : 's'})`
+  )
   return 0
 }
 
@@ -314,6 +528,11 @@ export async function runDecrypt({
   document?: boolean
   out?: string
 }): Promise<number> {
+  // A bundle directory is a streamed EDV Document; reassemble its chunks.
+  if (file && (await isDirectory(file))) {
+    return runDecryptBundle({ dir: file, key, out })
+  }
+
   const bytes = await readInputBytes({ file })
   const parsed = parseJson(bytes)
   if (parsed === null || typeof parsed !== 'object') {
@@ -333,9 +552,7 @@ export async function runDecrypt({
 
   let keyAgreementKey
   try {
-    keyAgreementKey = key
-      ? await loadKeyAgreementKey({ ref: key })
-      : await autoSelectKeyAgreementKey({ jwe })
+    keyAgreementKey = await selectKeyAgreementKey({ key, jwe })
   } catch (err) {
     console.error((err as Error).message)
     return 2
@@ -362,18 +579,115 @@ export async function runDecrypt({
 
   if (envelope) {
     const payload = result as DocumentPayload
-    if (payload.meta !== undefined) {
-      console.error(`meta: ${JSON.stringify(payload.meta)}`)
-    }
-    if (payload.stream !== undefined) {
-      console.error(`stream: ${JSON.stringify(payload.stream)}`)
-    }
+    reportDocumentSidecars({ payload })
     await writeJsonOutput({ value: payload.content, output: out })
   } else if (asObject) {
     await writeJsonOutput({ value: result, output: out })
   } else {
     await writeBytesOutput({ bytes: result as Uint8Array, output: out })
   }
+  return 0
+}
+
+/**
+ * Load the decryption key: the `-k/--key` ref when given, otherwise the stored
+ * key whose id matches a recipient of `jwe`.
+ *
+ * @param options {object}
+ * @param [options.key] {string}
+ * @param options.jwe {IJWE}
+ * @returns {Promise<KeyAgreementKey>}
+ */
+async function selectKeyAgreementKey({
+  key,
+  jwe
+}: {
+  key?: string
+  jwe: IJWE
+}): Promise<KeyAgreementKey> {
+  return key
+    ? loadKeyAgreementKey({ ref: key })
+    : autoSelectKeyAgreementKey({ jwe })
+}
+
+/**
+ * Report a decrypted document's `meta` / `stream` on stderr (diagnostics that
+ * accompany the `content` written to stdout).
+ *
+ * @param options {object}
+ * @param options.payload {DocumentPayload}
+ * @returns {void}
+ */
+function reportDocumentSidecars({
+  payload
+}: {
+  payload: DocumentPayload
+}): void {
+  if (payload.meta !== undefined) {
+    console.error(`meta: ${JSON.stringify(payload.meta)}`)
+  }
+  if (payload.stream !== undefined) {
+    console.error(`stream: ${JSON.stringify(payload.stream)}`)
+  }
+}
+
+/**
+ * Decrypt a streamed EDV Document bundle directory: decrypt the document jwe for
+ * its `content`/`meta`/`stream` (reported on stderr), then reassemble the chunk
+ * JWEs into the original bytes, written to `-o`/stdout.
+ *
+ * @param options {object}
+ * @param options.dir {string}   The bundle directory.
+ * @param [options.key] {string}
+ * @param [options.out] {string}
+ * @returns {Promise<number>}
+ */
+async function runDecryptBundle({
+  dir,
+  key,
+  out
+}: {
+  dir: string
+  key?: string
+  out?: string
+}): Promise<number> {
+  let document
+  let chunks
+  try {
+    ;({ document, chunks } = await readDocumentBundle({ dir }))
+  } catch (err) {
+    console.error((err as Error).message)
+    return 2
+  }
+
+  let keyAgreementKey
+  try {
+    keyAgreementKey = await selectKeyAgreementKey({ key, jwe: document.jwe })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 2
+  }
+
+  const cipher = new Cipher()
+  let bytes: Uint8Array
+  try {
+    const payload = (await cipher.decryptObject({
+      jwe: document.jwe,
+      keyAgreementKey
+    })) as DocumentPayload | null
+    if (payload === null) {
+      throw new Error('document jwe did not decrypt')
+    }
+    reportDocumentSidecars({ payload })
+    bytes = await decryptChunks({ cipher, chunks, keyAgreementKey })
+  } catch {
+    console.error(
+      'Decryption failed: the key does not match any recipient of this bundle.'
+    )
+    return 1
+  }
+
+  await writeBytesOutput({ bytes, output: out })
   return 0
 }
 
@@ -405,17 +719,28 @@ export function makeEdvCommand(): Command {
         'encrypting the input as the document content'
     )
     .option(
+      '-s, --stream',
+      'emit a chunked-stream bundle directory (requires -o); the input is ' +
+        'encrypted as fixed-size chunks'
+    )
+    .option(
+      '--chunk-size <bytes>',
+      'bytes per chunk for --stream (default 1 MiB)',
+      parseChunkSize
+    )
+    .option(
       '--meta <json>',
-      'a JSON meta object to store in the document (requires --document)'
+      'a JSON meta object to store in the document (requires --document/--stream)'
     )
     .option(
-      '--update <file>',
-      'an existing EDV Document to update: reuse its id, increment its ' +
-        'sequence, and merge its recipients (requires --document)'
+      '--update <path>',
+      'an existing EDV Document (file or bundle) to update: reuse its id, ' +
+        'increment its sequence, and merge its recipients'
     )
     .option(
-      '-o, --out <file>',
-      'write the JWE or EDV Document to a file (default: stdout)'
+      '-o, --out <path>',
+      'write the JWE/EDV Document to a file, or the --stream bundle to a ' +
+        'directory (default: stdout)'
     )
     .action(
       async (
@@ -425,6 +750,8 @@ export function makeEdvCommand(): Command {
           recipientFile: string[]
           json?: boolean
           document?: boolean
+          stream?: boolean
+          chunkSize?: number
           meta?: string
           update?: string
           out?: string
