@@ -7,15 +7,8 @@ import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import type { IZcap } from '@interop/was-client'
 import { encodeCapability } from '../zcap/encoding.js'
-import {
-  saveMetaToCollection,
-  saveToCollection,
-  saveToDids
-} from '../storage.js'
-import {
-  resolveCapabilityInput,
-  resolveCapabilityTarget
-} from './capability.js'
+import { saveToDids } from '../storage.js'
+import { resolveCapabilityTarget } from './capability.js'
 
 /**
  * Generates a did:key DID with an Ed25519 key and saves its document and
@@ -72,61 +65,6 @@ describe('was capability resolution', () => {
     delete process.env.WALLET_DIR
     delete process.env.WAS_DID
     await rm(walletDir, { recursive: true, force: true })
-  })
-
-  describe('resolveCapabilityInput', () => {
-    const zcap = makeZcap({
-      target: 'https://was.example/space/space-1/docs'
-    })
-
-    it('decodes a multibase-encoded capability string', async () => {
-      const resolved = await resolveCapabilityInput({
-        ref: encodeCapability(zcap)
-      })
-      assert.deepEqual(resolved, zcap)
-    })
-
-    it('reads a capability JSON file', async () => {
-      const filePath = join(walletDir, 'share.json')
-      await writeFile(filePath, JSON.stringify(zcap))
-      const resolved = await resolveCapabilityInput({ ref: filePath })
-      assert.deepEqual(resolved, zcap)
-    })
-
-    it('rejects a file that is not capability JSON', async () => {
-      const filePath = join(walletDir, 'share.json')
-      await writeFile(filePath, 'not json')
-      await assert.rejects(
-        resolveCapabilityInput({ ref: filePath }),
-        /does not contain capability JSON/
-      )
-    })
-
-    it('resolves a stored zcap by metadata handle', async () => {
-      await saveToCollection('zcaps', 'stored-share', zcap)
-      await saveMetaToCollection({
-        collection: 'zcaps',
-        storageId: 'stored-share',
-        meta: { handle: 'bob-share' }
-      })
-      const resolved = await resolveCapabilityInput({ ref: 'bob-share' })
-      assert.deepEqual(resolved, zcap)
-    })
-
-    it('resolves a stored zcap by capability id', async () => {
-      await saveToCollection('zcaps', 'stored-share', zcap)
-      const resolved = await resolveCapabilityInput({
-        ref: 'urn:zcap:delegated:zSampleCapability'
-      })
-      assert.deepEqual(resolved, zcap)
-    })
-
-    it('rejects an unknown reference', async () => {
-      await assert.rejects(
-        resolveCapabilityInput({ ref: 'nope' }),
-        /No capability found for "nope"/
-      )
-    })
   })
 
   describe('resolveCapabilityTarget', () => {

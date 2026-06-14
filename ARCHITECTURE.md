@@ -51,7 +51,7 @@ live in their own directory, `src/commands/was/` (see the module map), while
 | `src/keys/ecdsa.ts` | ECDSA curve normalization and VC-issuance capability checks. |
 | `src/vc/` | Verifiable Credential `issue`/`verify`, issuer registries, and signature suites. |
 | `src/was/` | WAS client logic (non-CLI): `client`, `address`, `registry`, `capability`, `io`. |
-| `src/zcap/` | Capability `create`/`delegate`/`signer`/`encoding`/`ttl`. |
+| `src/zcap/` | Capability `create`/`delegate`/`signer`/`encoding`/`resolve`/`ttl`. |
 
 ## Storage and configuration
 

@@ -17,6 +17,10 @@
 
 ### Changed
 
+- `zcap delegate --capability` now also accepts the id or metadata handle of
+  a zcap saved in local wallet storage, in addition to a multibase string or
+  a JSON file path (the same resolution the `was` commands' `--capability`
+  flag uses; the shared resolver lives in `src/zcap/resolve.ts`).
 - Split the `was` command module into `src/commands/was/` submodules (by noun:
   `space`, `collection`, `resource`, `tree`, `policy`, `publish`, plus shared
   helpers); `src/commands/was.ts` now holds only `makeWasCommand()`. Internal

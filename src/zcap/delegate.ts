@@ -45,8 +45,8 @@ const documentLoader = securityLoader().build()
  *   capability's controller).
  * @param [options.url] {string}   The invocation target for a first-level
  *   delegation from the root capability.
- * @param [options.capability] {IZcap}   A parent capability to delegate (already
- *   decoded from its multibase string or a JSON file).
+ * @param [options.capability] {IZcap}   A parent capability to delegate
+ *   (already resolved from its multibase string, JSON file, or stored zcap).
  * @param [options.invocationTarget] {string}   An attenuated invocation target.
  * @param [options.allow] {string[]}   Allowed actions; omitted inherits the
  *   parent's actions.

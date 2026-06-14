@@ -18,12 +18,10 @@
  *
  * Exit codes: 0 on success, 1 on a creation/delegation or input error.
  */
-import { readFile } from 'node:fs/promises'
 import { Command } from 'commander'
-import type { IZcap } from '@interop/data-integrity-core/zcap'
 import { createCapability } from '../zcap/create.js'
 import { delegateCapability } from '../zcap/delegate.js'
-import { decodeCapability } from '../zcap/encoding.js'
+import { resolveCapabilityInput } from '../zcap/resolve.js'
 import {
   listCollection,
   loadFromCollection,
@@ -95,21 +93,6 @@ export async function writeCreateMeta({
 }
 
 /**
- * Resolves a `--capability` option value to a parent capability object. A value
- * beginning with `z` is treated as a multibase-encoded capability string;
- * otherwise it is treated as a path to a JSON file containing the capability.
- *
- * @param value {string}
- * @returns {Promise<IZcap>}
- */
-async function resolveCapabilityInput(value: string): Promise<IZcap> {
-  if (value.startsWith('z')) {
-    return decodeCapability(value)
-  }
-  return JSON.parse(await readFile(value, 'utf8')) as IZcap
-}
-
-/**
  * Creates a root capability and prints it (with its encoding) to stdout.
  *
  * @param options {object}
@@ -168,8 +151,8 @@ export async function runCreate(options: {
  *   signing via `ZCAP_CONTROLLER_KEY_SEED`.
  * @param [options.url] {string}   The invocation target for a first-level
  *   delegation.
- * @param [options.capability] {string}   A parent capability (multibase string
- *   or a path to a JSON file) to delegate.
+ * @param [options.capability] {string}   A parent capability (multibase
+ *   string, a path to a JSON file, or a stored zcap id/handle) to delegate.
  * @param [options.invocationTarget] {string}   An attenuated invocation target.
  * @param [options.allow] {string[]}   Allowed actions.
  * @param [options.ttl] {string}   Time-to-live for expiration.
@@ -196,7 +179,7 @@ export async function runDelegate(options: {
 }): Promise<number> {
   try {
     const capability = options.capability
-      ? await resolveCapabilityInput(options.capability)
+      ? await resolveCapabilityInput({ ref: options.capability })
       : undefined
     const result = await delegateCapability({
       did: options.did,
@@ -303,7 +286,8 @@ export function makeZcapCommand(): Command {
     )
     .option(
       '--capability <value>',
-      'parent capability to delegate: a multibase (z...) string or a JSON file path'
+      'parent capability to delegate: a multibase (z...) string, a JSON ' +
+        'file path, or a stored zcap id/handle'
     )
     .option(
       '--invocation-target <url>',
