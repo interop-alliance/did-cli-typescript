@@ -53,6 +53,9 @@ importers:
       '@interop/was-client':
         specifier: ^0.5.0
         version: 0.5.0(@interop/jsonld-signatures@11.8.1)
+      '@interop/x25519-key-agreement-key':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@interop/zcap':
         specifier: ^11.0.3
         version: 11.0.3
@@ -565,6 +568,10 @@ packages:
     resolution: {integrity: sha512-c8kPTx6xPxAK3bfMzZZnUH7eUadCYK8PlRCgbfiCckOeOykBFKThI/B5y7ptiIsaw9OMl5wsnkLq/ZayKwppZQ==}
     engines: {node: '>=24.0'}
 
+  '@interop/x25519-key-agreement-key@5.0.0':
+    resolution: {integrity: sha512-dFwxZGuaZLKg4IcZB8Jd4Qun3+NsXBUs0sU/a+EeQqsTqHIamjcww+9Gnkpu3pA1Zz5yAj75RvNl/QN7IeWO6g==}
+    engines: {node: '>=24.0'}
+
   '@interop/zcap@11.0.3':
     resolution: {integrity: sha512-/hyFjrxrcFgGiQPxR4EtyHIIf2j8j/HEruCSPSodCgiGthuoqNZzRdAbAyV+E1WLX8xYiDwdZmIGoYqTfk/D6Q==}
     engines: {node: '>=24.0'}
@@ -599,6 +606,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@noble/curves@2.2.0':
+    resolution: {integrity: sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==}
+    engines: {node: '>= 20.19.0'}
 
   '@noble/ed25519@1.7.5':
     resolution: {integrity: sha512-xuS0nwRMQBvSxDa7UxMb61xTiH3MxTgUfhyPUALVIe0FlOAz4sjELwyDRyUvqeEYfRSG9qNjFIycqLZppg4RSA==}
@@ -2321,6 +2332,12 @@ snapshots:
       - expo-crypto
       - react-native-get-random-values
 
+  '@interop/x25519-key-agreement-key@5.0.0':
+    dependencies:
+      '@interop/data-integrity-core': 8.0.0
+      '@noble/curves': 2.2.0
+      '@scure/base': 2.2.0
+
   '@interop/zcap@11.0.3':
     dependencies:
       '@digitalbazaar/zcap-context': 2.0.1
@@ -2365,6 +2382,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@noble/curves@2.2.0':
+    dependencies:
+      '@noble/hashes': 2.2.0
 
   '@noble/ed25519@1.7.5': {}
 
