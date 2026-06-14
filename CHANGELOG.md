@@ -19,6 +19,17 @@
   auto-selected from the wallet by matching a recipient `kid`; a non-recipient
   key exits non-zero with a clear error. The full EDV Document envelope,
   chunked streams, and HMAC-blinded indexing are deferred to Layer 2.
+- Add EDV Document support to `edv` (Layer 2, Phase 1). `edv encrypt --document`
+  wraps the JWE in a full EDV Document envelope `{ id, sequence, indexed, jwe }`
+  (convention `*.edvdoc.json`), encrypting the input as the document `content`
+  with an optional `--meta <json>` object alongside it (both encrypted inside the
+  `jwe`); `id` is a fresh identity-multihash multibase value and `sequence`
+  starts at `0`, byte-faithful to `@interop/edv-client`'s `EdvClientCore` without
+  taking that dependency. `--update <file>` versions an existing document
+  (reusing its `id`, incrementing `sequence`, and merging its recipients).
+  `edv decrypt` detects an envelope automatically and emits its decrypted
+  `content` (reporting `meta`/`stream` on stderr); `--document` requires one.
+  Chunked streams and HMAC-blinded indexing remain deferred to later phases.
 
 ## 0.8.0 - 2026-06-13
 
