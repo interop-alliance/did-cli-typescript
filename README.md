@@ -1115,6 +1115,37 @@ credentials  Credentials  http://localhost:3002/space/8124...cf2e/credentials
 Deleted http://localhost:3002/space/8124...cf2e/credentials on the server.
 ```
 
+`was collection backend` shows the storage backend a collection is stored on,
+and `was collection quota` shows the collection's storage usage scoped to that
+backend (state, usage, limit, and any restricted actions). Both render a table
+by default and take `--json` for the raw response:
+
+```
+./di was collection backend home/credentials
+FIELD         VALUE
+------------  --------------
+ID            default
+Name          Filesystem
+Managed By    server
+Storage Mode  document, blob
+Persistence   durable
+
+./di was collection quota home/credentials
+FIELD        VALUE
+-----------  --------------------
+Backend      default (Filesystem)
+Managed By   server
+State        ok
+Usage (B)    2048
+Limit (B)    1048576
+Restricted
+Measured At  2026-06-13T00:00:00Z
+```
+
+A missing or not-visible collection is reported as not-found; a server (or
+backend) that does not implement these endpoints (a 501) is reported as an
+error.
+
 #### Add and read resources
 
 The `resource` group (alias: `res`) manages the content itself. Payloads come
