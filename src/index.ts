@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module'
 import { Command } from 'commander'
 import { makeDidCommand } from './commands/did.js'
+import { makeEdvCommand } from './commands/edv.js'
 import { makeKeyCommand } from './commands/key.js'
 import { makeVcCommand } from './commands/vc.js'
 import { makeWalletCommand } from './commands/wallet.js'
@@ -17,6 +18,7 @@ const program = new Command()
 program.name('di').description('DID CLI tool').version(version)
 
 program.addCommand(makeDidCommand())
+program.addCommand(makeEdvCommand())
 program.addCommand(makeKeyCommand())
 program.addCommand(makeVcCommand())
 program.addCommand(makeWalletCommand())

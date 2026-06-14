@@ -35,6 +35,7 @@
     "@interop/ed25519-signature": "^7.1.2",
     "@interop/ed25519-verification-key": "^8.0.0",
     "@interop/ezcap": "^7.2.1",
+    "@interop/minimal-cipher": "^7.3.0",
     "@interop/security-document-loader": "^9.3.1",
     "@interop/vc": "^11.0.4",
     "@interop/verifier-core": "^3.2.1",

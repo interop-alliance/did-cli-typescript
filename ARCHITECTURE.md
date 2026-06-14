@@ -43,7 +43,8 @@ live in their own directory, `src/commands/was/` (see the module map), while
 | Path | Responsibility |
 | --- | --- |
 | `src/index.ts` | Executable entry point; builds the `di` program and registers command groups. |
-| `src/commands/` | Command factories: `did`, `key`, `vc`, `wallet`, `was`, `zcap`. |
+| `src/commands/` | Command factories: `did`, `edv`, `key`, `vc`, `wallet`, `was`, `zcap`. |
+| `src/edv/` | EDV / minimal-cipher recipient and key-agreement resolution (`recipients.ts`): the recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt. |
 | `src/commands/was/` | The `was` group's `run*` functions, split by noun: `space`, `collection`, `resource`, `tree` (the `ls`/`rm` shorthands), `policy`, `publish` (publish/unpublish/grant), and `shared` (option factories, address parsing, listing renderers). |
 | `src/storage.ts` | Wallet + DID-document file I/O: `listCollection`, `loadFromCollection`, `saveToCollection`, and `.meta.json` sidecars. |
 | `src/meta.ts` | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`. |
@@ -115,6 +116,9 @@ di zcap show|view|cat <id>      show a stored capability
 di zcap meta <id>               show/edit a capability's local metadata
 di zcap remove|delete|rm <id>   remove a stored capability
 di zcap revoke <id>             revoke a delegated capability
+
+di edv encrypt [file]           encrypt stdin or a file to one or more X25519 recipients
+di edv decrypt [file]           decrypt a JWE from stdin or a file with a stored X25519 key
 
 di wallet ls|list               list all wallet collections and items
 

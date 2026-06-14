@@ -1428,6 +1428,59 @@ unless `WAS_TEST_SERVER_URL` points at a running server:
 WAS_TEST_SERVER_URL=http://localhost:3002 npm run test:node
 ```
 
+### Encrypted Data (EDV)
+
+The `edv` commands encrypt an object or file to one or more X25519 recipients
+and decrypt the result, using the EDV / [minimal-cipher](https://www.npmjs.com/package/@interop/minimal-cipher)
+serialization. The output is a single raw **JWE** (the `jwe` field of an EDV
+Document), written to stdout or an `-o` file -- by convention `*.jwe.json`.
+Encryption is public-key (key-agreement) only: there is no password mode. The
+algorithm is the library default, `ECDH-ES+A256KW` key wrap with `XC20P`
+(XChaCha20Poly1305) content encryption.
+
+#### Encrypt
+
+A recipient (`-r/--recipient`, repeatable, at least one required) is an X25519
+public key given as a raw `publicKeyMultibase` (starts `z6LS`), a wallet key
+fingerprint or handle, or a DID / DID URL (the DID's `keyAgreement` key; a DID
+with several keyAgreement keys needs the `did#fragment` form). A
+`--recipient-file <path>` is a key-document JSON file holding an X25519 public
+key.
+
+Encrypt a JSON object (with `--json`, the input is parsed and encrypted as an
+object) to a stored x25519 key:
+
+```
+./di key create --type x25519 --save --handle alice-kak
+echo '{"hello": "world"}' | ./di edv encrypt --json -r alice-kak -o secret.jwe.json
+```
+
+Without `--json` the raw input bytes are encrypted. Encrypt to several
+recipients by repeating `-r`:
+
+```
+./di edv encrypt photo.png -r alice-kak -r z6LSr... -o photo.jwe.json
+```
+
+#### Decrypt
+
+`-k/--key` is the X25519 secret key (fingerprint or handle) to decrypt with;
+when omitted, the matching stored key is auto-selected from the wallet. Use
+`--json` to pretty-print the decrypted object, and `-o` to write to a file.
+Only plaintext is ever written; secret key material stays in the key store.
+
+```
+./di edv decrypt secret.jwe.json --json
+{
+  "hello": "world"
+}
+
+./di edv decrypt photo.jwe.json -k alice-kak -o photo.png
+```
+
+Decryption with a key that is not a recipient exits non-zero with a clear
+error rather than emitting garbage.
+
 ## Contribute
 
 PRs accepted. Please follow the code-style and contribution conventions in
