@@ -232,6 +232,139 @@ describe('edv', () => {
     assert.ok(errors.join('\n').includes('recipient'))
   })
 
+  it('round-trips an EDV Document envelope with --document', async () => {
+    const key = await createX25519Key()
+    const inputPath = join(walletDir, 'in.json')
+    const docPath = join(walletDir, 'out.edvdoc.json')
+    await writeFile(inputPath, JSON.stringify({ name: 'alice', age: 30 }))
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        key.publicKeyMultibase,
+        '--meta',
+        JSON.stringify({ tag: 'demo' }),
+        '-o',
+        docPath
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+
+    const envelope = JSON.parse(await readFile(docPath, 'utf8'))
+    assert.match(envelope.id, /^z[1-9A-HJ-NP-Za-km-z]+$/)
+    assert.equal(envelope.sequence, 0)
+    assert.deepEqual(envelope.indexed, [])
+    assert.ok(envelope.jwe?.recipients?.length === 1)
+    // content and meta are encrypted inside the jwe, not in the envelope.
+    assert.equal(envelope.content, undefined)
+    assert.equal(envelope.meta, undefined)
+
+    logs.length = 0
+    errors.length = 0
+    // No --document flag on decrypt: the envelope is detected automatically.
+    await makeEdvCommand().parseAsync(['decrypt', docPath], { from: 'user' })
+    assert.equal(exitCode, undefined)
+    assert.deepEqual(JSON.parse(logs.join('\n')), { name: 'alice', age: 30 })
+    // meta is reported as a diagnostic on stderr.
+    assert.ok(errors.join('\n').includes('"tag":"demo"'))
+  })
+
+  it('--update reuses the id, increments sequence, and merges recipients', async () => {
+    const keyA = await createX25519Key()
+    const keyB = await createX25519Key()
+    const inputPath = join(walletDir, 'in.json')
+    const v0Path = join(walletDir, 'v0.edvdoc.json')
+    const v1Path = join(walletDir, 'v1.edvdoc.json')
+    await writeFile(inputPath, JSON.stringify({ v: 0 }))
+
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        keyA.publicKeyMultibase,
+        '-o',
+        v0Path
+      ],
+      { from: 'user' }
+    )
+    const v0 = JSON.parse(await readFile(v0Path, 'utf8'))
+
+    await writeFile(inputPath, JSON.stringify({ v: 1 }))
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--document',
+        '-r',
+        keyB.publicKeyMultibase,
+        '--update',
+        v0Path,
+        '-o',
+        v1Path
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+
+    const v1 = JSON.parse(await readFile(v1Path, 'utf8'))
+    assert.equal(v1.id, v0.id)
+    assert.equal(v1.sequence, 1)
+    assert.equal(v1.jwe.recipients.length, 2)
+
+    // The original recipient (keyA) and the added one (keyB) can both decrypt.
+    for (const key of [keyA, keyB]) {
+      logs.length = 0
+      exitCode = undefined
+      await makeEdvCommand().parseAsync(
+        ['decrypt', v1Path, '--key', key.publicKeyMultibase],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined)
+      assert.deepEqual(JSON.parse(logs.join('\n')), { v: 1 })
+    }
+  })
+
+  it('rejects --meta and --update without --document', async () => {
+    const inputPath = join(walletDir, 'in.json')
+    await writeFile(inputPath, JSON.stringify({ a: 1 }))
+    await makeEdvCommand().parseAsync(
+      ['encrypt', inputPath, '-r', 'z6LSdummy', '--meta', '{}'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.ok(errors.join('\n').includes('--document'))
+  })
+
+  it('rejects --document decrypt on a bare JWE', async () => {
+    const key = await createX25519Key()
+    const inputPath = join(walletDir, 'in.json')
+    const jwePath = join(walletDir, 'out.jwe.json')
+    await writeFile(inputPath, JSON.stringify({ a: 1 }))
+    await makeEdvCommand().parseAsync(
+      [
+        'encrypt',
+        inputPath,
+        '--json',
+        '-r',
+        key.publicKeyMultibase,
+        '-o',
+        jwePath
+      ],
+      { from: 'user' }
+    )
+    await makeEdvCommand().parseAsync(['decrypt', jwePath, '--document'], {
+      from: 'user'
+    })
+    assert.equal(exitCode, 2)
+    assert.ok(errors.join('\n').includes('not an EDV Document'))
+  })
+
   it('returns the failure path when decrypting with a non-recipient key', async () => {
     const keyA = await createX25519Key()
     const keyB = await createX25519Key()

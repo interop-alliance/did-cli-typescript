@@ -1481,6 +1481,43 @@ Only plaintext is ever written; secret key material stays in the key store.
 Decryption with a key that is not a recipient exits non-zero with a clear
 error rather than emitting garbage.
 
+#### EDV Documents (`--document`)
+
+By default `edv encrypt` emits a bare JWE. With `-d/--document` it wraps that JWE
+in a full **EDV Document** envelope -- `{ id, sequence, indexed, jwe }`, the
+shape an EDV / WAS server stores -- written by convention to `*.edvdoc.json`. The
+input is encrypted as the document's `content`; an optional `--meta <json>`
+object is encrypted alongside it (both live inside the `jwe`, so only `id`,
+`sequence`, and `indexed` stay in cleartext). The `id` is a fresh
+identity-multihash multibase value and `sequence` starts at `0`. Index entries
+(`indexed`) are always `[]` for now; HMAC-blinded indexing and chunked streams
+are later phases.
+
+```
+echo '{"name": "alice"}' | \
+  ./di edv encrypt --document -r alice-kak --meta '{"tag":"demo"}' -o doc.edvdoc.json
+```
+
+`--update <file>` versions an existing document: it reuses that document's `id`,
+increments its `sequence`, and merges its recipients (so you can add a recipient
+without re-listing the existing ones) before re-encrypting the new content.
+
+```
+echo '{"name": "alice", "v": 2}' | \
+  ./di edv encrypt --document -r bob-kak --update doc.edvdoc.json -o doc.v2.edvdoc.json
+```
+
+`edv decrypt` detects an EDV Document automatically and prints its decrypted
+`content` (any `meta`/`stream` is reported on stderr); pass `-d/--document` to
+require an envelope and reject a bare JWE.
+
+```
+./di edv decrypt doc.edvdoc.json
+{
+  "name": "alice"
+}
+```
+
 ## Contribute
 
 PRs accepted. Please follow the code-style and contribution conventions in
