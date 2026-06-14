@@ -10,7 +10,8 @@
  * DID so day-to-day commands need no `--server`/`--did` flags.
  *
  * Subcommand groups: `space` (`create`, `list`, `show`, `update` alias
- * `configure`, `delete`, `forget`, `add`), `collection` (alias `coll`;
+ * `configure`, `delete`, `forget`, `add`, `backends`, `quotas`),
+ * `collection` (alias `coll`;
  * `create`, `list`, `show`, `update`, `delete`), and `resource` (alias
  * `res`; `add`, `put`, `get`, `list`, `delete`). The top-level shorthand
  * verbs `ls`, `get`, `put`, and `rm` dispatch on the path depth, mirroring
@@ -35,12 +36,14 @@ import {
 } from './was/shared.js'
 import {
   runSpaceAdd,
+  runSpaceBackends,
   runSpaceCreate,
   runSpaceDelete,
   runSpaceExport,
   runSpaceForget,
   runSpaceImport,
   runSpaceList,
+  runSpaceQuotas,
   runSpaceShow,
   runSpaceUpdate
 } from './was/space.js'
@@ -264,6 +267,36 @@ export function makeWasCommand(): Command {
         options: { server?: string; did?: string }
       ) => {
         await runAndExit(runSpaceImport({ address, file, ...options }))
+      }
+    )
+
+  space
+    .command('backends <space>')
+    .description('List the storage backends available within a space')
+    .option('--json', 'output the raw backends JSON')
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string,
+        options: { json?: boolean; server?: string; did?: string }
+      ) => {
+        await runAndExit(runSpaceBackends({ address, ...options }))
+      }
+    )
+
+  space
+    .command('quotas <space>')
+    .description("Show a space's storage quota report, grouped by backend")
+    .option('--json', 'output the raw quota report JSON')
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string,
+        options: { json?: boolean; server?: string; did?: string }
+      ) => {
+        await runAndExit(runSpaceQuotas({ address, ...options }))
       }
     )
 

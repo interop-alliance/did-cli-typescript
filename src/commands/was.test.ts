@@ -51,6 +51,8 @@ interface StubResponses {
   policy?: object | null
   exportBytes?: Uint8Array
   importStats?: object
+  backends?: object[] | null
+  quotas?: object | null
 }
 
 /**
@@ -131,6 +133,14 @@ function makeStubClient(responses: StubResponses = {}): {
         },
         async delete() {
           record('deleteSpace')
+        },
+        async backends() {
+          record('backends')
+          return responses.backends ?? null
+        },
+        async quotas() {
+          record('quotas')
+          return responses.quotas ?? null
         },
         async export() {
           record('exportSpace')
@@ -1239,6 +1249,141 @@ describe('di was', () => {
         assert.equal(exitCode, undefined)
         assert.deepEqual(calls.clearPolicy, [['resource']])
         assert.match(errors[0], /Unpublished \(capability-only access\)/)
+      })
+    })
+
+    describe('space backends', () => {
+      it('renders the backends as a table', async () => {
+        const calls = await setUpStub({
+          backends: [
+            {
+              id: 'default',
+              name: 'Filesystem',
+              managedBy: 'server',
+              storageMode: ['document', 'blob'],
+              persistence: 'durable'
+            }
+          ]
+        })
+        await makeWasCommand().parseAsync(['space', 'backends', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined)
+        assert.equal(calls.backends.length, 1)
+        const table = logs.join('\n')
+        assert.match(table, /default/)
+        assert.match(table, /Filesystem/)
+        assert.match(table, /document, blob/)
+      })
+
+      it('outputs raw JSON with --json', async () => {
+        await setUpStub({ backends: [{ id: 'default', managedBy: 'server' }] })
+        await makeWasCommand().parseAsync(
+          ['space', 'backends', 'home', '--json'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const output = JSON.parse(logs.join('\n'))
+        assert.deepEqual(output, [{ id: 'default', managedBy: 'server' }])
+      })
+
+      it('reports an unsupported (null) backends list as an error', async () => {
+        await setUpStub({ backends: null })
+        await makeWasCommand().parseAsync(['space', 'backends', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.match(errors[0], /does not support listing backends/)
+      })
+
+      it('rejects a collection address', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(['space', 'backends', 'home/docs'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /space commands take a space address/)
+      })
+    })
+
+    describe('space quotas', () => {
+      it('renders the quota report as a table', async () => {
+        const calls = await setUpStub({
+          quotas: {
+            respondedAt: '2026-06-13T00:00:00Z',
+            backends: [
+              {
+                id: 'default',
+                name: 'Filesystem',
+                managedBy: 'server',
+                state: 'ok',
+                usageBytes: 2048,
+                limit: { capacityBytes: 1048576, isUnlimited: false },
+                restrictedActions: [],
+                measuredAt: '2026-06-13T00:00:00Z'
+              }
+            ]
+          }
+        })
+        await makeWasCommand().parseAsync(['space', 'quotas', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined)
+        assert.equal(calls.quotas.length, 1)
+        const table = logs.join('\n')
+        assert.match(table, /default \(Filesystem\)/)
+        assert.match(table, /ok/)
+        assert.match(table, /2048/)
+        assert.match(table, /1048576/)
+      })
+
+      it('shows "unlimited" for an unlimited backend', async () => {
+        await setUpStub({
+          quotas: {
+            respondedAt: '2026-06-13T00:00:00Z',
+            backends: [
+              {
+                id: 'default',
+                managedBy: 'server',
+                state: 'ok',
+                usageBytes: 0,
+                limit: { isUnlimited: true },
+                restrictedActions: [],
+                measuredAt: '2026-06-13T00:00:00Z'
+              }
+            ]
+          }
+        })
+        await makeWasCommand().parseAsync(['space', 'quotas', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined)
+        assert.match(logs.join('\n'), /unlimited/)
+      })
+
+      it('outputs the raw report with --json', async () => {
+        const report = {
+          respondedAt: '2026-06-13T00:00:00Z',
+          backends: []
+        }
+        await setUpStub({ quotas: report })
+        await makeWasCommand().parseAsync(
+          ['space', 'quotas', 'home', '--json'],
+          {
+            from: 'user'
+          }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(JSON.parse(logs.join('\n')), report)
+      })
+
+      it('reports an unsupported (null) quota report as an error', async () => {
+        await setUpStub({ quotas: null })
+        await makeWasCommand().parseAsync(['space', 'quotas', 'home'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.match(errors[0], /does not support quota reports/)
       })
     })
 

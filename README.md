@@ -1073,6 +1073,24 @@ delete pair:
   server** (idempotent) and removes the registry entry;
 - `was space forget <space>` removes only the local registry entry.
 
+`was space backends` lists the storage backends available within a space, and
+`was space quotas` shows the space's storage report grouped by backend (usage,
+limit, and any restricted actions). Both render a table by default and take
+`--json` for the raw response:
+
+```
+./di was space backends home
+ID       NAME        MANAGED BY  STORAGE MODE     PERSISTENCE
+default  Filesystem  server      document, blob   durable
+
+./di was space quotas home
+BACKEND             STATE  USAGE (B)  LIMIT (B)  RESTRICTED
+default (Filesystem) ok    2048       1048576
+```
+
+A server that does not implement these endpoints (a 501) is reported as an
+error.
+
 #### Manage collections
 
 The `collection` group (alias: `coll`) manages collections within a space.
