@@ -210,6 +210,43 @@ describe('did key', () => {
       }
     })
 
+    it('generates an x25519 key agreement key', async () => {
+      await makeKeyCommand().parseAsync(['create', '--type', 'x25519'], {
+        from: 'user'
+      })
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.type, 'X25519KeyAgreementKey2020')
+      // x25519 public keys carry the z6LS multibase-multicodec prefix
+      assert.match(parsed.publicKeyMultibase, /^z6LS/)
+      assert.ok(parsed.privateKeyMultibase)
+    })
+
+    it('exits with error for x25519 --with-seed', async () => {
+      await makeKeyCommand().parseAsync(
+        ['create', '--type', 'x25519', '--with-seed'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
+    it('saves an x25519 key with an x25519-tagged filename', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'x25519', '--save'],
+          { from: 'user' }
+        )
+        const filePath = errors[0].slice('Key saved to '.length)
+        const filename = filePath.slice(filePath.lastIndexOf('/') + 1)
+        // filename format: YYYY-MM-DD-x25519-<publicKeyMultibase>.json
+        assert.match(filename, /^\d{4}-\d{2}-\d{2}-x25519-z6LS.*\.json$/)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
     it('--save writes a .meta.json sidecar with created/handle/description', async () => {
       const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.WALLET_DIR = walletDir
@@ -450,6 +487,32 @@ describe('did key', () => {
         const shown = JSON.parse(logs[0])
         assert.equal(shown.publicKeyMultibase, created.publicKeyMultibase)
         assert.equal(shown.secretKeyMultibase, undefined)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('shows a stored x25519 key without private key material', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'x25519', '--save'],
+          { from: 'user' }
+        )
+        const created = JSON.parse(logs[0])
+        logs.length = 0
+        errors.length = 0
+
+        await makeKeyCommand().parseAsync(
+          ['show', created.publicKeyMultibase],
+          { from: 'user' }
+        )
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.type, 'X25519KeyAgreementKey2020')
+        assert.equal(shown.publicKeyMultibase, created.publicKeyMultibase)
+        assert.equal(shown.privateKeyMultibase, undefined)
       } finally {
         await rm(walletDir, { recursive: true })
       }

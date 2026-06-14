@@ -4,6 +4,12 @@
 
 ### Added
 
+- Add `key create --type x25519` support, generating an
+  `X25519KeyAgreementKey2020` (Curve25519 Diffie-Hellman) key pair via
+  `@interop/x25519-key-agreement-key`. Saved x25519 keys list with an `x25519`
+  type label and `key show` re-exports the public key only. Like ecdsa, x25519
+  generation is non-deterministic, so `--with-seed` / `SECRET_KEY_SEED` are not
+  supported.
 - Add `was resource-meta get` and `was resource-meta put` (group alias
   `meta`), surfacing the Resource Metadata endpoint (`GET`/`PUT .../meta`).
   `get` prints the whole metadata object (server-managed `contentType`,

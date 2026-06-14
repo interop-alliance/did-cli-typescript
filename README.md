@@ -36,7 +36,7 @@ the relevant command section below.
 | --- | --- | --- |
 | `WALLET_DIR` | all | Wallet collections directory (`keys/`, `zcaps/`, `credentials/`, `was-spaces/`). Defaults to `~/.config/did-cli-wallet/` (honors `XDG_CONFIG_HOME`). |
 | `DIDS_DIR` | `did` | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`. |
-| `SECRET_KEY_SEED` | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa`. |
+| `SECRET_KEY_SEED` | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa` or `--type x25519`. |
 | `WAS_DID` | `was` | Default signing DID (or stored-DID handle) when `--did` is omitted. |
 | `WAS_SERVER_URL` | `was` | Default WAS server base URL when `--server` is omitted. |
 | `ZCAP_CONTROLLER_KEY_SEED` | `zcap` | Controller signing-key seed for delegating capabilities. |
@@ -81,7 +81,7 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di key create
 ```
 
 Specify an explicit key type with `--type` (defaults to `ed25519`; supported:
-`ed25519`, `ecdsa`):
+`ed25519`, `ecdsa`, `x25519`):
 
 ```
 SECRET_KEY_SEED=z1Aaj5A4UCsd... ./di key create --type ed25519
@@ -110,6 +110,27 @@ hyphenated `p-256` and SECG `secp256r1` spellings, case-insensitively):
 ECDSA keys are serialized as Multikey, the same as Ed25519. Note that ECDSA key
 generation is non-deterministic (it cannot be derived from a seed), so
 `--with-seed` and `SECRET_KEY_SEED` are not supported with `--type ecdsa`.
+
+Generate an X25519 (Curve25519) key agreement key -- for Diffie-Hellman key
+exchange / encryption, not signing -- with `--type x25519`:
+
+```
+./di key create --type x25519
+```
+
+It is serialized as an `X25519KeyAgreementKey2020` document with the public and
+private key in multibase encoding:
+
+```json
+{
+  "type": "X25519KeyAgreementKey2020",
+  "publicKeyMultibase": "z6LS...",
+  "privateKeyMultibase": "z3we..."
+}
+```
+
+Like ECDSA, X25519 key generation is non-deterministic, so `--with-seed` and
+`SECRET_KEY_SEED` are not supported with `--type x25519`.
 
 Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by default, or
 `$WALLET_DIR/keys/` if set) with `--save`. A `.meta.json` metadata sidecar is

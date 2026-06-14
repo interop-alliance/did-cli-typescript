@@ -33,7 +33,7 @@ export function parseKeyStorageId({ storageId }: { storageId: string }): {
   curve?: string
 } {
   const match = storageId.match(
-    /^(\d{4}-\d{2}-\d{2})-(ed25519|ecdsa)(?:-(p\d{3}))?-/
+    /^(\d{4}-\d{2}-\d{2})-(ed25519|ecdsa|x25519)(?:-(p\d{3}))?-/
   )
   if (!match) {
     return {}

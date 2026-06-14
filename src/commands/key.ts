@@ -5,6 +5,7 @@ import {
 } from '@digitalcredentials/bnid'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
+import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
 import {
   listCollection,
   loadFromCollection,
@@ -105,7 +106,7 @@ export function makeKeyCommand(): Command {
     .description('Create a new key')
     .option(
       '-t, --type <type>',
-      'key type (supported: ed25519, ecdsa)',
+      'key type (supported: ed25519, ecdsa, x25519)',
       'ed25519'
     )
     .option(
@@ -237,9 +238,46 @@ export function makeKeyCommand(): Command {
             console.log(JSON.stringify(exported, null, 2))
             break
           }
+          case 'x25519': {
+            if (options.withSeed) {
+              console.error(
+                '--with-seed is not supported for x25519 keys; X25519 key ' +
+                  'generation is non-deterministic and cannot be derived ' +
+                  'from a seed.'
+              )
+              process.exit(1)
+              return
+            }
+            const keyPair = await X25519KeyAgreementKey2020.generate()
+            const exported = await keyPair.export({
+              publicKey: true,
+              privateKey: true
+            })
+            if (options.save) {
+              const now = new Date()
+              const date = now.toISOString().slice(0, 10)
+              const rawId = exported.id ?? exported.publicKeyMultibase
+              const storageId = `${date}-x25519-${rawId}`.replaceAll(':', '_')
+              const filePath = await saveToCollection(
+                'keys',
+                storageId,
+                exported
+              )
+              await writeCreateMeta({
+                storageId,
+                created: now.toISOString(),
+                handle: options.handle,
+                description: options.description
+              })
+              console.error(`Key saved to ${filePath}`)
+            }
+            console.log(JSON.stringify(exported, null, 2))
+            break
+          }
           default:
             console.error(
-              `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
+              `Unknown key type: ${options.type}. ` +
+                'Supported: ed25519, ecdsa, x25519'
             )
             process.exit(1)
         }
@@ -420,22 +458,32 @@ export function makeKeyCommand(): Command {
 
       // Re-import the stored key pair and re-export the public half only, so the
       // secret key material never leaves storage in the displayed output.
-      const isEcdsa = isEcdsaPublicKeyMultibase({
-        publicKeyMultibase: storedKey.publicKeyMultibase
-      })
-      const publicKey = isEcdsa
-        ? await (
-            await EcdsaMultikey.from(storedKey)
-          ).export({
-            publicKey: true,
-            secretKey: false
-          })
-        : await (
-            await Ed25519VerificationKey.from(storedKey)
-          ).export({
-            publicKey: true,
-            secretKey: false
-          })
+      let publicKey
+      if (
+        (storedKey as { type?: string }).type === 'X25519KeyAgreementKey2020'
+      ) {
+        publicKey = await (
+          await X25519KeyAgreementKey2020.from(storedKey)
+        ).export({ publicKey: true })
+      } else if (
+        isEcdsaPublicKeyMultibase({
+          publicKeyMultibase: storedKey.publicKeyMultibase
+        })
+      ) {
+        publicKey = await (
+          await EcdsaMultikey.from(storedKey)
+        ).export({
+          publicKey: true,
+          secretKey: false
+        })
+      } else {
+        publicKey = await (
+          await Ed25519VerificationKey.from(storedKey)
+        ).export({
+          publicKey: true,
+          secretKey: false
+        })
+      }
       console.log(JSON.stringify(publicKey, null, 2))
     })
 
