@@ -153,6 +153,32 @@ export async function writeBytesOutput({
 }
 
 /**
+ * Pretty-prints a value as JSON to an output file (with a `Wrote <file>` note
+ * on stderr) or to stdout when no file is given.
+ *
+ * @param options {object}
+ * @param options.value {unknown}   The value to serialize.
+ * @param [options.output] {string}   The output file path; stdout when
+ *   omitted.
+ * @returns {Promise<void>}
+ */
+export async function writeJsonOutput({
+  value,
+  output
+}: {
+  value: unknown
+  output?: string
+}): Promise<void> {
+  const text = JSON.stringify(value, null, 2)
+  if (output) {
+    await writeFile(output, `${text}\n`, 'utf8')
+    console.error(`Wrote ${output}`)
+    return
+  }
+  console.log(text)
+}
+
+/**
  * Writes a resource read result: JSON is pretty-printed to stdout (or
  * written to the `--output` file); binary content is written raw to the
  * `--output` file, or to stdout when none is given.
@@ -180,11 +206,5 @@ export async function writeResourceOutput({
     process.stdout.write(bytes)
     return
   }
-  const text = JSON.stringify(data, null, 2)
-  if (output) {
-    await writeFile(output, `${text}\n`, 'utf8')
-    console.error(`Wrote ${output}`)
-    return
-  }
-  console.log(text)
+  await writeJsonOutput({ value: data, output })
 }
