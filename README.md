@@ -1518,6 +1518,29 @@ require an envelope and reject a bare JWE.
 }
 ```
 
+#### Chunked streams (`--stream`)
+
+For large inputs, `-s/--stream` encrypts the bytes as a sequence of fixed-size
+chunks rather than one JWE. The output is a **bundle directory** (convention
+`*.edvdoc/`, so `-o` is required) holding `document.json` -- an EDV Document whose
+cleartext `stream: { sequence, chunks }` descriptor records the chunk count -- and
+one `chunks/<index>.jwe.json` per chunk. This mirrors how an EDV / WAS server
+stores stream bytes as resources separate from the document. `--chunk-size
+<bytes>` sets the chunk size (default 1 MiB); `--meta` and `--update` work as for
+`--document`.
+
+```
+./di edv encrypt photo.png --stream -r alice-kak --chunk-size 1048576 -o photo.edvdoc/
+```
+
+`edv decrypt` recognizes a bundle directory, reassembles the chunks in order, and
+writes the original bytes to `-o`/stdout (the document's `content`/`meta`/`stream`
+are reported on stderr).
+
+```
+./di edv decrypt photo.edvdoc/ -o photo.png
+```
+
 ## Contribute
 
 PRs accepted. Please follow the code-style and contribution conventions in

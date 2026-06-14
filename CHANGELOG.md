@@ -30,6 +30,17 @@
   `edv decrypt` detects an envelope automatically and emits its decrypted
   `content` (reporting `meta`/`stream` on stderr); `--document` requires one.
   Chunked streams and HMAC-blinded indexing remain deferred to later phases.
+- Add chunked-stream support to `edv` (Layer 2, Phase 2). `edv encrypt --stream`
+  encrypts the input as a sequence of fixed-size chunks (`--chunk-size <bytes>`,
+  default 1 MiB) and writes a bundle directory (convention `*.edvdoc/`, so `-o`
+  is required): a `document.json` EDV Document carrying a cleartext
+  `stream: { sequence, chunks }` descriptor, plus one `chunks/<index>.jwe.json`
+  per chunk (`{ sequence, index, offset, jwe }`), mirroring how an EDV / WAS
+  server stores stream bytes separately from the document. `--meta` and
+  `--update` (a file or bundle) work as for `--document`. `edv decrypt`
+  recognizes a bundle directory, reassembles the chunks in order, and writes the
+  original bytes to `-o`/stdout (reporting `content`/`meta`/`stream` on stderr).
+  HMAC-blinded indexing remains deferred to Layer 2, Phase 3.
 
 ## 0.8.0 - 2026-06-13
 
