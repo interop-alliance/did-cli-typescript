@@ -139,6 +139,33 @@ describe(
         const getLogs = await runWasOk(['get', 'it-demo/it-docs/doc-1'])
         assert.deepEqual(JSON.parse(getLogs[0]), content)
 
+        // Set custom metadata (name + tag) and read it back; the tag-only
+        // update must preserve the name from the prior name-only update.
+        await runWasOk([
+          'resource-meta',
+          'put',
+          'it-demo/it-docs/doc-1',
+          '--name',
+          'Doc One'
+        ])
+        await runWasOk([
+          'resource-meta',
+          'put',
+          'it-demo/it-docs/doc-1',
+          '--tag',
+          'env=integration'
+        ])
+        const metaLogs = await runWasOk([
+          'resource-meta',
+          'get',
+          'it-demo/it-docs/doc-1'
+        ])
+        const meta = JSON.parse(metaLogs[0]) as {
+          custom?: { name?: string; tags?: Record<string, string> }
+        }
+        assert.equal(meta.custom?.name, 'Doc One')
+        assert.deepEqual(meta.custom?.tags, { env: 'integration' })
+
         // Delegate read access to Bob and read through the capability.
         const grantLogs = await runWasOk([
           'grant',

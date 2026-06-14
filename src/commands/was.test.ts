@@ -46,6 +46,7 @@ interface StubResponses {
   describeCollection?: object | null
   resourceListing?: object | null
   get?: object | Blob | null
+  meta?: object | null
   add?: object
   grant?: object
   policy?: object | null
@@ -210,6 +211,19 @@ function makeStubClient(responses: StubResponses = {}): {
                 },
                 async put(data: unknown, options: object) {
                   record('put', data, options)
+                },
+                async meta() {
+                  record('meta')
+                  return responses.meta ?? null
+                },
+                async setMeta(meta: object) {
+                  record('setMeta', meta)
+                },
+                async setName(name: string) {
+                  record('setName', name)
+                },
+                async setTags(tags: Record<string, string>) {
+                  record('setTags', tags)
                 },
                 async delete() {
                   record('deleteResource')
@@ -894,6 +908,184 @@ describe('di was', () => {
           errors[0],
           /Deleted .*\/space-1\/docs\/vc-1 on the server\./
         )
+      })
+    })
+
+    describe('resource-meta commands', () => {
+      it('get pretty-prints a resource metadata object', async () => {
+        await setUpStub({
+          meta: {
+            contentType: 'application/json',
+            size: 42,
+            custom: { name: 'Diploma', tags: { year: '2026' } }
+          }
+        })
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'get', 'home/docs/vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(JSON.parse(logs.join('\n')), {
+          contentType: 'application/json',
+          size: 42,
+          custom: { name: 'Diploma', tags: { year: '2026' } }
+        })
+      })
+
+      it('get exits 1 on a metadata miss', async () => {
+        await setUpStub({ meta: null })
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'get', 'home/docs/vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.match(errors[0], /Not found \(or not visible to you\)/)
+      })
+
+      it('put --name only calls setName (preserving tags)', async () => {
+        const calls = await setUpStub({
+          meta: { contentType: 'application/json', size: 1 }
+        })
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'put', 'home/docs/vc-1', '--name', 'Renamed'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.setName, [['Renamed']])
+        assert.equal(calls.setMeta, undefined)
+        assert.equal(calls.setTags, undefined)
+      })
+
+      it('put --tag only calls setTags with parsed key=value pairs', async () => {
+        const calls = await setUpStub({
+          meta: { contentType: 'application/json', size: 1 }
+        })
+        await makeWasCommand().parseAsync(
+          [
+            'resource-meta',
+            'put',
+            'home/docs/vc-1',
+            '--tag',
+            'year=2026',
+            '--tag',
+            'status=verified'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.setTags, [
+          [{ year: '2026', status: 'verified' }]
+        ])
+        assert.equal(calls.setName, undefined)
+        assert.equal(calls.setMeta, undefined)
+      })
+
+      it('put --name and --tag together is a full setMeta replacement', async () => {
+        const calls = await setUpStub({
+          meta: { contentType: 'application/json', size: 1 }
+        })
+        await makeWasCommand().parseAsync(
+          [
+            'resource-meta',
+            'put',
+            'home/docs/vc-1',
+            '--name',
+            'Diploma',
+            '--tag',
+            'year=2026'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.setMeta, [
+          [{ custom: { name: 'Diploma', tags: { year: '2026' } } }]
+        ])
+      })
+
+      it('put --json replaces custom from inline JSON', async () => {
+        const calls = await setUpStub({
+          meta: { contentType: 'application/json', size: 1 }
+        })
+        await makeWasCommand().parseAsync(
+          [
+            'resource-meta',
+            'put',
+            'home/docs/vc-1',
+            '--json',
+            '{"name":"From JSON","tags":{"a":"b"}}'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.setMeta, [
+          [{ custom: { name: 'From JSON', tags: { a: 'b' } } }]
+        ])
+      })
+
+      it('put --json reads custom from a JSON file', async () => {
+        const calls = await setUpStub({
+          meta: { contentType: 'application/json', size: 1 }
+        })
+        const filePath = join(walletDir, 'custom.json')
+        await writeFile(filePath, '{"name":"From File"}')
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'put', 'home/docs/vc-1', '--json', filePath],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.setMeta, [[{ custom: { name: 'From File' } }]])
+      })
+
+      it('put exits 2 with neither --name, --tag, nor --json', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'put', 'home/docs/vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /Provide --name, --tag <key=value>, or --json/)
+      })
+
+      it('put exits 2 when --json is combined with --name', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(
+          [
+            'resource-meta',
+            'put',
+            'home/docs/vc-1',
+            '--name',
+            'X',
+            '--json',
+            '{}'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /Provide either --json or --name\/--tag/)
+      })
+
+      it('put exits 2 on a malformed --tag', async () => {
+        await setUpStub()
+        await makeWasCommand().parseAsync(
+          ['resource-meta', 'put', 'home/docs/vc-1', '--tag', 'oops'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /Invalid --tag "oops"; expected key=value/)
+      })
+
+      it('meta alias works for get', async () => {
+        await setUpStub({
+          meta: { contentType: 'text/plain', size: 3 }
+        })
+        await makeWasCommand().parseAsync(['meta', 'get', 'home/docs/vc-1'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(JSON.parse(logs.join('\n')), {
+          contentType: 'text/plain',
+          size: 3
+        })
       })
     })
 
