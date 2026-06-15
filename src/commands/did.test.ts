@@ -285,9 +285,95 @@ describe('di did', () => {
       assert.ok(errors[0].includes('did:web requires --url'))
     })
 
-    it('routes did:webvh (not yet implemented)', async () => {
+    it('creates a did:webvh from --url', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'webvh', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      const parsed = JSON.parse(logs[0])
+      assert.ok(
+        parsed.id.startsWith('did:webvh:'),
+        `expected did:webvh: prefix, got: ${parsed.id}`
+      )
+      assert.ok(parsed.id.endsWith(':example.com'))
+      assert.equal(parsed.didDocument.id, parsed.id)
+    })
+
+    it('wires the webvh key into the same relationships as did:web', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'webvh', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      const doc = JSON.parse(logs[0]).didDocument
+      assert.equal(doc.verificationMethod.length, 1)
+      const vmId = doc.verificationMethod[0].id
+      // `purpose` is a creation directive and must not leak into the document.
+      assert.ok(!('purpose' in doc.verificationMethod[0]))
+      for (const relationship of [
+        'authentication',
+        'assertionMethod',
+        'capabilityDelegation',
+        'capabilityInvocation'
+      ]) {
+        assert.deepEqual(doc[relationship], [vmId], relationship)
+      }
+      // keyAgreement needs an X25519 key, so the signing key is not wired in.
+      assert.deepEqual(doc.keyAgreement ?? [], [])
+    })
+
+    it('exits with error when did:webvh is missing --url', async () => {
       await makeDidCommand().parseAsync(['create', 'webvh'], { from: 'user' })
-      assert.ok(logs[0].includes('did:webvh'))
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('did:webvh requires --url'))
+    })
+
+    it('did:webvh rejects --type ecdsa', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'webvh', '--type', 'ecdsa', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('ed25519'))
+    })
+
+    it('--save writes the webvh doc, log, keys, and meta files', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const webvhDir = join(didsDir, 'webvh')
+        const files = (await readdir(webvhDir)).sort()
+        assert.deepEqual(files, [
+          `${did}.json`,
+          `${did}.jsonl`,
+          `${did}.keys.json`,
+          `${did}.meta.json`
+        ])
+
+        // The first log line parses as an entry whose state is the DID document
+        // and whose updateKeys authorize the saved key's publicKeyMultibase.
+        const logText = await readFile(join(webvhDir, `${did}.jsonl`), 'utf8')
+        const firstEntry = JSON.parse(logText.split('\n')[0])
+        assert.equal(firstEntry.state.id, did)
+        const keysContent = JSON.parse(
+          await readFile(join(webvhDir, `${did}.keys.json`), 'utf8')
+        )
+        const exported = Object.values(keysContent)[0] as {
+          publicKeyMultibase: string
+          secretKeyMultibase: string
+        }
+        assert.ok(exported.publicKeyMultibase)
+        assert.ok(exported.secretKeyMultibase)
+        assert.ok(
+          firstEntry.parameters.updateKeys.includes(exported.publicKeyMultibase)
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
     })
 
     it('exits with error for unknown method', async () => {
@@ -759,6 +845,31 @@ describe('di did', () => {
         }
         assert.deepEqual(await storedDids(didsDir), [])
         const remaining = await readdir(join(didsDir, 'key'))
+        assert.deepEqual(remaining, [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('removes a did:webvh history log too', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
+
+        assert.equal(exitCode, undefined)
+        // doc + keys + meta + jsonl == 4 removed files
+        assert.equal(errors.length, 4)
+        assert.ok(errors.some(line => line.endsWith('.jsonl')))
+        const remaining = await readdir(join(didsDir, 'webvh'))
         assert.deepEqual(remaining, [])
       } finally {
         await rm(didsDir, { recursive: true })

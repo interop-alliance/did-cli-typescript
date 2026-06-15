@@ -383,7 +383,57 @@ export async function removeDidFiles({
       removed.push(sidecarPath)
     }
   }
+  // did:webvh additionally stores a `.jsonl` history log; only that method has
+  // one, so unlink it conditionally.
+  const logPath = join(dir, `${did}.jsonl`)
+  if (await unlinkIfExists(logPath)) {
+    removed.push(logPath)
+  }
   return removed
+}
+
+/**
+ * Save a did:webvh history log as a raw newline-delimited JSON (`.jsonl`) file
+ * alongside the DID document, under the method subdirectory.
+ *
+ * Unlike `saveToDids`, the log is written as raw text -- each entry serialized
+ * on its own line with a trailing newline -- not as a pretty-printed JSON
+ * object, so it round-trips as a valid `did.jsonl`.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.log {object[]} the array of signed log entries.
+ * @returns {Promise<string>} the log file path.
+ */
+export async function saveDidLog({
+  did,
+  log
+}: {
+  did: string
+  log: object[]
+}): Promise<string> {
+  const method = did.split(':')[1]
+  const dir = join(getDidsDir(), method)
+  await mkdir(dir, { recursive: true })
+  const filePath = join(dir, `${did}.jsonl`)
+  const serialized = log.map(entry => JSON.stringify(entry)).join('\n') + '\n'
+  await writeFile(filePath, serialized, 'utf8')
+  return filePath
+}
+
+/**
+ * Load the raw did:webvh history log (`.jsonl`) saved for a DID.
+ *
+ * Returns the file's raw text (newline-delimited JSON), suitable for feeding to
+ * `resolveDIDFromLog` after splitting on newlines.
+ *
+ * @param did {string}
+ * @returns {Promise<string>}
+ */
+export async function loadDidLog(did: string): Promise<string> {
+  const method = did.split(':')[1]
+  const filePath = join(getDidsDir(), method, `${did}.jsonl`)
+  return readFile(filePath, 'utf8')
 }
 
 /**

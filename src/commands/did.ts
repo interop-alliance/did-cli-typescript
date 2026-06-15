@@ -5,6 +5,7 @@ import {
 } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
+import { createDID } from '@interop/did-method-webvh'
 import { securityLoader } from '@interop/security-document-loader'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
@@ -15,6 +16,7 @@ import {
   loadDidKeys,
   loadDidMeta,
   removeDidFiles,
+  saveDidLog,
   saveDidMeta,
   saveToDids,
   type ItemMetadata
@@ -30,6 +32,7 @@ import {
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
+import { makeWebvhSigner } from '../keys/webvh-signer.js'
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -374,10 +377,90 @@ export function makeDidCommand(): Command {
             }
             break
           }
-          case 'webvh':
-            console.log(`Creating did:${method}...`)
-            // TODO: implement
+          case 'webvh': {
+            if (!options.url) {
+              console.error(
+                'did:webvh requires --url (e.g. --url https://example.com)'
+              )
+              process.exit(1)
+              return
+            }
+            // The webvh library hardcodes the `eddsa-jcs-2022` cryptosuite, so
+            // only Ed25519 update keys are supported for now.
+            if (options.type !== 'ed25519') {
+              console.error(
+                `did:webvh only supports --type ed25519 (got ${options.type}); ` +
+                  'the eddsa-jcs-2022 cryptosuite requires an Ed25519 key.'
+              )
+              process.exit(1)
+              return
+            }
+            const envSeed = process.env.SECRET_KEY_SEED
+            const secretKeySeed = options.withSeed
+              ? (envSeed ?? (await generateSecretKeySeed()))
+              : envSeed
+            const seedBytes = secretKeySeed
+              ? decodeSecretKeySeed({ secretKeySeed })
+              : undefined
+            const keyPair = await Ed25519VerificationKey.generate({
+              seed: seedBytes
+            })
+            const signer = makeWebvhSigner({ keyPair })
+            // `keyPair.signer()` requires an id to be set before signing.
+            keyPair.id = signer.getVerificationMethodId()
+
+            const result = await createDID({
+              address: options.url,
+              signer,
+              verifier: signer,
+              // Default to a portable DID until a --portable flag is added; a
+              // portable DID can later be moved to a different domain.
+              portable: true,
+              updateKeys: [keyPair.publicKeyMultibase],
+              verificationMethods: [
+                {
+                  type: 'Multikey',
+                  publicKeyMultibase: keyPair.publicKeyMultibase,
+                  // Wire the single key into the same relationships as did:web
+                  // (everything but keyAgreement, which needs an X25519 key).
+                  purpose: [
+                    'authentication',
+                    'assertionMethod',
+                    'capabilityDelegation',
+                    'capabilityInvocation'
+                  ]
+                }
+              ]
+            })
+
+            if (options.save) {
+              const exported = (await keyPair.export({
+                publicKey: true,
+                secretKey: true
+              })) as { publicKeyMultibase?: string }
+              await saveDidArtifacts({
+                method: 'webvh',
+                didDocument: result.doc as { id: string },
+                exportedKeys: { [signer.getVerificationMethodId()]: exported },
+                fingerprints: [exported.publicKeyMultibase],
+                handle: options.handle,
+                description: options.description
+              })
+              const logPath = await saveDidLog({
+                did: result.did,
+                log: result.log
+              })
+              console.error(`DID history log saved to ${logPath}`)
+            }
+
+            const output: Record<string, unknown> = { id: result.did }
+            if (options.withSeed) {
+              output.secretKeySeed = secretKeySeed
+            }
+            output.didDocument = result.doc
+            console.log(JSON.stringify(output, null, 2))
             break
+          }
           default:
             console.error(
               `Unknown method: ${method}. Supported: key, web, webvh`

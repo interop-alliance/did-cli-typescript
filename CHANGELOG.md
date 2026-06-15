@@ -1,5 +1,24 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- Implement `did create webvh`, which creates a real did:webvh DID via the
+  `@interop/did-method-webvh` library (Ed25519 / `eddsa-jcs-2022` only for now;
+  `--type ecdsa` is rejected). Requires `--url` (passed as the DID's `address`)
+  and supports the same `--with-seed` / `--save` / `--handle` / `--description`
+  flags as the other methods. did:webvh is a two-part DID: on `--save`, the
+  resolved DID document, keys, and metadata are written as usual under
+  `dids/webvh/`, plus the signed `did.jsonl` history log as a raw
+  newline-delimited `<did>.jsonl` file alongside them; `did remove` deletes the
+  log too. The generated DID is portable, and its single Ed25519 key is wired
+  into the same verification relationships as did:web (`authentication`,
+  `assertionMethod`, `capabilityDelegation`, `capabilityInvocation`; not
+  `keyAgreement`). Requires `@interop/did-method-webvh` >= 3.1.0. Resolving a
+  stored webvh DID, updates/rotation, witnesses, and the parallel did:web alias
+  are deferred.
+
 ## 0.9.0 - 2026-06-14
 
 ### Added
