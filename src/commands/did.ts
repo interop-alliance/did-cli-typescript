@@ -6,7 +6,10 @@ import {
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
 import { createDID } from '@interop/did-method-webvh'
-import { securityLoader } from '@interop/security-document-loader'
+import {
+  createDefaultDidResolver,
+  securityLoader
+} from '@interop/security-document-loader'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
@@ -33,6 +36,7 @@ import {
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
 import { makeWebvhSigner } from '../keys/webvh-signer.js'
+import { makeWebvhDriver } from '../keys/webvh-driver.js'
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -85,11 +89,21 @@ async function saveDidArtifacts({
 /**
  * Document loader for DID / DID-URL resolution. A bare DID resolves to its DID
  * document; a `did#fragment` URL is dereferenced straight to its
- * verification-method node. Works for did:key (offline) and did:web (fetched).
- * Built once and reused. (Per project convention, DID/JSON-LD resolution goes
- * through `@interop/security-document-loader`, never a hand-rolled loader.)
+ * verification-method node. Works for did:key (offline), did:web, and did:webvh
+ * (both fetched). Built once and reused. (Per project convention, DID/JSON-LD
+ * resolution goes through `@interop/security-document-loader`, never a
+ * hand-rolled loader.) The loader's default resolver only knows did:key and
+ * did:web, so the did:webvh driver is registered onto a copy of the defaults
+ * and injected -- keeping the did:webvh dependency out of the shared loader.
  */
-const documentLoader = securityLoader().build()
+const didResolver = createDefaultDidResolver()
+// `CachedResolver.use` types its argument as the full generation-capable
+// `DidMethodDriver`, but only reads `.method` (and later calls `.get`) for
+// resolution; the webvh driver implements just that resolution subset.
+didResolver.use(
+  makeWebvhDriver() as unknown as Parameters<typeof didResolver.use>[0]
+)
+const documentLoader = securityLoader({ didResolver }).build()
 
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')

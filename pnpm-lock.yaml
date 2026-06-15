@@ -51,8 +51,8 @@ importers:
         specifier: ^7.4.0
         version: 7.4.0
       '@interop/security-document-loader':
-        specifier: ^9.3.1
-        version: 9.3.1
+        specifier: ^9.4.0
+        version: 9.4.0
       '@interop/vc':
         specifier: ^11.0.4
         version: 11.0.4
@@ -560,6 +560,10 @@ packages:
 
   '@interop/security-document-loader@9.3.1':
     resolution: {integrity: sha512-Tv3r4A6zotZX3JOP5BxYDnFWzluqctUZnauzNKlXImE+eB2dKU6aJxKn1Hp+YCzgYEjtUCZt8V/3Nrp3B6DwXw==}
+    engines: {node: '>=24.0'}
+
+  '@interop/security-document-loader@9.4.0':
+    resolution: {integrity: sha512-nNlVztf1CBjs3RtXZMy1GlHvpbzEpaRVLCGqSnfNRCvk8TxSC4KvAAaWZptJss21AqSd5ZYxe5kjnyV1obOTpg==}
     engines: {node: '>=24.0'}
 
   '@interop/storage-core@0.2.2':
@@ -2326,6 +2330,33 @@ snapshots:
       '@stablelib/chacha20poly1305': 2.0.1
 
   '@interop/security-document-loader@9.3.1':
+    dependencies:
+      '@digitalbazaar/data-integrity-context': 2.0.1
+      '@digitalbazaar/multikey-context': 2.0.1
+      '@digitalbazaar/vc-bitstring-status-list-context': 1.1.0
+      '@digitalbazaar/vc-status-list-context': 3.1.1
+      '@digitalbazaar/zcap-context': 2.0.1
+      '@digitalcredentials/credentials-v2-context': 1.0.0
+      '@digitalcredentials/open-badges-context': 3.0.0
+      '@interop/data-integrity-core': 8.1.0
+      '@interop/did-io': 4.0.5
+      '@interop/did-method-key': 7.3.2
+      '@interop/did-web-resolver': 6.2.2
+      '@interop/ecdsa-multikey': 2.3.1
+      '@interop/ed25519-verification-key': 8.0.0
+      '@interop/http-client': 1.0.3
+      aes-key-wrapping-2019-context: 1.0.3
+      credentials-context: 2.0.0
+      did-context: 3.1.1
+      ed25519-signature-2020-context: 1.1.0
+      html-entities: 2.6.0
+      jsonld-document-loader: 2.3.0
+      sha256-hmac-key-2019-context: 1.0.3
+      x25519-key-agreement-2020-context: 1.0.0
+    transitivePeerDependencies:
+      - react-native-get-random-values
+
+  '@interop/security-document-loader@9.4.0':
     dependencies:
       '@digitalbazaar/data-integrity-context': 2.0.1
       '@digitalbazaar/multikey-context': 2.0.1

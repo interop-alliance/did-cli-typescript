@@ -18,6 +18,14 @@
   `keyAgreement`). Requires `@interop/did-method-webvh` >= 3.1.0. Resolving a
   stored webvh DID, updates/rotation, witnesses, and the parallel did:web alias
   are deferred.
+- Support `did get`/`did resolve` for `did:webvh` DIDs. A `did:webvh` driver
+  (`src/keys/webvh-driver.ts`) wraps `resolveDID` from
+  `@interop/did-method-webvh` -- fetching and verifying the DID's history log --
+  and is registered onto the security document loader's resolver via the new
+  injectable `securityLoader({ didResolver })` seam, so the `did:webvh`
+  dependency stays out of the shared loader. A bare DID resolves to its DID
+  document; a `did#fragment` URL is dereferenced to its verification method.
+  Requires `@interop/security-document-loader` >= 9.4.0.
 
 ## 0.9.0 - 2026-06-14
 

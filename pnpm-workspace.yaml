@@ -9,3 +9,4 @@ minimumReleaseAgeExclude:
   - '@interop/was-client@0.7.0'
   - '@interop/x25519-key-agreement-key@5.1.0'
   - '@interop/did-method-webvh@3.1.0'
+  - '@interop/security-document-loader@9.4.0'
