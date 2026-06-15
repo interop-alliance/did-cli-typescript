@@ -492,7 +492,8 @@ did:key:z6Mks...
 
 Resolve a DID to its DID document through the security document loader. Unlike
 `did show` (which reads local storage), `did get` resolves live: did:key is
-resolved offline, did:web is fetched over HTTPS. Pass a DID URL (a
+resolved offline, did:web is fetched over HTTPS, and did:webvh is resolved by
+fetching and verifying its history log over HTTPS. Pass a DID URL (a
 `did#fragment` key id) to dereference straight to its verification method:
 
 ```
