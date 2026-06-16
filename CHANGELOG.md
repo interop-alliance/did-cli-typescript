@@ -4,6 +4,11 @@
 
 ### Added
 
+- Add `was space meta <space>`, which updates a registered space's local
+  registry metadata (`--handle` and/or `--description`) only, leaving the
+  server-side space untouched. At least one of the two flags is required;
+  passing an empty string (e.g. `--handle ''`) clears that field.
+
 - Implement `did create webvh`, which creates a real did:webvh DID via the
   `@interop/did-method-webvh` library (Ed25519 / `eddsa-jcs-2022` only for now;
   `--type ecdsa` is rejected). Requires `--url` (passed as the DID's `address`)

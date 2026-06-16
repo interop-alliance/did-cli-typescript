@@ -1,8 +1,9 @@
 /**
  * `was space` run functions: create, list (local registry, or `--remote`),
  * show (server description or `--meta` registry record), update, delete
- * (server + registry), forget (registry only), add (register an existing
- * remote space), backends (the storage backends available within a space),
+ * (server + registry), forget (registry only), meta (update local registry
+ * metadata only), add (register an existing remote space), backends (the
+ * storage backends available within a space),
  * quotas (the space's storage report grouped by backend), and export/import
  * of a whole space as a tar archive.
  */
@@ -354,6 +355,46 @@ export async function runSpaceForget(options: {
     return 0
   } catch (err) {
     return reportError({ action: 'forget the space', err })
+  }
+}
+
+/**
+ * Updates a registered space's local metadata (`handle` and/or
+ * `description`) only; the server-side space is untouched. At least one of
+ * `handle` or `description` must be given; passing an empty string clears
+ * that field.
+ *
+ * @param options {object}
+ * @param options.address {string}   The space address.
+ * @param [options.handle] {string}   New short tag (empty string clears it).
+ * @param [options.description] {string}   New description (empty clears it).
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runSpaceMeta(options: {
+  address: string
+  handle?: string
+  description?: string
+}): Promise<number> {
+  try {
+    if (options.handle === undefined && options.description === undefined) {
+      throw new Error('Provide --handle and/or --description to set.')
+    }
+    const parsed = parseSpaceAddress(options.address)
+    const entry = await resolveSpaceRef({ ref: parsed.spaceRef })
+    if (!entry) {
+      throw new Error(
+        `No locally registered space found for "${parsed.spaceRef}".`
+      )
+    }
+    const filePath = await saveSpaceRecord({
+      record: entry.record,
+      handle: options.handle,
+      description: options.description
+    })
+    console.error(`Updated metadata in ${filePath}`)
+    return 0
+  } catch (err) {
+    return reportError({ action: 'update the space metadata', err })
   }
 }
 

@@ -39,7 +39,8 @@ export interface SpaceRecord {
 /**
  * Saves (or overwrites) a space registry entry and its metadata sidecar.
  * The `created` timestamp of an existing sidecar is preserved; `handle` and
- * `description` overwrite only when given.
+ * `description` overwrite only when given, and an empty string clears the
+ * field.
  *
  * @param options {object}
  * @param options.record {SpaceRecord}
@@ -66,11 +67,19 @@ export async function saveSpaceRecord({
     ...existing,
     created: existing?.created ?? new Date().toISOString()
   }
-  if (handle) {
-    meta.handle = handle
+  if (handle !== undefined) {
+    if (handle) {
+      meta.handle = handle
+    } else {
+      delete meta.handle
+    }
   }
-  if (description) {
-    meta.description = description
+  if (description !== undefined) {
+    if (description) {
+      meta.description = description
+    } else {
+      delete meta.description
+    }
   }
   await saveMetaToCollection({ collection: COLLECTION, storageId, meta })
   return filePath
