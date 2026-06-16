@@ -390,6 +390,74 @@ describe('di was', () => {
     })
   })
 
+  describe('space meta', () => {
+    it('updates the handle and description, leaving the record intact', async () => {
+      await registerTestSpace()
+      await makeWasCommand().parseAsync(
+        [
+          'space',
+          'meta',
+          'home',
+          '--handle',
+          'main',
+          '--description',
+          'Primary space'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined)
+      assert.match(errors[0], /^Updated metadata in /)
+      const entries = await listSpaceRecords()
+      assert.equal(entries.length, 1)
+      assert.equal(entries[0].meta?.handle, 'main')
+      assert.equal(entries[0].meta?.description, 'Primary space')
+      assert.equal(entries[0].record.name, 'Home')
+      assert.equal(entries[0].record.id, 'urn:uuid:1234')
+    })
+
+    it('updates only the description, preserving the existing handle', async () => {
+      await registerTestSpace()
+      await makeWasCommand().parseAsync(
+        ['space', 'meta', 'home', '--description', 'New notes'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined)
+      const entries = await listSpaceRecords()
+      assert.equal(entries[0].meta?.handle, 'home')
+      assert.equal(entries[0].meta?.description, 'New notes')
+    })
+
+    it('clears the handle when given an empty string', async () => {
+      await registerTestSpace()
+      await makeWasCommand().parseAsync(
+        ['space', 'meta', 'urn:uuid:1234', '--handle', ''],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined)
+      const entries = await listSpaceRecords()
+      assert.equal(entries[0].meta?.handle, undefined)
+      assert.equal(entries[0].meta?.description, 'Main storage space')
+    })
+
+    it('exits 2 when neither --handle nor --description is given', async () => {
+      await registerTestSpace()
+      await makeWasCommand().parseAsync(['space', 'meta', 'home'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 2)
+      assert.match(errors[0], /Provide --handle and\/or --description to set/)
+    })
+
+    it('exits 2 when the space is not registered', async () => {
+      await makeWasCommand().parseAsync(
+        ['space', 'meta', 'nope', '--handle', 'x'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 2)
+      assert.match(errors[0], /No locally registered space found/)
+    })
+  })
+
   describe('input validation', () => {
     it('space create rejects --handle without --save', async () => {
       await makeWasCommand().parseAsync(

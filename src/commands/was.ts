@@ -10,7 +10,7 @@
  * DID so day-to-day commands need no `--server`/`--did` flags.
  *
  * Subcommand groups: `space` (`create`, `list`, `show`, `update` alias
- * `configure`, `delete`, `forget`, `add`, `backends`, `quotas`),
+ * `configure`, `delete`, `forget`, `meta`, `add`, `backends`, `quotas`),
  * `collection` (alias `coll`;
  * `create`, `list`, `show`, `update`, `delete`, `backend`, `quota`),
  * `resource` (alias
@@ -45,6 +45,7 @@ import {
   runSpaceForget,
   runSpaceImport,
   runSpaceList,
+  runSpaceMeta,
   runSpaceQuotas,
   runSpaceShow,
   runSpaceUpdate
@@ -216,6 +217,29 @@ export function makeWasCommand(): Command {
     .action(async (address: string) => {
       await runAndExit(runSpaceForget({ address }))
     })
+
+  space
+    .command('meta <space>')
+    .description(
+      "Update a registered space's local metadata only (the server-side " +
+        'space is untouched)'
+    )
+    .option(
+      '--handle <handle>',
+      'new short tag for the registered space (empty string clears it)'
+    )
+    .option(
+      '--description <description>',
+      'new longer description of the registered space (empty string clears it)'
+    )
+    .action(
+      async (
+        address: string,
+        options: { handle?: string; description?: string }
+      ) => {
+        await runAndExit(runSpaceMeta({ address, ...options }))
+      }
+    )
 
   space
     .command('add <space>')

@@ -1147,8 +1147,10 @@ the server, or the local registry record with `--meta`:
 `was space update` (alias: `configure`) upserts description fields
 (`--name`), also refreshing the registry entry. `was space add` registers an
 *existing* remote space (a full space URL, or a bare id plus `--server`) in
-the local registry, verifying it with a describe first. The local/remote
-delete pair:
+the local registry, verifying it with a describe first. `was space meta
+<space>` updates only a registered space's local metadata (`--handle` and/or
+`--description`); the server-side space is untouched, and passing an empty
+string (`--handle ''`) clears that field. The local/remote delete pair:
 
 - `was space delete <space>` (alias: `rm`) deletes the space **on the
   server** (idempotent) and removes the registry entry;
