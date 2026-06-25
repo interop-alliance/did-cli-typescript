@@ -11,7 +11,8 @@ import {
   createDID,
   resolveDIDFromLog,
   updateDID,
-  type DIDLog
+  type DIDLog,
+  type ServiceEndpoint
 } from '@interop/did-method-webvh'
 import {
   createDefaultDidResolver,
@@ -144,6 +145,611 @@ async function confirmAction({
   } finally {
     rl.close()
   }
+}
+
+/**
+ * Load and resolve a locally stored did:webvh history log in preparation for an
+ * update, asserting it is updatable. The log is the source of truth for a
+ * stored did:webvh, so its absence is what "not locally stored" means.
+ *
+ * @param options {object}
+ * @param options.targetDid {string} the resolved did:webvh DID.
+ * @param options.action {string} verb used in error messages (e.g.
+ *   `rotate keys`, `update services`).
+ * @returns {Promise<{ log, doc, meta }>}
+ * @throws {Error} with a user-facing message if the log is missing, fails to
+ *   resolve, or the DID is deactivated.
+ */
+async function resolveWebvhForUpdate({
+  targetDid,
+  action
+}: {
+  targetDid: string
+  action: string
+}): Promise<{
+  log: DIDLog
+  doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
+  meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+}> {
+  let logText: string
+  try {
+    logText = await loadDidLog(targetDid)
+  } catch {
+    throw new Error(`No locally stored did:webvh found for ${targetDid}`)
+  }
+  const log = parseDidLog(logText)
+  let resolved: Awaited<ReturnType<typeof resolveDIDFromLog>>
+  try {
+    resolved = await resolveDIDFromLog(log, { verifier: webvhLogVerifier })
+  } catch (err) {
+    throw new Error(
+      `Could not resolve the DID log: ${(err as Error).message}`,
+      {
+        cause: err
+      }
+    )
+  }
+  if (resolved.meta.deactivated) {
+    throw new Error(`Cannot ${action}: the DID is deactivated.`)
+  }
+  return { log, doc: resolved.doc, meta: resolved.meta }
+}
+
+/**
+ * Load a did:webvh DID's update-keys sidecar, treating an absent file as
+ * `undefined` (no stored secrets) rather than an error.
+ *
+ * @param did {string}
+ * @returns {Promise<WebvhUpdateKeys | undefined>}
+ */
+async function loadStoredUpdateKeys(
+  did: string
+): Promise<WebvhUpdateKeys | undefined> {
+  try {
+    return await loadDidUpdateKeys(did)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err
+    }
+    return undefined
+  }
+}
+
+/**
+ * Pre-rotation reveal: validate and load the staged (pre-committed) update key
+ * that must sign this entry, returning the signer key pair plus the records
+ * that make it the new active key and retire the current one.
+ *
+ * @param options {object}
+ * @param options.stored {WebvhUpdateKeys | undefined} the update-keys sidecar.
+ * @param options.meta {Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']}
+ * @param options.targetDid {string}
+ * @param options.action {string} verb used in error messages.
+ * @returns {Promise<{ signerKeyPair, newActive, retiredActive }>}
+ * @throws {Error} if the staged secret is missing or has diverged from the
+ *   log's committed nextKeyHashes.
+ */
+async function revealStagedSigner({
+  stored,
+  meta,
+  targetDid,
+  action
+}: {
+  stored: WebvhUpdateKeys | undefined
+  meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+  targetDid: string
+  action: string
+}): Promise<{
+  signerKeyPair: Ed25519VerificationKey
+  newActive: WebvhUpdateKey
+  retiredActive: WebvhUpdateKey
+}> {
+  if (!stored?.staged) {
+    throw new Error(
+      `Cannot ${action}: the pre-committed next-key secret was not found. ` +
+        'While pre-rotation is armed the staged key must sign this entry; ' +
+        `check for a backup of the ${targetDid}.update-keys.json sidecar.`
+    )
+  }
+  if (!meta.nextKeyHashes.includes(stored.staged.nextKeyHash)) {
+    throw new Error(
+      `Cannot ${action}: the staged key's hash is not among the log's ` +
+        'committed nextKeyHashes. The local update-keys record has diverged ' +
+        'from the published log (an update may have happened elsewhere); ' +
+        're-resolve before retrying.'
+    )
+  }
+  return {
+    signerKeyPair: await loadUpdateKey(stored.staged),
+    newActive: {
+      publicKeyMultibase: stored.staged.publicKeyMultibase,
+      secretKeyMultibase: stored.staged.secretKeyMultibase
+    },
+    retiredActive: stored.active
+  }
+}
+
+/**
+ * Ordinary (non-pre-rotation) signer: the current active update key signs.
+ * Returns the signer key pair and the active record it was loaded from.
+ *
+ * @param options {object}
+ * @param options.stored {WebvhUpdateKeys | undefined} the update-keys sidecar.
+ * @param options.meta {Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']}
+ * @param options.targetDid {string}
+ * @param options.action {string} verb used in error messages.
+ * @returns {Promise<{ signerKeyPair, activeRecord }>}
+ * @throws {Error} if the active secret is missing or no longer matches the
+ *   log's updateKeys.
+ */
+async function loadActiveSigner({
+  stored,
+  meta,
+  targetDid,
+  action
+}: {
+  stored: WebvhUpdateKeys | undefined
+  meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+  targetDid: string
+  action: string
+}): Promise<{
+  signerKeyPair: Ed25519VerificationKey
+  activeRecord: WebvhUpdateKey
+}> {
+  const activeRecord =
+    stored?.active.secretKeyMultibase &&
+    meta.updateKeys.includes(stored.active.publicKeyMultibase)
+      ? stored.active
+      : undefined
+  if (!activeRecord) {
+    throw new Error(
+      `Cannot ${action}: the current active update-key secret was not found ` +
+        `in ${targetDid}.update-keys.json.`
+    )
+  }
+  return { signerKeyPair: await loadUpdateKey(activeRecord), activeRecord }
+}
+
+/**
+ * Build the entry signer for a did:webvh update from an update key pair.
+ *
+ * @param keyPair {Ed25519VerificationKey} mutated: its `id` is set in place.
+ * @returns the signer to pass to `updateDID`.
+ */
+function makeWebvhEntrySigner(keyPair: Ed25519VerificationKey) {
+  const signer = makeWebvhSigner({ keyPair })
+  // `keyPair.signer()` requires an id to be set before signing.
+  keyPair.id = signer.getVerificationMethodId()
+  return signer
+}
+
+/**
+ * Write the update-keys sidecar: the active key, the staged next key (or
+ * none), and any retired secrets. At creation there is no prior sidecar; after
+ * an advance/rotation the superseded active key is appended to `retired` only
+ * when `keepOldKey` asks to preserve it.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.newActive {WebvhUpdateKey}
+ * @param [options.newStaged] {WebvhUpdateKey & { nextKeyHash: string }}
+ * @param [options.retiredActive] {WebvhUpdateKey} the superseded active key.
+ * @param [options.stored] {WebvhUpdateKeys} the prior sidecar, if any.
+ * @param [options.keepOldKey] {boolean} retain the retired secret.
+ * @returns {Promise<string>} the saved sidecar path.
+ */
+async function persistUpdateKeysSidecar({
+  did,
+  newActive,
+  newStaged,
+  retiredActive,
+  stored,
+  keepOldKey
+}: {
+  did: string
+  newActive: WebvhUpdateKey
+  newStaged?: WebvhUpdateKey & { nextKeyHash: string }
+  retiredActive?: WebvhUpdateKey
+  stored?: WebvhUpdateKeys
+  keepOldKey?: boolean
+}): Promise<string> {
+  const updated: WebvhUpdateKeys = { active: newActive }
+  if (newStaged) {
+    updated.staged = newStaged
+  }
+  const retiredList = stored?.retired ? [...stored.retired] : []
+  // retiredActive is undefined on the stage-only path, so this also skips that
+  // case without a separate guard.
+  if (keepOldKey && retiredActive?.secretKeyMultibase) {
+    retiredList.push(retiredActive)
+  }
+  if (retiredList.length > 0) {
+    updated.retired = retiredList
+  }
+  return saveDidUpdateKeys({ did, updateKeys: updated })
+}
+
+/**
+ * Expand a service id to a full DID URL. A bare fragment (`files`) or a
+ * leading-`#` fragment (`#files`) is resolved against the DID; a value that is
+ * already a full DID URL, or any absolute URI carrying a fragment, is returned
+ * unchanged.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.id {string}
+ * @returns {string}
+ */
+function normalizeServiceId({ did, id }: { did: string; id: string }): string {
+  if (id.startsWith('#')) {
+    return `${did}${id}`
+  }
+  if (id.startsWith('did:') || id.includes('#')) {
+    return id
+  }
+  return `${did}#${id}`
+}
+
+/**
+ * Build a service-endpoint entry from add-service options. Exactly one of
+ * `endpoint` (one or more endpoint values -- a single value stays a string,
+ * several become an array) or `endpointJson` (a raw JSON value) supplies the
+ * serviceEndpoint; a single `type` likewise stays a string.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.id {string}
+ * @param options.type {string[]}
+ * @param [options.endpoint] {string[]}
+ * @param [options.endpointJson] {string}
+ * @returns {ServiceEndpoint}
+ */
+function buildServiceEntry({
+  did,
+  id,
+  type,
+  endpoint,
+  endpointJson
+}: {
+  did: string
+  id: string
+  type: string[]
+  endpoint?: string[]
+  endpointJson?: string
+}): ServiceEndpoint {
+  const hasEndpoint = Boolean(endpoint?.length)
+  const hasEndpointJson = Boolean(endpointJson)
+  // True when both are supplied or neither is -- i.e. not exactly one.
+  if (hasEndpoint === hasEndpointJson) {
+    throw new Error('Provide exactly one of --endpoint or --endpoint-json.')
+  }
+  let serviceEndpoint: ServiceEndpoint['serviceEndpoint']
+  if (endpointJson) {
+    try {
+      serviceEndpoint = JSON.parse(endpointJson)
+    } catch {
+      throw new Error('--endpoint-json must be valid JSON.')
+    }
+  } else {
+    serviceEndpoint = endpoint!.length === 1 ? endpoint![0] : endpoint
+  }
+  return {
+    id: normalizeServiceId({ did, id }),
+    type: type.length === 1 ? type[0] : type,
+    serviceEndpoint
+  }
+}
+
+/**
+ * Whether a stored service entry has the given (already-normalized, absolute)
+ * id. Service ids in a DID document may be relative (`#files`) or absolute, so
+ * the stored id is normalized against the DID before comparing.
+ *
+ * @param options {object}
+ * @param options.service {ServiceEndpoint}
+ * @param options.id {string} the normalized id to match.
+ * @param options.did {string}
+ * @returns {boolean}
+ */
+function serviceHasId({
+  service,
+  id,
+  did
+}: {
+  service: ServiceEndpoint
+  id: string
+  did: string
+}): boolean {
+  return (
+    service.id !== undefined &&
+    normalizeServiceId({ did, id: service.id }) === id
+  )
+}
+
+/**
+ * Append a service entry to the current array, rejecting a duplicate id.
+ *
+ * @param options {object}
+ * @param options.current {ServiceEndpoint[]}
+ * @param options.entry {ServiceEndpoint} its `id` is already normalized.
+ * @param options.did {string}
+ * @returns {ServiceEndpoint[]}
+ */
+function addServiceEntry({
+  current,
+  entry,
+  did
+}: {
+  current: ServiceEndpoint[]
+  entry: ServiceEndpoint
+  did: string
+}): ServiceEndpoint[] {
+  if (current.some(service => serviceHasId({ service, id: entry.id!, did }))) {
+    throw new Error(`A service with id "${entry.id}" already exists.`)
+  }
+  return [...current, entry]
+}
+
+/**
+ * Remove the service entry with the given (normalized) id, rejecting a missing
+ * id.
+ *
+ * @param options {object}
+ * @param options.current {ServiceEndpoint[]}
+ * @param options.id {string} the normalized id to remove.
+ * @param options.did {string}
+ * @returns {ServiceEndpoint[]}
+ */
+function removeServiceEntry({
+  current,
+  id,
+  did
+}: {
+  current: ServiceEndpoint[]
+  id: string
+  did: string
+}): ServiceEndpoint[] {
+  const next = current.filter(service => !serviceHasId({ service, id, did }))
+  if (next.length === current.length) {
+    throw new Error(`No service with id "${id}" found on the DID document.`)
+  }
+  return next
+}
+
+/**
+ * Apply a service-array transform to a locally stored did:web document and
+ * re-save it. did:web has no history log, so this is a direct document edit;
+ * the `service` property is dropped entirely when the array empties out.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.transform {(current: ServiceEndpoint[], did: string) => ServiceEndpoint[]}
+ * @returns {Promise<number>} the process exit code
+ */
+async function runWebServiceUpdate({
+  did,
+  transform
+}: {
+  did: string
+  transform: (current: ServiceEndpoint[], did: string) => ServiceEndpoint[]
+}): Promise<number> {
+  let didDocument: Record<string, unknown>
+  try {
+    didDocument = await loadDidDocument(did)
+  } catch {
+    console.error(`No locally stored did:web found for ${did}`)
+    return 1
+  }
+  const current = Array.isArray(didDocument.service)
+    ? (didDocument.service as ServiceEndpoint[])
+    : []
+  let next: ServiceEndpoint[]
+  try {
+    next = transform(current, did)
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  if (next.length > 0) {
+    didDocument.service = next
+  } else {
+    delete didDocument.service
+  }
+  const docPath = await saveToDids({ method: 'web', did, data: didDocument })
+  console.error(`DID saved to ${docPath}`)
+  console.log(JSON.stringify({ id: didDocument.id, didDocument }, null, 2))
+  return 0
+}
+
+/**
+ * Apply a service-array transform to a locally stored did:webvh DID by
+ * appending a sparse log entry that overlays only the `service` array. Update
+ * keys and document verification methods are carried forward unchanged -- with
+ * one exception: a pre-rotation-armed DID cannot author a key-neutral update
+ * (the library requires the staged key to sign), so the update-key ratchet is
+ * advanced as part of the change -- the staged key is revealed to sign and a
+ * fresh next key is staged.
+ *
+ * @param options {object}
+ * @param options.targetDid {string} the resolved did:webvh DID.
+ * @param options.transform {(current: ServiceEndpoint[], did: string) => ServiceEndpoint[]}
+ * @param [options.yes] {boolean} skip the confirmation prompt.
+ * @param [options.keepOldKey] {boolean} retain the retired update key secret
+ *   (pre-rotation path only; default is to drop it).
+ * @returns {Promise<number>} the process exit code
+ */
+async function runWebvhServiceUpdate({
+  targetDid,
+  transform,
+  yes,
+  keepOldKey
+}: {
+  targetDid: string
+  transform: (current: ServiceEndpoint[], did: string) => ServiceEndpoint[]
+  yes?: boolean
+  keepOldKey?: boolean
+}): Promise<number> {
+  let log: DIDLog
+  let doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
+  let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+  try {
+    ;({ log, doc, meta } = await resolveWebvhForUpdate({
+      targetDid,
+      action: 'update services'
+    }))
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Compute the new service array from the current resolved document.
+  const current = Array.isArray(doc?.service) ? doc.service : []
+  let services: ServiceEndpoint[]
+  try {
+    services = transform(current, targetDid)
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  const stored = await loadStoredUpdateKeys(targetDid)
+
+  // Choose the signer and key parameters. A sparse update normally omits
+  // updateKeys/nextKeyHashes so the keys carry forward untouched; a
+  // pre-rotation DID instead must reveal its staged key (which signs) and stage
+  // a fresh one in the same entry.
+  let signerKeyPair: Ed25519VerificationKey
+  let updateKeys: string[] | undefined
+  let nextKeyHashes: string[] | undefined
+  let newActive: WebvhUpdateKey | undefined
+  let newStaged: (WebvhUpdateKey & { nextKeyHash: string }) | undefined
+  let retiredActive: WebvhUpdateKey | undefined
+  try {
+    if (meta.prerotation) {
+      ;({ signerKeyPair, newActive, retiredActive } = await revealStagedSigner({
+        stored,
+        meta,
+        targetDid,
+        action: 'update services'
+      }))
+      newStaged = await generateStagedKey()
+      updateKeys = [newActive.publicKeyMultibase]
+      nextKeyHashes = [newStaged.nextKeyHash]
+    } else {
+      ;({ signerKeyPair } = await loadActiveSigner({
+        stored,
+        meta,
+        targetDid,
+        action: 'update services'
+      }))
+    }
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  const confirmed = await confirmAction({
+    message:
+      `Update the services of ${targetDid}? This appends a new log entry ` +
+      'and is hard to undo.',
+    yes
+  })
+  if (!confirmed) {
+    console.error('Aborted.')
+    return 0
+  }
+
+  const signer = makeWebvhEntrySigner(signerKeyPair)
+
+  let result: Awaited<ReturnType<typeof updateDID>>
+  try {
+    result = await updateDID({
+      log,
+      signer,
+      verifier: webvhLogVerifier,
+      services,
+      ...(updateKeys ? { updateKeys } : {}),
+      ...(nextKeyHashes ? { nextKeyHashes } : {})
+    })
+  } catch (err) {
+    console.error(`Service update failed: ${(err as Error).message}`)
+    return 1
+  }
+
+  const logPath = await saveDidLog({ did: result.did, log: result.log })
+  const docPath = await saveToDids({
+    method: 'webvh',
+    did: result.did,
+    data: result.doc
+  })
+
+  // Persist the advanced ratchet only on the pre-rotation path; an ordinary
+  // service update leaves the update-keys sidecar untouched.
+  if (meta.prerotation && newActive) {
+    const updateKeysPath = await persistUpdateKeysSidecar({
+      did: result.did,
+      newActive,
+      newStaged,
+      retiredActive,
+      stored,
+      keepOldKey
+    })
+    console.error(`Update keys saved to ${updateKeysPath}`)
+    console.error(
+      'Pre-rotation: the update key was advanced as part of this change.'
+    )
+  }
+
+  console.error(`DID document saved to ${docPath}`)
+  console.error(`DID history log saved to ${logPath}`)
+  console.log(
+    JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
+  )
+  return 0
+}
+
+/**
+ * Resolve a DID reference, then route a service-array transform to the right
+ * per-method runner and return its exit code. did:web is a direct document
+ * edit; did:webvh appends a log entry.
+ *
+ * @param options {object}
+ * @param options.ref {string} a DID or a local metadata handle.
+ * @param options.transform {(current: ServiceEndpoint[], did: string) => ServiceEndpoint[]}
+ * @param [options.yes] {boolean} skip the did:webvh confirmation prompt.
+ * @param [options.keepOldKey] {boolean} did:webvh pre-rotation path only.
+ * @returns {Promise<number>} the process exit code
+ */
+async function dispatchServiceUpdate({
+  ref,
+  transform,
+  yes,
+  keepOldKey
+}: {
+  ref: string
+  transform: (current: ServiceEndpoint[], did: string) => ServiceEndpoint[]
+  yes?: boolean
+  keepOldKey?: boolean
+}): Promise<number> {
+  let resolved: string | undefined
+  try {
+    resolved = await resolveDidRef({ ref })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  const did = resolved ?? ref
+  if (did.startsWith('did:web:')) {
+    return runWebServiceUpdate({ did, transform })
+  }
+  if (did.startsWith('did:webvh:')) {
+    return runWebvhServiceUpdate({ targetDid: did, transform, yes, keepOldKey })
+  }
+  console.error(
+    'add-service/remove-service are only supported for did:web and ' +
+      'did:webvh DIDs'
+  )
+  return 1
 }
 
 /**
@@ -518,7 +1124,9 @@ export function makeDidCommand(): Command {
               options.witnessThreshold !== undefined &&
               witnessDids.length === 0
             ) {
-              console.error('--witness-threshold requires at least one --witness')
+              console.error(
+                '--witness-threshold requires at least one --witness'
+              )
               process.exit(1)
               return
             }
@@ -596,9 +1204,7 @@ export function makeDidCommand(): Command {
             const updateKey = await Ed25519VerificationKey.generate({
               seed: seedBytes
             })
-            const signer = makeWebvhSigner({ keyPair: updateKey })
-            // `keyPair.signer()` requires an id to be set before signing.
-            updateKey.id = signer.getVerificationMethodId()
+            const signer = makeWebvhEntrySigner(updateKey)
 
             // Document verification key V, decoupled from the update keys so
             // that rotating the update key never disturbs the document.
@@ -669,15 +1275,10 @@ export function makeDidCommand(): Command {
 
               // Persist the update keys (active A, and staged B when armed) in
               // a sidecar distinct from the document's keys file.
-              const updateKeys: WebvhUpdateKeys = {
-                active: await exportUpdateKey(updateKey)
-              }
-              if (stagedKey) {
-                updateKeys.staged = stagedKey
-              }
-              const updateKeysPath = await saveDidUpdateKeys({
+              const updateKeysPath = await persistUpdateKeysSidecar({
                 did: result.did,
-                updateKeys
+                newActive: await exportUpdateKey(updateKey),
+                newStaged: stagedKey
               })
               const logPath = await saveDidLog({
                 did: result.did,
@@ -886,6 +1487,119 @@ export function makeDidCommand(): Command {
         }
         output.didDocument = didDocument
         console.log(JSON.stringify(output, null, 2))
+      }
+    )
+
+  did
+    .command('add-service <did>')
+    .description(
+      'Add a service entry to a locally stored did:web or did:webvh DID. The ' +
+        'DID may be given as a metadata handle. For did:webvh this appends a ' +
+        'log entry; if pre-rotation is armed the update key is advanced as ' +
+        'part of the change.'
+    )
+    .requiredOption(
+      '--id <id>',
+      'service id; a bare fragment (e.g. "files") is expanded to <did>#files'
+    )
+    .requiredOption(
+      '--type <type...>',
+      'service type(s), e.g. LinkedDomains (repeat for multiple)'
+    )
+    .option(
+      '--endpoint <endpoint...>',
+      'serviceEndpoint value(s); a single value stays a string, several ' +
+        'become an array (mutually exclusive with --endpoint-json)'
+    )
+    .option(
+      '--endpoint-json <json>',
+      'serviceEndpoint as a raw JSON value (mutually exclusive with --endpoint)'
+    )
+    .option(
+      '--keep-old-key',
+      'did:webvh pre-rotation only: retain the retired update key secret in ' +
+        'the sidecar (default: drop it)'
+    )
+    .option('-y, --yes', 'skip the did:webvh confirmation prompt')
+    .action(
+      async (
+        did: string,
+        options: {
+          id: string
+          type: string[]
+          endpoint?: string[]
+          endpointJson?: string
+          keepOldKey?: boolean
+          yes?: boolean
+        }
+      ) => {
+        const transform = (
+          current: ServiceEndpoint[],
+          resolvedDid: string
+        ): ServiceEndpoint[] => {
+          const entry = buildServiceEntry({
+            did: resolvedDid,
+            id: options.id,
+            type: options.type,
+            endpoint: options.endpoint,
+            endpointJson: options.endpointJson
+          })
+          return addServiceEntry({ current, entry, did: resolvedDid })
+        }
+        const code = await dispatchServiceUpdate({
+          ref: did,
+          transform,
+          yes: options.yes,
+          keepOldKey: options.keepOldKey
+        })
+        if (code !== 0) {
+          process.exit(code)
+        }
+      }
+    )
+
+  did
+    .command('remove-service <did>')
+    .description(
+      'Remove a service entry (by id) from a locally stored did:web or ' +
+        'did:webvh DID. The DID may be given as a metadata handle. For ' +
+        'did:webvh this appends a log entry; if pre-rotation is armed the ' +
+        'update key is advanced as part of the change.'
+    )
+    .requiredOption(
+      '--id <id>',
+      'id of the service to remove; a bare fragment (e.g. "files") is ' +
+        'expanded to <did>#files'
+    )
+    .option(
+      '--keep-old-key',
+      'did:webvh pre-rotation only: retain the retired update key secret in ' +
+        'the sidecar (default: drop it)'
+    )
+    .option('-y, --yes', 'skip the did:webvh confirmation prompt')
+    .action(
+      async (
+        did: string,
+        options: { id: string; keepOldKey?: boolean; yes?: boolean }
+      ) => {
+        const transform = (
+          current: ServiceEndpoint[],
+          resolvedDid: string
+        ): ServiceEndpoint[] =>
+          removeServiceEntry({
+            current,
+            id: normalizeServiceId({ did: resolvedDid, id: options.id }),
+            did: resolvedDid
+          })
+        const code = await dispatchServiceUpdate({
+          ref: did,
+          transform,
+          yes: options.yes,
+          keepOldKey: options.keepOldKey
+        })
+        if (code !== 0) {
+          process.exit(code)
+        }
       }
     )
 
@@ -1209,32 +1923,17 @@ export function makeDidCommand(): Command {
           return
         }
         // The history log is the source of truth for a stored did:webvh (the
-        // current document is just its last entry's state), so its absence is
-        // what "not locally stored" means -- no need to also read the doc file.
-        let logText: string
-        try {
-          logText = await loadDidLog(targetDid)
-        } catch {
-          console.error(`No locally stored did:webvh found for ${didRef}`)
-          process.exit(1)
-          return
-        }
-        const log = parseDidLog(logText)
-
+        // current document is just its last entry's state), so a key-only
+        // rotation ignores the resolved document.
+        let log: DIDLog
         let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
         try {
-          ;({ meta } = await resolveDIDFromLog(log, {
-            verifier: webvhLogVerifier
+          ;({ log, meta } = await resolveWebvhForUpdate({
+            targetDid,
+            action: 'rotate keys'
           }))
         } catch (err) {
-          console.error(
-            `Could not resolve the DID log: ${(err as Error).message}`
-          )
-          process.exit(1)
-          return
-        }
-        if (meta.deactivated) {
-          console.error('Cannot rotate keys: the DID is deactivated.')
+          console.error((err as Error).message)
           process.exit(1)
           return
         }
@@ -1267,77 +1966,49 @@ export function makeDidCommand(): Command {
           return
         }
 
-        let stored: WebvhUpdateKeys | undefined
-        try {
-          stored = await loadDidUpdateKeys(targetDid)
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            throw err
-          }
-          stored = undefined
-        }
+        const stored = await loadStoredUpdateKeys(targetDid)
 
         // Inbound: who signs this entry, and what becomes the active key.
         let signerKeyPair: Ed25519VerificationKey
         let newActive: WebvhUpdateKey
         let retiredActive: WebvhUpdateKey | undefined
-
-        if (meta.prerotation) {
-          // Pre-rotation reveal: the staged key signs its own activation.
-          if (!stored?.staged) {
-            console.error(
-              'Cannot rotate: the pre-committed next-key secret was not ' +
-                'found. Pre-rotation requires the staged key to sign its own ' +
-                `activation; check for a backup of the ` +
-                `${targetDid}.update-keys.json sidecar.`
-            )
-            process.exit(1)
-            return
-          }
-          if (!meta.nextKeyHashes.includes(stored.staged.nextKeyHash)) {
-            console.error(
-              "Cannot rotate: the staged key's hash is not among the log's " +
-                'committed nextKeyHashes. The local update-keys record has ' +
-                'diverged from the published log (an update may have happened ' +
-                'elsewhere); re-resolve before rotating.'
-            )
-            process.exit(1)
-            return
-          }
-          signerKeyPair = await loadUpdateKey(stored.staged)
-          newActive = {
-            publicKeyMultibase: stored.staged.publicKeyMultibase,
-            secretKeyMultibase: stored.staged.secretKeyMultibase
-          }
-          retiredActive = stored.active
-        } else {
-          // Ordinary rotation: the current active key signs.
-          const activeRecord =
-            stored?.active.secretKeyMultibase &&
-            meta.updateKeys.includes(stored.active.publicKeyMultibase)
-              ? stored.active
-              : undefined
-          if (!activeRecord) {
-            console.error(
-              'Cannot rotate: the current active update-key secret was not ' +
-                `found in ${targetDid}.update-keys.json.`
-            )
-            process.exit(1)
-            return
-          }
-          signerKeyPair = await loadUpdateKey(activeRecord)
-          if (options.enablePrerotation && !options.updateKey) {
-            // Stage only: arm pre-rotation without changing the active key.
-            newActive = activeRecord
-          } else if (options.updateKey) {
-            // Rotate to externally-held key(s); the secret is not ours to store.
-            newActive = { publicKeyMultibase: options.updateKey[0] }
-            retiredActive = activeRecord
+        try {
+          if (meta.prerotation) {
+            // Pre-rotation reveal: the staged key signs its own activation.
+            ;({ signerKeyPair, newActive, retiredActive } =
+              await revealStagedSigner({
+                stored,
+                meta,
+                targetDid,
+                action: 'rotate keys'
+              }))
           } else {
-            const fresh = await Ed25519VerificationKey.generate()
-            newActive = await exportUpdateKey(fresh)
-            retiredActive = activeRecord
+            // Ordinary rotation: the current active key signs.
+            let activeRecord: WebvhUpdateKey
+            ;({ signerKeyPair, activeRecord } = await loadActiveSigner({
+              stored,
+              meta,
+              targetDid,
+              action: 'rotate keys'
+            }))
+            if (options.enablePrerotation && !options.updateKey) {
+              // Stage only: arm pre-rotation without changing the active key.
+              newActive = activeRecord
+            } else if (options.updateKey) {
+              // Rotate to externally-held key(s); the secret is not ours to store.
+              newActive = { publicKeyMultibase: options.updateKey[0] }
+              retiredActive = activeRecord
+            } else {
+              newActive = await exportUpdateKey(
+                await Ed25519VerificationKey.generate()
+              )
+              retiredActive = activeRecord
+            }
           }
+        } catch (err) {
+          console.error((err as Error).message)
+          process.exit(1)
+          return
         }
 
         // Outbound: keep the ratchet armed (stage a fresh next key) or not.
@@ -1358,9 +2029,7 @@ export function makeDidCommand(): Command {
           return
         }
 
-        const signer = makeWebvhSigner({ keyPair: signerKeyPair })
-        // `keyPair.signer()` requires an id to be set before signing.
-        signerKeyPair.id = signer.getVerificationMethodId()
+        const signer = makeWebvhEntrySigner(signerKeyPair)
 
         // A sparse updateDID() carries the prior DID document state forward and
         // only overlays the fields an update actually supplies, so a key-only
@@ -1388,24 +2057,13 @@ export function makeDidCommand(): Command {
           data: result.doc
         })
 
-        // Rewrite the update-keys sidecar: new active, new staged (or none),
-        // and the retired secret only when explicitly kept.
-        const updated: WebvhUpdateKeys = { active: newActive }
-        if (newStaged) {
-          updated.staged = newStaged
-        }
-        const retiredList = stored?.retired ? [...stored.retired] : []
-        // retiredActive is undefined on the stage-only path, so this also
-        // skips that case without a separate guard.
-        if (options.keepOldKey && retiredActive?.secretKeyMultibase) {
-          retiredList.push(retiredActive)
-        }
-        if (retiredList.length > 0) {
-          updated.retired = retiredList
-        }
-        const updateKeysPath = await saveDidUpdateKeys({
+        const updateKeysPath = await persistUpdateKeysSidecar({
           did: result.did,
-          updateKeys: updated
+          newActive,
+          newStaged,
+          retiredActive,
+          stored,
+          keepOldKey: options.keepOldKey
         })
 
         console.error(`DID document saved to ${docPath}`)
