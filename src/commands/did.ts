@@ -192,6 +192,31 @@ export function makeDidCommand(): Command {
     )
     .option('--no-prerotation', 'create the did:webvh without key pre-rotation')
     .option(
+      '--portable',
+      'create a portable did:webvh that can later be moved to a different ' +
+        'domain (default)'
+    )
+    .option(
+      '--no-portable',
+      'create a non-portable did:webvh (pinned to its domain)'
+    )
+    .option(
+      '--witness <did...>',
+      'declare a witness did:key DID authorized to co-sign did:webvh log ' +
+        'entries (repeatable; declaration only -- witness proof generation is ' +
+        'out of scope)'
+    )
+    .option(
+      '--witness-threshold <n>',
+      'number of did:webvh witness approvals required ' +
+        '(default: number of witnesses; requires --witness)'
+    )
+    .option(
+      '--watcher <url...>',
+      'declare a did:webvh watcher URL that monitors the DID log ' +
+        '(repeatable; https:// or http://localhost)'
+    )
+    .option(
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
@@ -215,6 +240,10 @@ export function makeDidCommand(): Command {
           curve: string
           url?: string
           prerotation?: boolean
+          portable?: boolean
+          witness?: string[]
+          witnessThreshold?: string
+          watcher?: string[]
           withSeed?: boolean
           save?: boolean
           handle?: string
@@ -479,6 +508,80 @@ export function makeDidCommand(): Command {
             // Pre-rotation is the default; --no-prerotation opts out. With no
             // flag, commander leaves `prerotation` undefined, which is on.
             const prerotation = options.prerotation !== false
+            // Portability is the default; --no-portable opts out (same shape).
+            const portable = options.portable !== false
+
+            // Witness declarations (declaration only -- generating the witness
+            // proofs / did-witness.json sidecar is out of scope for now).
+            const witnessDids = options.witness ?? []
+            if (
+              options.witnessThreshold !== undefined &&
+              witnessDids.length === 0
+            ) {
+              console.error('--witness-threshold requires at least one --witness')
+              process.exit(1)
+              return
+            }
+            for (const witnessDid of witnessDids) {
+              if (!witnessDid.startsWith('did:key:')) {
+                console.error(
+                  `Invalid witness "${witnessDid}": witnesses must be ` +
+                    'did:key DIDs'
+                )
+                process.exit(1)
+                return
+              }
+            }
+            let witness:
+              | { threshold: number; witnesses: { id: string }[] }
+              | undefined
+            if (witnessDids.length > 0) {
+              let threshold = witnessDids.length
+              if (options.witnessThreshold !== undefined) {
+                threshold = Number.parseInt(options.witnessThreshold, 10)
+                if (
+                  !Number.isInteger(threshold) ||
+                  threshold < 1 ||
+                  threshold > witnessDids.length
+                ) {
+                  console.error(
+                    '--witness-threshold must be an integer between 1 and the ' +
+                      `number of witnesses (${witnessDids.length})`
+                  )
+                  process.exit(1)
+                  return
+                }
+              }
+              witness = {
+                threshold,
+                witnesses: witnessDids.map(id => ({ id }))
+              }
+            }
+
+            // Watcher URLs: https:// (or http://localhost for local testing).
+            const watchers = options.watcher ?? []
+            for (const watcher of watchers) {
+              let watcherUrl: URL
+              try {
+                watcherUrl = new URL(watcher)
+              } catch {
+                console.error(`Invalid watcher URL: ${watcher}`)
+                process.exit(1)
+                return
+              }
+              const isLocalhost =
+                watcherUrl.protocol === 'http:' &&
+                (watcherUrl.hostname === 'localhost' ||
+                  watcherUrl.hostname === '127.0.0.1')
+              if (watcherUrl.protocol !== 'https:' && !isLocalhost) {
+                console.error(
+                  `Invalid watcher URL "${watcher}": must be https:// ` +
+                    '(or http://localhost)'
+                )
+                process.exit(1)
+                return
+              }
+            }
 
             const envSeed = process.env.SECRET_KEY_SEED
             const secretKeySeed = options.withSeed
@@ -511,11 +614,13 @@ export function makeDidCommand(): Command {
               address: options.url,
               signer,
               verifier: signer,
-              // Default to a portable DID until a --portable flag is added; a
-              // portable DID can later be moved to a different domain.
-              portable: true,
+              // A portable DID (the default) can later be moved to a different
+              // domain; --no-portable pins it to its origin.
+              portable,
               updateKeys: [updateKey.publicKeyMultibase],
               ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
+              ...(witness ? { witness } : {}),
+              ...(watchers.length > 0 ? { watchers } : {}),
               verificationMethods: [
                 {
                   type: 'Multikey',

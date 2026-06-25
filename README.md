@@ -506,6 +506,25 @@ Update keys saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm..
 Only Ed25519 update keys are supported (the `eddsa-jcs-2022` cryptosuite the
 method uses requires them), so `--type ecdsa` is rejected.
 
+A few more create-time options are recorded in the signed history-log
+`parameters`:
+
+- `--portable` / `--no-portable` -- a **portable** DID (the default) can later
+  be moved to a different domain; `--no-portable` pins it to its origin.
+- `--witness <did...>` -- declare one or more **witness** `did:key` DIDs
+  authorized to co-sign the DID's log entries (repeatable). `--witness-threshold
+  <n>` sets how many witness approvals are required (defaults to the number of
+  witnesses; it requires `--witness`). This only *declares* the witnesses;
+  actually generating witness proofs is not yet supported.
+- `--watcher <url...>` -- declare one or more **watcher** URLs that monitor the
+  DID's log (repeatable; `https://`, or `http://localhost` for local testing).
+
+```
+./di did create webvh --url https://example.com \
+  --witness did:key:z6Mk... --witness did:key:z6Mk... --witness-threshold 1 \
+  --watcher https://watcher.example.com --save
+```
+
 #### Rotate a did:webvh update key
 
 Rotate the update (authorization) key of a locally stored `did:webvh` DID with

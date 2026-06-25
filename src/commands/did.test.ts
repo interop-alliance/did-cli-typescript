@@ -33,6 +33,19 @@ async function readJson<T = Record<string, unknown>>(path: string): Promise<T> {
   return JSON.parse(await readFile(path, 'utf8')) as T
 }
 
+/**
+ * Read the `parameters` of the first (creation) entry of a stored did:webvh
+ * history log -- where create-time options like portable / witness / watchers
+ * land.
+ */
+async function firstLogParameters(
+  didsDir: string,
+  did: string
+): Promise<Record<string, unknown>> {
+  const logText = await readFile(join(didsDir, 'webvh', `${did}.jsonl`), 'utf8')
+  return JSON.parse(logText.split('\n')[0]).parameters
+}
+
 async function storedDids(didsDir: string): Promise<string[]> {
   const methodEntries = await readdir(didsDir, { withFileTypes: true })
   const dids: string[] = []
@@ -469,6 +482,200 @@ describe('di did', () => {
       } finally {
         await rm(didsDir, { recursive: true })
       }
+    })
+
+    it('did:webvh is portable by default', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const params = await firstLogParameters(didsDir, did)
+        assert.equal(params.portable, true)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--no-portable creates a non-portable did:webvh', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'webvh',
+            '--url',
+            'https://example.com',
+            '--no-portable',
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const params = await firstLogParameters(didsDir, did)
+        assert.equal(params.portable, false)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--witness declares witnesses, defaulting threshold to their count', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      const witnessA =
+        'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'
+      const witnessB =
+        'did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRqHCt3UkyrxX'
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'webvh',
+            '--url',
+            'https://example.com',
+            '--witness',
+            witnessA,
+            '--witness',
+            witnessB,
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const params = await firstLogParameters(didsDir, did)
+        assert.deepEqual(params.witness, {
+          threshold: 2,
+          witnesses: [{ id: witnessA }, { id: witnessB }]
+        })
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--witness-threshold sets the witness threshold', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      const witnessA =
+        'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'
+      const witnessB =
+        'did:key:z6MkpTHR8VNsBxYAAWHut2Geadd9jSwuBV8xRqHCt3UkyrxX'
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'webvh',
+            '--url',
+            'https://example.com',
+            '--witness',
+            witnessA,
+            '--witness',
+            witnessB,
+            '--witness-threshold',
+            '1',
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const params = await firstLogParameters(didsDir, did)
+        assert.equal((params.witness as { threshold: number }).threshold, 1)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--witness-threshold without --witness errors', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--witness-threshold',
+          '1'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--witness-threshold requires'))
+    })
+
+    it('--witness rejects a non-did:key value', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--witness',
+          'did:web:example.com'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('did:key'))
+    })
+
+    it('--witness-threshold out of range errors', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--witness',
+          'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK',
+          '--witness-threshold',
+          '2'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--witness-threshold'))
+    })
+
+    it('--watcher declares watcher URLs', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'webvh',
+            '--url',
+            'https://example.com',
+            '--watcher',
+            'https://watcher.example.com',
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const params = await firstLogParameters(didsDir, did)
+        assert.deepEqual(params.watchers, ['https://watcher.example.com'])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--watcher rejects a non-https URL', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--watcher',
+          'ftp://watcher.example.com'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('watcher URL'))
     })
 
     it('exits with error for unknown method', async () => {

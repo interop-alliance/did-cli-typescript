@@ -4,6 +4,15 @@
 
 ### Added
 
+- Add richer create-time options to `did create webvh`, each declared in the
+  signed `did.jsonl` log `parameters`: `--portable` / `--no-portable` (portable
+  is the default -- a portable DID can later be moved to another domain),
+  `--witness <did...>` (repeatable; declare witness `did:key` DIDs authorized to
+  co-sign log entries) with `--witness-threshold <n>` (defaults to the number of
+  witnesses; requires `--witness`), and `--watcher <url...>` (repeatable;
+  `https://` or `http://localhost`). Witnesses are **declaration only** for now
+  -- generating witness proofs / a `did-witness.json` sidecar remains out of
+  scope.
 - Add key **pre-rotation** to `did:webvh`. `did create webvh` now arms
   pre-rotation by default: the DID commits, in advance, to the hash of the key
   allowed to perform the next update, so a compromise of the active update key
