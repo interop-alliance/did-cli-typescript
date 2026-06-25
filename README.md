@@ -693,6 +693,12 @@ printed as-is:
 
 Aliases: `view`, `cat`.
 
+For a `did:webvh` DID the document is **resolved from its stored history log**
+(`<did>.jsonl`) -- the source of truth -- rather than the saved snapshot. The
+resolved document reflects every appended log entry and includes the
+spec-defined implicit services (`#files`, `#whois`). If no log is stored the
+saved snapshot is shown instead.
+
 Pass `--meta` to show the DID's metadata instead of the DID document:
 
 ```
@@ -707,7 +713,29 @@ Description
 Keys         1
 ```
 
-`--meta --json` prints the same metadata as a JSON object.
+For a `did:webvh` DID, `--meta` also reports the parameters resolved from the
+log -- the current version id, last-updated time, portability, pre-rotation,
+deactivation status, and the number of update keys, witnesses, and watchers:
+
+```
+./di did show my-webvh --meta
+FIELD        VALUE
+-----------  ----------------------------------------------
+DID          did:webvh:Qm...:example.com
+Method       webvh
+...
+Version      1-Qm...
+Updated      2026-06-10T17:22:31Z
+Portable     yes
+Prerotation  yes
+Deactivated  no
+Update keys  1
+Witnesses    0
+Watchers     0
+```
+
+`--meta --json` prints the same metadata as a JSON object (the `did:webvh`
+fields are included there too).
 
 #### Edit DID metadata
 

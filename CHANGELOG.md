@@ -4,6 +4,14 @@
 
 ### Added
 
+- `did show` now resolves a `did:webvh` DID from its stored history log
+  (`<did>.jsonl`) -- the source of truth -- rather than printing the saved
+  document snapshot, so the output reflects every appended log entry (including
+  the spec-defined implicit `#files` / `#whois` services). With `--meta` it also
+  reports the parameters resolved from the log: version id, last-updated time,
+  portability, pre-rotation, deactivation status, and the count of update keys,
+  witnesses, and watchers (also included in `--meta --json`). A `did:webvh` DID
+  with no stored log still falls back to the saved snapshot.
 - Add `did add-service <did>` and `did remove-service <did>`, which add or
   remove a [service](https://www.w3.org/TR/did-core/#services) entry on a stored
   `did:web` or `did:webvh` DID (the DID may be given as a metadata handle).
