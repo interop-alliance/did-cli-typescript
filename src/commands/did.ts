@@ -54,9 +54,7 @@ import { makeWebvhDriver, webvhLogVerifier } from '../keys/webvh-driver.js'
 import {
   exportUpdateKey,
   generateStagedKey,
-  generateUpdateKey,
-  loadUpdateKey,
-  type UpdateKeyPair
+  loadUpdateKey
 } from '../keys/webvh-update.js'
 
 /**
@@ -539,7 +537,9 @@ export function makeDidCommand(): Command {
 
             // Update key A: the active authorization key. It is what the DID
             // identifier (SCID) derives from, so it is the seed-derived one.
-            const updateKey = await generateUpdateKey({ seed: seedBytes })
+            const updateKey = await Ed25519VerificationKey.generate({
+              seed: seedBytes
+            })
             const signer = makeWebvhSigner({ keyPair: updateKey })
             // `keyPair.signer()` requires an id to be set before signing.
             updateKey.id = signer.getVerificationMethodId()
@@ -1220,7 +1220,7 @@ export function makeDidCommand(): Command {
         }
 
         // Inbound: who signs this entry, and what becomes the active key.
-        let signerKeyPair: UpdateKeyPair
+        let signerKeyPair: Ed25519VerificationKey
         let newActive: WebvhUpdateKey
         let retiredActive: WebvhUpdateKey | undefined
 
@@ -1276,7 +1276,7 @@ export function makeDidCommand(): Command {
             newActive = { publicKeyMultibase: options.updateKey[0] }
             retiredActive = activeRecord
           } else {
-            const fresh = await generateUpdateKey()
+            const fresh = await Ed25519VerificationKey.generate()
             newActive = await exportUpdateKey(fresh)
             retiredActive = activeRecord
           }
