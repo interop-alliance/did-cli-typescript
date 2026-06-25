@@ -1,3 +1,5 @@
+import { createInterface } from 'node:readline/promises'
+import { stdin, stdout } from 'node:process'
 import { Command } from 'commander'
 import {
   decodeSecretKeySeed,
@@ -5,7 +7,14 @@ import {
 } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
-import { createDID } from '@interop/did-method-webvh'
+import {
+  createDID,
+  resolveDIDFromLog,
+  updateDID,
+  type DIDDoc,
+  type DIDLog,
+  type VerificationMethod
+} from '@interop/did-method-webvh'
 import {
   createDefaultDidResolver,
   securityLoader
@@ -17,12 +26,17 @@ import {
   listDids,
   loadDidDocument,
   loadDidKeys,
+  loadDidLog,
   loadDidMeta,
+  loadDidUpdateKeys,
   removeDidFiles,
   saveDidLog,
   saveDidMeta,
+  saveDidUpdateKeys,
   saveToDids,
-  type ItemMetadata
+  type ItemMetadata,
+  type WebvhUpdateKey,
+  type WebvhUpdateKeys
 } from '../storage.js'
 import {
   recordKeyDidAssociation,
@@ -36,7 +50,14 @@ import {
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
 import { makeWebvhSigner } from '../keys/webvh-signer.js'
-import { makeWebvhDriver } from '../keys/webvh-driver.js'
+import { makeWebvhDriver, webvhLogVerifier } from '../keys/webvh-driver.js'
+import {
+  exportUpdateKey,
+  generateStagedKey,
+  generateUpdateKey,
+  loadUpdateKey,
+  type UpdateKeyPair
+} from '../keys/webvh-update.js'
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -87,6 +108,94 @@ async function saveDidArtifacts({
 }
 
 /**
+ * Parse a raw did:webvh history log (newline-delimited JSON) into the entry
+ * array the library's resolver/updater expect, ignoring blank lines.
+ *
+ * @param logText {string}
+ * @returns {DIDLog}
+ */
+export function parseDidLog(logText: string): DIDLog {
+  return logText
+    .split('\n')
+    .filter(line => line.trim().length > 0)
+    .map(line => JSON.parse(line)) as DIDLog
+}
+
+/**
+ * The five DID-Core verification relationships, in document order.
+ */
+const VERIFICATION_RELATIONSHIPS = [
+  'authentication',
+  'assertionMethod',
+  'keyAgreement',
+  'capabilityDelegation',
+  'capabilityInvocation'
+] as const
+
+/**
+ * Reconstruct the `createDID`/`updateDID` verification-method directives from a
+ * resolved DID document's state, so an update that only rotates update keys can
+ * re-supply the document unchanged. `updateDID` rebuilds the document from the
+ * directives it is given -- omitting them would blank it -- so each method's
+ * `purpose` is recovered from which relationship arrays reference its id.
+ *
+ * @param state {DIDDoc} a resolved did:webvh DID document.
+ * @returns {{ verificationMethods: VerificationMethod[], alsoKnownAs?: string[], services?: object[] }}
+ */
+function reconstructDocInputs(state: DIDDoc): {
+  verificationMethods: VerificationMethod[]
+  alsoKnownAs?: string[]
+  services?: object[]
+} {
+  const verificationMethods = (state.verificationMethod ?? []).map(vm => {
+    const purpose = VERIFICATION_RELATIONSHIPS.filter(relationship => {
+      const refs = ((state as Record<string, unknown>)[relationship] ??
+        []) as unknown[]
+      return refs.some(
+        ref =>
+          (typeof ref === 'string' ? ref : (ref as { id?: string }).id) ===
+          vm.id
+      )
+    })
+    return { ...vm, purpose }
+  })
+  return {
+    verificationMethods,
+    ...(state.alsoKnownAs ? { alsoKnownAs: state.alsoKnownAs } : {}),
+    ...(state.service ? { services: state.service } : {})
+  }
+}
+
+/**
+ * Ask the user to confirm a hard-to-undo action. Returns true immediately when
+ * `--yes` was passed or when stdin is not an interactive TTY (so scripts and
+ * tests are not blocked); otherwise prompts and requires an explicit `y`.
+ *
+ * @param options {object}
+ * @param options.message {string}
+ * @param options.yes {boolean} the value of the `--yes` flag.
+ * @returns {Promise<boolean>}
+ */
+async function confirmAction({
+  message,
+  yes
+}: {
+  message: string
+  yes?: boolean
+}): Promise<boolean> {
+  if (yes || !stdin.isTTY) {
+    return true
+  }
+  const rl = createInterface({ input: stdin, output: stdout })
+  try {
+    const answer = await rl.question(`${message} [y/N] `)
+    return answer.trim().toLowerCase() === 'y'
+  } finally {
+    rl.close()
+  }
+}
+
+/**
  * Document loader for DID / DID-URL resolution. A bare DID resolves to its DID
  * document; a `did#fragment` URL is dereferenced straight to its
  * verification-method node. Works for did:key (offline), did:web, and did:webvh
@@ -126,6 +235,12 @@ export function makeDidCommand(): Command {
       'HTTPS url of the DID document (required for did:web)'
     )
     .option(
+      '--prerotation',
+      'arm did:webvh key pre-rotation: stage a next update key and commit ' +
+        'its hash (default)'
+    )
+    .option('--no-prerotation', 'create the did:webvh without key pre-rotation')
+    .option(
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
@@ -148,6 +263,7 @@ export function makeDidCommand(): Command {
           type: string
           curve: string
           url?: string
+          prerotation?: boolean
           withSeed?: boolean
           save?: boolean
           handle?: string
@@ -409,6 +525,10 @@ export function makeDidCommand(): Command {
               process.exit(1)
               return
             }
+            // Pre-rotation is the default; --no-prerotation opts out. With no
+            // flag, commander leaves `prerotation` undefined, which is on.
+            const prerotation = options.prerotation !== false
+
             const envSeed = process.env.SECRET_KEY_SEED
             const secretKeySeed = options.withSeed
               ? (envSeed ?? (await generateSecretKeySeed()))
@@ -416,12 +536,23 @@ export function makeDidCommand(): Command {
             const seedBytes = secretKeySeed
               ? decodeSecretKeySeed({ secretKeySeed })
               : undefined
-            const keyPair = await Ed25519VerificationKey.generate({
-              seed: seedBytes
-            })
-            const signer = makeWebvhSigner({ keyPair })
+
+            // Update key A: the active authorization key. It is what the DID
+            // identifier (SCID) derives from, so it is the seed-derived one.
+            const updateKey = await generateUpdateKey({ seed: seedBytes })
+            const signer = makeWebvhSigner({ keyPair: updateKey })
             // `keyPair.signer()` requires an id to be set before signing.
-            keyPair.id = signer.getVerificationMethodId()
+            updateKey.id = signer.getVerificationMethodId()
+
+            // Document verification key V, decoupled from the update keys so
+            // that rotating the update key never disturbs the document.
+            const docKey = await Ed25519VerificationKey.generate()
+
+            // Staged next update key B: when pre-rotation is on, commit its
+            // hash now so the next update must reveal it.
+            const stagedKey = prerotation
+              ? await generateStagedKey()
+              : undefined
 
             const result = await createDID({
               address: options.url,
@@ -430,12 +561,13 @@ export function makeDidCommand(): Command {
               // Default to a portable DID until a --portable flag is added; a
               // portable DID can later be moved to a different domain.
               portable: true,
-              updateKeys: [keyPair.publicKeyMultibase],
+              updateKeys: [updateKey.publicKeyMultibase],
+              ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
               verificationMethods: [
                 {
                   type: 'Multikey',
-                  publicKeyMultibase: keyPair.publicKeyMultibase,
-                  // Wire the single key into the same relationships as did:web
+                  publicKeyMultibase: docKey.publicKeyMultibase,
+                  // Wire the document key into the same relationships as did:web
                   // (everything but keyAgreement, which needs an X25519 key).
                   purpose: [
                     'authentication',
@@ -448,23 +580,53 @@ export function makeDidCommand(): Command {
             })
 
             if (options.save) {
-              const exported = (await keyPair.export({
+              // Persist the document key V keyed by its document verification
+              // method id (so it can be selected for signing), and set its id
+              // to match.
+              const docVmId = (
+                result.doc as {
+                  verificationMethod?: { id: string }[]
+                }
+              ).verificationMethod?.[0]?.id
+              if (!docVmId) {
+                console.error(
+                  'Created did:webvh document is missing a verification method id'
+                )
+                process.exit(1)
+                return
+              }
+              docKey.id = docVmId
+              const exportedDoc = (await docKey.export({
                 publicKey: true,
                 secretKey: true
               })) as { publicKeyMultibase?: string }
               await saveDidArtifacts({
                 method: 'webvh',
                 didDocument: result.doc as { id: string },
-                exportedKeys: { [signer.getVerificationMethodId()]: exported },
-                fingerprints: [exported.publicKeyMultibase],
+                exportedKeys: { [docVmId]: exportedDoc },
+                fingerprints: [exportedDoc.publicKeyMultibase],
                 handle: options.handle,
                 description: options.description
+              })
+
+              // Persist the update keys (active A, and staged B when armed) in
+              // a sidecar distinct from the document's keys file.
+              const updateKeys: WebvhUpdateKeys = {
+                active: await exportUpdateKey(updateKey)
+              }
+              if (stagedKey) {
+                updateKeys.staged = stagedKey
+              }
+              const updateKeysPath = await saveDidUpdateKeys({
+                did: result.did,
+                updateKeys
               })
               const logPath = await saveDidLog({
                 did: result.did,
                 log: result.log
               })
               console.error(`DID history log saved to ${logPath}`)
+              console.error(`Update keys saved to ${updateKeysPath}`)
             }
 
             const output: Record<string, unknown> = { id: result.did }
@@ -929,6 +1091,283 @@ export function makeDidCommand(): Command {
         console.error(`Removed ${filePath}`)
       }
     })
+
+  const webvh = new Command('webvh').description(
+    'Manage did:webvh DIDs: rotate update (authorization) keys'
+  )
+
+  webvh
+    .command('rotate-keys <did>')
+    .description(
+      'Rotate the update (authorization) key of a locally stored did:webvh ' +
+        'DID. By default advances key pre-rotation -- reveals the staged next ' +
+        'key and stages a fresh one -- and never touches the document ' +
+        'verification methods.'
+    )
+    .option(
+      '--update-key <multibase...>',
+      'rotate to specific update key(s) by publicKeyMultibase instead of ' +
+        'generating a fresh one (ordinary mode only; rejected while ' +
+        'pre-rotation is armed, where the next keys are fixed by the prior ' +
+        'commitment)'
+    )
+    .option(
+      '--enable-prerotation',
+      'for a DID without pre-rotation, turn it on by staging a next key this ' +
+        'rotation (alone: stage only, leaving the active key unchanged)'
+    )
+    .option(
+      '--stop-prerotation',
+      'do not stage a next key; pre-rotation turns off after this rotation'
+    )
+    .option(
+      '--keep-old-key',
+      'retain the retired update key secret in the sidecar (default: drop it)'
+    )
+    .option('-y, --yes', 'skip the confirmation prompt')
+    .action(
+      async (
+        didRef: string,
+        options: {
+          updateKey?: string[]
+          enablePrerotation?: boolean
+          stopPrerotation?: boolean
+          keepOldKey?: boolean
+          yes?: boolean
+        }
+      ) => {
+        let resolved: string | undefined
+        try {
+          resolved = await resolveDidRef({ ref: didRef })
+        } catch (err) {
+          console.error((err as Error).message)
+          process.exit(1)
+          return
+        }
+        const targetDid = resolved ?? didRef
+        if (!targetDid.startsWith('did:webvh:')) {
+          console.error('rotate-keys is only supported for did:webvh DIDs')
+          process.exit(1)
+          return
+        }
+        // The history log is the source of truth for a stored did:webvh (the
+        // current document is just its last entry's state), so its absence is
+        // what "not locally stored" means -- no need to also read the doc file.
+        let logText: string
+        try {
+          logText = await loadDidLog(targetDid)
+        } catch {
+          console.error(`No locally stored did:webvh found for ${didRef}`)
+          process.exit(1)
+          return
+        }
+        const log = parseDidLog(logText)
+
+        let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+        try {
+          ;({ meta } = await resolveDIDFromLog(log, {
+            verifier: webvhLogVerifier
+          }))
+        } catch (err) {
+          console.error(
+            `Could not resolve the DID log: ${(err as Error).message}`
+          )
+          process.exit(1)
+          return
+        }
+        if (meta.deactivated) {
+          console.error('Cannot rotate keys: the DID is deactivated.')
+          process.exit(1)
+          return
+        }
+
+        // Flag validation against the current pre-rotation state.
+        if (options.enablePrerotation && options.stopPrerotation) {
+          console.error(
+            '--enable-prerotation and --stop-prerotation are mutually exclusive'
+          )
+          process.exit(1)
+          return
+        }
+        if (meta.prerotation) {
+          if (options.updateKey) {
+            console.error(
+              '--update-key is not allowed while pre-rotation is armed; the ' +
+                'next update keys are fixed by the committed nextKeyHashes'
+            )
+            process.exit(1)
+            return
+          }
+          if (options.enablePrerotation) {
+            console.error('pre-rotation is already enabled for this DID')
+            process.exit(1)
+            return
+          }
+        } else if (options.stopPrerotation) {
+          console.error('pre-rotation is already off for this DID')
+          process.exit(1)
+          return
+        }
+
+        let stored: WebvhUpdateKeys | undefined
+        try {
+          stored = await loadDidUpdateKeys(targetDid)
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw err
+          }
+          stored = undefined
+        }
+
+        // Inbound: who signs this entry, and what becomes the active key.
+        let signerKeyPair: UpdateKeyPair
+        let newActive: WebvhUpdateKey
+        let retiredActive: WebvhUpdateKey | undefined
+
+        if (meta.prerotation) {
+          // Pre-rotation reveal: the staged key signs its own activation.
+          if (!stored?.staged) {
+            console.error(
+              'Cannot rotate: the pre-committed next-key secret was not ' +
+                'found. Pre-rotation requires the staged key to sign its own ' +
+                `activation; check for a backup of the ` +
+                `${targetDid}.update-keys.json sidecar.`
+            )
+            process.exit(1)
+            return
+          }
+          if (!meta.nextKeyHashes.includes(stored.staged.nextKeyHash)) {
+            console.error(
+              "Cannot rotate: the staged key's hash is not among the log's " +
+                'committed nextKeyHashes. The local update-keys record has ' +
+                'diverged from the published log (an update may have happened ' +
+                'elsewhere); re-resolve before rotating.'
+            )
+            process.exit(1)
+            return
+          }
+          signerKeyPair = await loadUpdateKey(stored.staged)
+          newActive = {
+            publicKeyMultibase: stored.staged.publicKeyMultibase,
+            secretKeyMultibase: stored.staged.secretKeyMultibase
+          }
+          retiredActive = stored.active
+        } else {
+          // Ordinary rotation: the current active key signs.
+          const activeRecord =
+            stored?.active.secretKeyMultibase &&
+            meta.updateKeys.includes(stored.active.publicKeyMultibase)
+              ? stored.active
+              : undefined
+          if (!activeRecord) {
+            console.error(
+              'Cannot rotate: the current active update-key secret was not ' +
+                `found in ${targetDid}.update-keys.json.`
+            )
+            process.exit(1)
+            return
+          }
+          signerKeyPair = await loadUpdateKey(activeRecord)
+          if (options.enablePrerotation && !options.updateKey) {
+            // Stage only: arm pre-rotation without changing the active key.
+            newActive = activeRecord
+          } else if (options.updateKey) {
+            // Rotate to externally-held key(s); the secret is not ours to store.
+            newActive = { publicKeyMultibase: options.updateKey[0] }
+            retiredActive = activeRecord
+          } else {
+            const fresh = await generateUpdateKey()
+            newActive = await exportUpdateKey(fresh)
+            retiredActive = activeRecord
+          }
+        }
+
+        // Outbound: keep the ratchet armed (stage a fresh next key) or not.
+        const arm = meta.prerotation
+          ? !options.stopPrerotation
+          : Boolean(options.enablePrerotation)
+        const newStaged = arm ? await generateStagedKey() : undefined
+        const nextKeyHashes = newStaged ? [newStaged.nextKeyHash] : []
+
+        const confirmed = await confirmAction({
+          message:
+            `Rotate the update key of ${targetDid}? This appends a new log ` +
+            'entry and is hard to undo.',
+          yes: options.yes
+        })
+        if (!confirmed) {
+          console.error('Aborted.')
+          return
+        }
+
+        const signer = makeWebvhSigner({ keyPair: signerKeyPair })
+        // `keyPair.signer()` requires an id to be set before signing.
+        signerKeyPair.id = signer.getVerificationMethodId()
+
+        // Re-supply the document verification methods unchanged: updateDID
+        // rebuilds the document from the inputs it is given, so omitting them
+        // would blank it.
+        const docInputs = reconstructDocInputs(log[log.length - 1].state)
+
+        let result: Awaited<ReturnType<typeof updateDID>>
+        try {
+          result = await updateDID({
+            log,
+            signer,
+            verifier: webvhLogVerifier,
+            updateKeys: [newActive.publicKeyMultibase],
+            nextKeyHashes,
+            ...docInputs
+          })
+        } catch (err) {
+          console.error(`Key rotation failed: ${(err as Error).message}`)
+          process.exit(1)
+          return
+        }
+
+        const logPath = await saveDidLog({ did: result.did, log: result.log })
+        const docPath = await saveToDids({
+          method: 'webvh',
+          did: result.did,
+          data: result.doc
+        })
+
+        // Rewrite the update-keys sidecar: new active, new staged (or none),
+        // and the retired secret only when explicitly kept.
+        const updated: WebvhUpdateKeys = { active: newActive }
+        if (newStaged) {
+          updated.staged = newStaged
+        }
+        const retiredList = stored?.retired ? [...stored.retired] : []
+        // retiredActive is undefined on the stage-only path, so this also
+        // skips that case without a separate guard.
+        if (options.keepOldKey && retiredActive?.secretKeyMultibase) {
+          retiredList.push(retiredActive)
+        }
+        if (retiredList.length > 0) {
+          updated.retired = retiredList
+        }
+        const updateKeysPath = await saveDidUpdateKeys({
+          did: result.did,
+          updateKeys: updated
+        })
+
+        console.error(`DID document saved to ${docPath}`)
+        console.error(`DID history log saved to ${logPath}`)
+        console.error(`Update keys saved to ${updateKeysPath}`)
+        console.error(
+          nextKeyHashes.length > 0
+            ? 'Pre-rotation is armed: a next update key is staged.'
+            : 'Pre-rotation is off after this rotation.'
+        )
+
+        console.log(
+          JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
+        )
+      }
+    )
+
+  did.addCommand(webvh)
 
   return did
 }

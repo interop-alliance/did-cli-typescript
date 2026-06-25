@@ -24,8 +24,8 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2
       '@interop/did-method-webvh':
-        specifier: ^3.1.0
-        version: 3.1.0
+        specifier: ^3.2.0
+        version: 3.2.0
       '@interop/did-web-resolver':
         specifier: ^6.2.2
         version: 6.2.2
@@ -464,8 +464,8 @@ packages:
     resolution: {integrity: sha512-JE0KPMCWhCSLM5l07BD2MvYfyyY56kjJUtanObCJBurwxqKykpHh3YjWs9QD9DkxqkaG6qrKo6JYPK5DXzImlw==}
     engines: {node: '>=24.0'}
 
-  '@interop/did-method-webvh@3.1.0':
-    resolution: {integrity: sha512-MHaO/0nXDsqRZvdnWOQnc6sBhwMVPK72nY/lB5cqhpOq9VAFoXjUJYkBrN4OmnHPFbHIvXF0oNF7aYKRSVvbLw==}
+  '@interop/did-method-webvh@3.2.0':
+    resolution: {integrity: sha512-YJgZ8OZ153kh+KWqKemmbMyzih3Ri5il3llv6WJZeCU+kPtIg6H8JJD58MyZL+yTC6HqiWd0/0QhBekj3HGuNA==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -2194,7 +2194,7 @@ snapshots:
     transitivePeerDependencies:
       - react-native-get-random-values
 
-  '@interop/did-method-webvh@3.1.0':
+  '@interop/did-method-webvh@3.2.0':
     dependencies:
       '@noble/hashes': 2.2.0
       '@stablelib/ed25519': 2.1.0

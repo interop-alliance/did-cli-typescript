@@ -50,6 +50,7 @@ live in their own directory, `src/commands/was/` (see the module map), while
 | `src/meta.ts` | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`. |
 | `src/table.ts` | Dependency-free column-aligned table rendering (`renderTable`, `truncateMiddle`). |
 | `src/keys/ecdsa.ts` | ECDSA curve normalization and VC-issuance capability checks. |
+| `src/keys/webvh-signer.ts`, `webvh-driver.ts`, `webvh-update.ts` | did:webvh glue: a fixed-key `Signer`/`Verifier` bridge, the resolver driver (with the generic log `webvhLogVerifier`), and update-key/pre-rotation helpers (`generateUpdateKey`, `loadUpdateKey`, `generateStagedKey`). |
 | `src/vc/` | Verifiable Credential `issue`/`verify`, issuer registries, and signature suites. |
 | `src/was/` | WAS client logic (non-CLI): `client`, `address`, `registry`, `capability`, `io`. |
 | `src/zcap/` | Capability `create`/`delegate`/`signer`/`encoding`/`resolve`/`ttl`. |
@@ -88,6 +89,7 @@ spelled out under "Command Tests" in [CONTRIBUTING.md](CONTRIBUTING.md).
 ```
 di did create [method]          create a DID (key | web | webvh; default key)
 di did add-key <did>            add a verification method to a stored DID
+di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
 di did get|resolve <did>        resolve a DID (or DID URL) via the document loader
 di did show|view|cat <did>      show a stored DID document
 di did list                     list stored DIDs

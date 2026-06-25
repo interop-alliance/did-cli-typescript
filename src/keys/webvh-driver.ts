@@ -33,7 +33,7 @@ const ED25519_PUB_MULTICODEC_HEADER = Uint8Array.from([0xed, 0x01])
  * entry's update key, so -- unlike the fixed-key signer/verifier in
  * `webvh-signer.ts` -- this reconstructs a key per call from those bytes.
  */
-const webvhLogVerifier = {
+export const webvhLogVerifier = {
   async verify(
     signature: Uint8Array,
     message: Uint8Array,

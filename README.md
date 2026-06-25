@@ -453,6 +453,102 @@ seed-derivable, so `--with-seed` is not supported with `--type ecdsa` or
 ./di did add-key did:web:example.com --with-seed
 ```
 
+#### Create a did:webvh DID
+
+Generate a `did:webvh` DID. Like `did:web` it is tied to a domain, so `--url`
+(the HTTPS url that will host the DID's history log) is required:
+
+```
+./di did create webvh --url https://example.com
+{
+  "id": "did:webvh:Qm...:example.com",
+  "didDocument": { ... }
+}
+```
+
+`did:webvh` separates two key roles: an **update (authorization) key** that
+signs entries in the DID's append-only history log, and the **document
+verification key** wired into the `authentication`, `assertionMethod`,
+`capabilityDelegation`, and `capabilityInvocation` relationships. They are
+distinct keys, so the update key can be rotated without ever disturbing the
+document.
+
+By default `did:webvh` arms **key pre-rotation**: the DID commits, in advance,
+to the *hash* of the key allowed to perform the next update. A compromise of the
+currently active update key cannot be used to seize the DID, because the
+attacker still does not hold the pre-committed next key. So `create` generates
+three keys: the active update key, a staged next update key (whose hash is
+committed as `nextKeyHashes`), and the document key. Pass `--no-prerotation` to
+create the DID without pre-rotation (no next key is staged):
+
+```
+./di did create webvh --url https://example.com --no-prerotation
+```
+
+Save the DID document, history log, and key material to local storage with
+`--save` (written to `~/.config/did-cli-wallet/dids/webvh/` by default, or
+`$DIDS_DIR` if set). The document key is stored in `<did>.keys.json`; the update
+keys (active, and the staged next key when pre-rotation is on) are stored in a
+separate `<did>.update-keys.json` sidecar, and the signed history log in
+`<did>.jsonl`:
+
+```
+./di did create webvh --url https://example.com --save
+DID saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.json
+DID history log saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.jsonl
+Update keys saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.update-keys.json
+{
+  "id": "did:webvh:Qm...:example.com",
+  "didDocument": { ... }
+}
+```
+
+Only Ed25519 update keys are supported (the `eddsa-jcs-2022` cryptosuite the
+method uses requires them), so `--type ecdsa` is rejected.
+
+#### Rotate a did:webvh update key
+
+Rotate the update (authorization) key of a locally stored `did:webvh` DID with
+`did webvh rotate-keys`. This appends a new entry to the DID's history log and
+**never touches the document's verification methods** (those are separate keys).
+
+With no flags it advances the pre-rotation ratchet in one step: it reveals and
+activates the previously staged next key (signing the new entry with it), and
+stages a fresh next key for the following rotation. The retired update key's
+secret is deleted by default -- a retired key is only ever needed to *verify*
+historic log entries, which uses the public key from the log, not the secret:
+
+```
+./di did webvh rotate-keys did:webvh:Qm...:example.com
+DID document saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.json
+DID history log saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.jsonl
+Update keys saved to /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:example.com.update-keys.json
+Pre-rotation is armed: a next update key is staged.
+{
+  "id": "did:webvh:Qm...:example.com",
+  "didDocument": { ... }
+}
+```
+
+Pre-rotation requires the staged key to sign its own activation, so the staged
+secret in `<did>.update-keys.json` is what makes the next rotation possible --
+losing it means the DID can never be updated again. Keep that sidecar backed up.
+
+Flags:
+
+- `--stop-prerotation` -- rotate but commit no next-key hash; pre-rotation turns
+  **off** after this entry.
+- `--enable-prerotation` -- for a DID with pre-rotation currently off, turn it
+  **on** by staging a next key. Alone it stages only (the active key is
+  unchanged, signed by the current key).
+- `--update-key <multibase...>` -- in ordinary (non-pre-rotation) mode, rotate
+  to specific update key(s) by public key instead of generating a fresh one.
+  Rejected while pre-rotation is armed, where the next keys are fixed by the
+  prior commitment.
+- `--keep-old-key` -- retain the retired update key's secret in the sidecar
+  instead of dropping it.
+- `-y`, `--yes` -- skip the confirmation prompt (rotation is hard to undo).
+
 #### List DIDs
 
 List the DIDs saved in local storage (via `did create --save`) as a table of
