@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { resolveDIDFromLog } from '@interop/did-method-webvh'
@@ -2103,12 +2103,23 @@ describe('di did', () => {
       }
     })
 
-    it('did:webvh add-service rejects a default relative-id service (#files)', async () => {
-      const { didsDir, did } = await createSavedWebvh(['--no-prerotation'])
+    it('add-service detects a stored relative-id service as a duplicate', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
       try {
-        // The resolved doc carries the default `#files` service (a relative
-        // id); adding `files` must be caught as a duplicate even though the new
-        // id is normalized to an absolute DID URL.
+        // Seed a stored doc whose service id is relative (`#files`), as an
+        // externally-authored DID document may be. Adding `files` must be
+        // caught as a duplicate even though the new id normalizes to an
+        // absolute DID URL.
+        const seeded = await readJson<Record<string, unknown>>(docPath)
+        seeded.service = [
+          {
+            id: '#files',
+            type: 'relativeRef',
+            serviceEndpoint: 'https://example.com/'
+          }
+        ]
+        await writeFile(docPath, JSON.stringify(seeded, null, 2), 'utf8')
+
         await makeDidCommand().parseAsync(
           [
             'add-service',
@@ -2118,8 +2129,7 @@ describe('di did', () => {
             '--type',
             'LinkedDomains',
             '--endpoint',
-            'https://example.com',
-            '--yes'
+            'https://example.com'
           ],
           { from: 'user' }
         )
@@ -2130,13 +2140,23 @@ describe('di did', () => {
       }
     })
 
-    it('did:webvh remove-service removes a default relative-id service (#whois)', async () => {
-      const { didsDir, did, docPath } = await createSavedWebvh([
-        '--no-prerotation'
-      ])
+    it('remove-service removes a stored relative-id service', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
       try {
+        // A relative-id (`#whois`) stored service is matched and removed even
+        // though `--id whois` normalizes to an absolute DID URL.
+        const seeded = await readJson<Record<string, unknown>>(docPath)
+        seeded.service = [
+          {
+            id: '#whois',
+            type: 'LinkedVerifiablePresentation',
+            serviceEndpoint: 'https://example.com/whois.vp'
+          }
+        ]
+        await writeFile(docPath, JSON.stringify(seeded, null, 2), 'utf8')
+
         await makeDidCommand().parseAsync(
-          ['remove-service', did, '--id', 'whois', '--yes'],
+          ['remove-service', did, '--id', 'whois'],
           { from: 'user' }
         )
         assert.equal(exitCode, undefined)

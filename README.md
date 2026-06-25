@@ -694,10 +694,9 @@ printed as-is:
 Aliases: `view`, `cat`.
 
 For a `did:webvh` DID the document is **resolved from its stored history log**
-(`<did>.jsonl`) -- the source of truth -- rather than the saved snapshot. The
-resolved document reflects every appended log entry and includes the
-spec-defined implicit services (`#files`, `#whois`). If no log is stored the
-saved snapshot is shown instead.
+(`<did>.jsonl`) -- the source of truth -- rather than the saved snapshot, so the
+output reflects every appended log entry. If no log is stored the saved snapshot
+is shown instead.
 
 Pass `--meta` to show the DID's metadata instead of the DID document:
 
