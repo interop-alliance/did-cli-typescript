@@ -3,8 +3,35 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { makeDidCommand } from './did.js'
+import { resolveDIDFromLog } from '@interop/did-method-webvh'
+import { makeDidCommand, parseDidLog } from './did.js'
 import { makeKeyCommand } from './key.js'
+import { webvhLogVerifier } from '../keys/webvh-driver.js'
+
+/**
+ * Resolve a locally-stored did:webvh history log to its accumulated metadata,
+ * verifying the whole proof chain -- so tests can assert that a rotation
+ * produced a valid log.
+ */
+async function resolveStoredWebvhMeta(
+  didsDir: string,
+  did: string
+): Promise<{
+  versionId: string
+  updateKeys: string[]
+  nextKeyHashes: string[]
+  prerotation: boolean
+  deactivated: boolean
+}> {
+  const logText = await readFile(join(didsDir, 'webvh', `${did}.jsonl`), 'utf8')
+  const log = parseDidLog(logText)
+  const { meta } = await resolveDIDFromLog(log, { verifier: webvhLogVerifier })
+  return meta
+}
+
+async function readJson<T = Record<string, unknown>>(path: string): Promise<T> {
+  return JSON.parse(await readFile(path, 'utf8')) as T
+}
 
 async function storedDids(didsDir: string): Promise<string[]> {
   const methodEntries = await readdir(didsDir, { withFileTypes: true })
@@ -336,7 +363,7 @@ describe('di did', () => {
       assert.ok(errors[0].includes('ed25519'))
     })
 
-    it('--save writes the webvh doc, log, keys, and meta files', async () => {
+    it('--save writes the webvh doc, log, keys, update-keys, and meta files', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir
       try {
@@ -351,26 +378,94 @@ describe('di did', () => {
           `${did}.json`,
           `${did}.jsonl`,
           `${did}.keys.json`,
-          `${did}.meta.json`
+          `${did}.meta.json`,
+          `${did}.update-keys.json`
         ])
 
-        // The first log line parses as an entry whose state is the DID document
-        // and whose updateKeys authorize the saved key's publicKeyMultibase.
+        // The first log line parses as an entry whose state is the DID document.
         const logText = await readFile(join(webvhDir, `${did}.jsonl`), 'utf8')
         const firstEntry = JSON.parse(logText.split('\n')[0])
         assert.equal(firstEntry.state.id, did)
-        const keysContent = JSON.parse(
-          await readFile(join(webvhDir, `${did}.keys.json`), 'utf8')
-        )
-        const exported = Object.values(keysContent)[0] as {
+
+        // The keys file holds the document verification key V, keyed by its
+        // document verification-method id (so it can be selected for signing).
+        const keysContent = await readJson(join(webvhDir, `${did}.keys.json`))
+        const docVmId = firstEntry.state.verificationMethod[0].id
+        const docKey = keysContent[docVmId] as {
+          id: string
           publicKeyMultibase: string
           secretKeyMultibase: string
         }
-        assert.ok(exported.publicKeyMultibase)
-        assert.ok(exported.secretKeyMultibase)
-        assert.ok(
-          firstEntry.parameters.updateKeys.includes(exported.publicKeyMultibase)
+        assert.ok(docKey, 'document key keyed by its VM id')
+        assert.equal(docKey.id, docVmId)
+        assert.equal(
+          docKey.publicKeyMultibase,
+          firstEntry.state.verificationMethod[0].publicKeyMultibase
         )
+
+        // The update keys live in their own sidecar: active A (the authorization
+        // key in the log) plus staged B, whose hash is committed in nextKeyHashes.
+        const updateKeys = await readJson<{
+          active: { publicKeyMultibase: string; secretKeyMultibase: string }
+          staged?: {
+            publicKeyMultibase: string
+            secretKeyMultibase: string
+            nextKeyHash: string
+          }
+        }>(join(webvhDir, `${did}.update-keys.json`))
+        assert.ok(updateKeys.active.secretKeyMultibase)
+        assert.deepEqual(firstEntry.parameters.updateKeys, [
+          updateKeys.active.publicKeyMultibase
+        ])
+        // The update key A is decoupled from the document key V.
+        assert.notEqual(
+          updateKeys.active.publicKeyMultibase,
+          docKey.publicKeyMultibase
+        )
+        // Pre-rotation is armed by default: B is staged and its hash committed.
+        assert.ok(updateKeys.staged)
+        assert.ok(updateKeys.staged.secretKeyMultibase)
+        assert.deepEqual(firstEntry.parameters.nextKeyHashes, [
+          updateKeys.staged.nextKeyHash
+        ])
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.prerotation, true)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--no-prerotation creates without a staged key or nextKeyHashes', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'webvh',
+            '--url',
+            'https://example.com',
+            '--no-prerotation',
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        const webvhDir = join(didsDir, 'webvh')
+
+        const updateKeys = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged?: unknown
+        }>(join(webvhDir, `${did}.update-keys.json`))
+        assert.equal(updateKeys.staged, undefined)
+
+        const logText = await readFile(join(webvhDir, `${did}.jsonl`), 'utf8')
+        const firstEntry = JSON.parse(logText.split('\n')[0])
+        assert.deepEqual(firstEntry.parameters.nextKeyHashes ?? [], [])
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.prerotation, false)
       } finally {
         await rm(didsDir, { recursive: true })
       }
@@ -380,6 +475,210 @@ describe('di did', () => {
       await makeDidCommand().parseAsync(['create', 'unknown'], { from: 'user' })
       assert.equal(exitCode, 1)
       assert.ok(errors[0].includes('unknown'))
+    })
+  })
+
+  describe('webvh rotate-keys', () => {
+    /**
+     * Create a saved did:webvh DID under a fresh temp DIDS_DIR, returning the
+     * dir, the DID, and the path of its update-keys sidecar.
+     */
+    async function createSavedWebvh(
+      extraArgs: string[] = []
+    ): Promise<{ didsDir: string; did: string; updateKeysPath: string }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--save',
+          ...extraArgs
+        ],
+        { from: 'user' }
+      )
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      return {
+        didsDir,
+        did,
+        updateKeysPath: join(didsDir, 'webvh', `${did}.update-keys.json`)
+      }
+    }
+
+    it('advances the ratchet by default: reveals the staged key and re-stages', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+
+        const after = await readJson<{
+          active: { publicKeyMultibase: string; secretKeyMultibase: string }
+          staged: { publicKeyMultibase: string; nextKeyHash: string }
+        }>(updateKeysPath)
+        // The previously staged key is now active, and a fresh key is staged.
+        assert.equal(
+          after.active.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+        assert.notEqual(
+          after.staged.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '2')
+        assert.equal(meta.prerotation, true)
+        assert.deepEqual(meta.updateKeys, [after.active.publicKeyMultibase])
+        assert.deepEqual(meta.nextKeyHashes, [after.staged.nextKeyHash])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('leaves the document verification methods untouched', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        const docPath = join(didsDir, 'webvh', `${did}.json`)
+        const before = await readJson<{ verificationMethod: unknown }>(docPath)
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+
+        const after = await readJson<{ verificationMethod: unknown }>(docPath)
+        assert.deepEqual(after.verificationMethod, before.verificationMethod)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--stop-prerotation turns pre-rotation off', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--stop-prerotation', '--yes'],
+          { from: 'user' }
+        )
+        const after = await readJson<{ staged?: unknown }>(updateKeysPath)
+        assert.equal(after.staged, undefined)
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.prerotation, false)
+        assert.deepEqual(meta.nextKeyHashes, [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--enable-prerotation re-arms a DID with pre-rotation off (stage only)', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--enable-prerotation', '--yes'],
+          { from: 'user' }
+        )
+
+        const after = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged?: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        // Stage-only: the active key is unchanged, but a next key is now staged.
+        assert.equal(
+          after.active.publicKeyMultibase,
+          before.active.publicKeyMultibase
+        )
+        assert.ok(after.staged)
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.prerotation, true)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('errors when the staged secret is missing in pre-rotation mode', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        // Simulate a lost sidecar: without the staged secret, the DID can never
+        // be rotated again (the security point of pre-rotation).
+        await rm(updateKeysPath)
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.some(line => line.includes('pre-committed next-key secret'))
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects --update-key while pre-rotation is armed', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'rotate-keys',
+            did,
+            '--update-key',
+            'z6MkfakeKeyValue',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.some(line => line.includes('--update-key is not allowed'))
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects a non-webvh DID', async () => {
+      await makeDidCommand().parseAsync(
+        ['webvh', 'rotate-keys', 'did:key:z6MkfakeKey', '--yes'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(
+        errors.some(line => line.includes('only supported for did:webvh'))
+      )
+    })
+
+    it('errors when the DID is not locally stored', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', 'did:webvh:QmFake:example.com', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.some(line => line.includes('No locally stored did:webvh'))
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
     })
   })
 
@@ -866,9 +1165,10 @@ describe('di did', () => {
         await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
 
         assert.equal(exitCode, undefined)
-        // doc + keys + meta + jsonl == 4 removed files
-        assert.equal(errors.length, 4)
+        // doc + keys + update-keys + meta + jsonl == 5 removed files
+        assert.equal(errors.length, 5)
         assert.ok(errors.some(line => line.endsWith('.jsonl')))
+        assert.ok(errors.some(line => line.endsWith('.update-keys.json')))
         const remaining = await readdir(join(didsDir, 'webvh'))
         assert.deepEqual(remaining, [])
       } finally {

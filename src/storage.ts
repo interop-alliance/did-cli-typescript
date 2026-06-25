@@ -274,6 +274,7 @@ export async function listDids(): Promise<string[]> {
       if (
         !fileName.endsWith('.json') ||
         fileName.endsWith('.keys.json') ||
+        fileName.endsWith('.update-keys.json') ||
         fileName.endsWith('.meta.json')
       ) {
         continue
@@ -377,7 +378,7 @@ export async function removeDidFiles({
   const docPath = join(dir, `${did}.json`)
   await unlink(docPath)
   removed.push(docPath)
-  for (const suffix of ['keys', 'meta']) {
+  for (const suffix of ['keys', 'update-keys', 'meta']) {
     const sidecarPath = join(dir, `${did}.${suffix}.json`)
     if (await unlinkIfExists(sidecarPath)) {
       removed.push(sidecarPath)
@@ -434,6 +435,65 @@ export async function loadDidLog(did: string): Promise<string> {
   const method = did.split(':')[1]
   const filePath = join(getDidsDir(), method, `${did}.jsonl`)
   return readFile(filePath, 'utf8')
+}
+
+/**
+ * A did:webvh update (authorization) key pair. Update keys authorize new log
+ * entries and are deliberately kept separate from the document's
+ * verification-method keys (`<did>.keys.json`). `secretKeyMultibase` is absent
+ * only for an externally-held key supplied by public value alone.
+ */
+export interface WebvhUpdateKey {
+  publicKeyMultibase: string
+  secretKeyMultibase?: string
+}
+
+/**
+ * The update-key state of a did:webvh DID, persisted in the
+ * `<did>.update-keys.json` sidecar: the key authorized right now (`active`)
+ * and, when pre-rotation is armed, the pre-committed next key (`staged`) whose
+ * hash is published in the log's `nextKeyHashes`. `staged` is absent only when
+ * pre-rotation is off. `retired` keeps superseded secrets when a rotation is
+ * asked to preserve them (`rotate-keys --keep-old-key`); they are needed only
+ * to verify historic entries, so the default is to drop them.
+ */
+export interface WebvhUpdateKeys {
+  active: WebvhUpdateKey
+  staged?: WebvhUpdateKey & { nextKeyHash: string }
+  retired?: WebvhUpdateKey[]
+}
+
+/**
+ * Save the `<did>.update-keys.json` sidecar holding a did:webvh DID's update
+ * (authorization) keys, alongside its DID document under the method subdir.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.updateKeys {WebvhUpdateKeys}
+ * @returns {Promise<string>} the sidecar file path.
+ */
+export async function saveDidUpdateKeys({
+  did,
+  updateKeys
+}: {
+  did: string
+  updateKeys: WebvhUpdateKeys
+}): Promise<string> {
+  const method = did.split(':')[1]
+  return saveToDids({ method, did, suffix: 'update-keys', data: updateKeys })
+}
+
+/**
+ * Load the `<did>.update-keys.json` sidecar of a did:webvh DID. Throws (ENOENT)
+ * when no sidecar exists -- e.g. a DID created before pre-rotation support.
+ *
+ * @param did {string}
+ * @returns {Promise<WebvhUpdateKeys>}
+ */
+export async function loadDidUpdateKeys(did: string): Promise<WebvhUpdateKeys> {
+  const method = did.split(':')[1]
+  const filePath = join(getDidsDir(), method, `${did}.update-keys.json`)
+  return JSON.parse(await readFile(filePath, 'utf8')) as WebvhUpdateKeys
 }
 
 /**

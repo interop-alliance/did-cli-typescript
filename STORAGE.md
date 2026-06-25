@@ -31,6 +31,15 @@ potentially created:
 - `~/.config/did-cli-wallet/dids/method/did:method:abcd.keys.json` -- the signing key material
 - `~/.config/did-cli-wallet/dids/method/did:method:abcd.meta.json` -- the metadata sidecar
 
+For `did:webvh` DIDs there are two more, alongside the above:
+
+- `~/.config/did-cli-wallet/dids/webvh/<did>.jsonl` -- the signed, append-only
+  history log (newline-delimited JSON)
+- `~/.config/did-cli-wallet/dids/webvh/<did>.update-keys.json` -- the update
+  (authorization) keys: the active key and, when key pre-rotation is on, the
+  staged next key. These are distinct from the document signing keys in
+  `<did>.keys.json` and are what `did webvh rotate-keys` advances.
+
 You can override the storage mechanism for each ledger method (to store JSON
 files in a different directory, or to use an in-memory `MockStore` for unit
 testing).

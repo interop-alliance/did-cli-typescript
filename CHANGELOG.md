@@ -4,6 +4,27 @@
 
 ### Added
 
+- Add key **pre-rotation** to `did:webvh`. `did create webvh` now arms
+  pre-rotation by default: the DID commits, in advance, to the hash of the key
+  allowed to perform the next update, so a compromise of the active update key
+  cannot seize the DID. Update keys are now **decoupled** from the document's
+  verification key -- `create` generates an active update key A, a staged next
+  update key B (whose hash is committed as `nextKeyHashes`), and a separate
+  document key V (wired into the verification relationships as before). On
+  `--save`, V is stored in `<did>.keys.json` (keyed by its document
+  verification-method id, so it can be selected for signing) and A+B in a new
+  `<did>.update-keys.json` sidecar. Pass `--no-prerotation` to create without a
+  staged key. Requires `@interop/did-method-webvh` >= 3.2.0 (for the exported
+  `deriveNextKeyHash`).
+- Add `did webvh rotate-keys <did>`, which rotates a stored `did:webvh` DID's
+  update (authorization) key and never touches the document's verification
+  methods. With no flags it advances the pre-rotation ratchet in one step --
+  revealing and activating the staged key, then staging a fresh one -- and
+  deletes the retired key's secret by default. Flags: `--stop-prerotation` (turn
+  pre-rotation off), `--enable-prerotation` (turn it on for a DID without it;
+  alone, stage only), `--update-key <multibase...>` (rotate to specific key(s)
+  in ordinary mode; rejected while pre-rotation is armed), `--keep-old-key`
+  (retain the retired secret), and `-y, --yes` (skip the confirmation prompt).
 - Add `was space meta <space>`, which updates a registered space's local
   registry metadata (`--handle` and/or `--description`) only, leaving the
   server-side space untouched. At least one of the two flags is required;
@@ -21,8 +42,8 @@
   into the same verification relationships as did:web (`authentication`,
   `assertionMethod`, `capabilityDelegation`, `capabilityInvocation`; not
   `keyAgreement`). Requires `@interop/did-method-webvh` >= 3.1.0. Resolving a
-  stored webvh DID, updates/rotation, witnesses, and the parallel did:web alias
-  are deferred.
+  stored webvh DID, witnesses, and the parallel did:web alias are deferred.
+  (Update-key rotation and pre-rotation are implemented separately below.)
 - Support `did get`/`did resolve` for `did:webvh` DIDs. A `did:webvh` driver
   (`src/keys/webvh-driver.ts`) wraps `resolveDID` from
   `@interop/did-method-webvh` -- fetching and verifying the DID's history log --
