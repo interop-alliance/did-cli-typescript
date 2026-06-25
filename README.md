@@ -568,6 +568,49 @@ Flags:
   instead of dropping it.
 - `-y`, `--yes` -- skip the confirmation prompt (rotation is hard to undo).
 
+#### Add or remove a service entry
+
+Add or remove a [service](https://www.w3.org/TR/did-core/#services) entry on a
+locally stored `did:web` or `did:webvh` DID. The DID may be given as a full DID
+or a metadata handle. For `did:web` this edits the stored document in place; for
+`did:webvh` it appends a new entry to the history log.
+
+```
+./di did add-service did:web:example.com \
+  --id files --type LinkedDomains --endpoint https://example.com
+{
+  "id": "did:web:example.com",
+  "didDocument": { ..., "service": [ ... ] }
+}
+```
+
+`--id` accepts a bare fragment (`files`), which is expanded to `<did>#files`, or
+a full service id. The service type comes from `--type` (repeat for multiple
+types). The endpoint comes from either `--endpoint` (repeat for multiple values;
+a single value stays a string, several become an array) or `--endpoint-json` (a
+raw JSON value, e.g. an object); exactly one of the two is required.
+
+```
+./di did add-service did:web:example.com \
+  --id dwn --type DecentralizedWebNode \
+  --endpoint-json '{"nodes":["https://dwn.example"]}'
+```
+
+Remove a service by its id (a bare fragment is expanded the same way):
+
+```
+./di did remove-service did:web:example.com --id files
+```
+
+For `did:webvh`, both commands sign and append a log entry (and so accept `-y` /
+`--yes` to skip the confirmation prompt). The update keys and document
+verification methods are carried forward unchanged -- with one exception: when
+pre-rotation is armed the library requires the staged key to sign the entry, so
+the update-key ratchet is **advanced** as part of the change (the staged key is
+revealed and activated, and a fresh next key is staged), exactly as in
+`webvh rotate-keys`. Pass `--keep-old-key` to retain the retired update key's
+secret in that case.
+
 #### List DIDs
 
 List the DIDs saved in local storage (via `did create --save`) as a table of

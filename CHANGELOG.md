@@ -4,6 +4,18 @@
 
 ### Added
 
+- Add `did add-service <did>` and `did remove-service <did>`, which add or
+  remove a [service](https://www.w3.org/TR/did-core/#services) entry on a stored
+  `did:web` or `did:webvh` DID (the DID may be given as a metadata handle).
+  `--id` accepts a bare fragment (expanded to `<did>#fragment`) or a full id;
+  the type comes from `--type` (repeatable) and the endpoint from either
+  `--endpoint` (repeatable) or `--endpoint-json` (a raw JSON value). For
+  `did:web` this edits the stored document in place; for `did:webvh` it appends
+  a sparse log entry that carries the update keys and document verification
+  methods forward unchanged -- except that, when pre-rotation is armed, the
+  update-key ratchet is advanced as part of the change (the staged key signs the
+  entry), with `--keep-old-key` and `-y` / `--yes` honored as in
+  `webvh rotate-keys`.
 - Add richer create-time options to `did create webvh`, each declared in the
   signed `did.jsonl` log `parameters`: `--portable` / `--no-portable` (portable
   is the default -- a portable DID can later be moved to another domain),

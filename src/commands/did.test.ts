@@ -1662,4 +1662,457 @@ describe('di did', () => {
       }
     })
   })
+
+  describe('add-service / remove-service', () => {
+    /**
+     * Create a saved did:web DID under a fresh temp DIDS_DIR, returning the
+     * dir, the DID, and the path of its stored DID document.
+     */
+    async function createSavedWeb(): Promise<{
+      didsDir: string
+      did: string
+      docPath: string
+    }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await makeDidCommand().parseAsync(
+        ['create', 'web', '--url', 'https://example.com', '--save'],
+        { from: 'user' }
+      )
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      errors.length = 0
+      return { didsDir, did, docPath: join(didsDir, 'web', `${did}.json`) }
+    }
+
+    /**
+     * Create a saved did:webvh DID under a fresh temp DIDS_DIR, returning the
+     * dir, the DID, and the paths of its document and update-keys sidecar.
+     */
+    async function createSavedWebvh(extraArgs: string[] = []): Promise<{
+      didsDir: string
+      did: string
+      docPath: string
+      updateKeysPath: string
+    }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--save',
+          ...extraArgs
+        ],
+        { from: 'user' }
+      )
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      errors.length = 0
+      return {
+        didsDir,
+        did,
+        docPath: join(didsDir, 'webvh', `${did}.json`),
+        updateKeysPath: join(didsDir, 'webvh', `${did}.update-keys.json`)
+      }
+    }
+
+    it('did:web add-service appends an entry (bare fragment id expanded)', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://example.com'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const doc = await readJson<{
+          service: { id: string; type: string; serviceEndpoint: string }[]
+        }>(docPath)
+        const entry = doc.service.find(service => service.id === `${did}#dwn`)
+        assert.ok(entry, 'service entry was added')
+        assert.equal(entry?.type, 'LinkedDomains')
+        assert.equal(entry?.serviceEndpoint, 'https://example.com')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:web add-service --endpoint-json stores a JSON serviceEndpoint', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'DecentralizedWebNode',
+            '--endpoint-json',
+            '{"nodes":["https://dwn.example"]}'
+          ],
+          { from: 'user' }
+        )
+        const doc = await readJson<{
+          service: { serviceEndpoint: { nodes: string[] } }[]
+        }>(docPath)
+        assert.deepEqual(doc.service[0].serviceEndpoint, {
+          nodes: ['https://dwn.example']
+        })
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:web multiple --type / --endpoint values become arrays', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'multi',
+            '--type',
+            'A',
+            'B',
+            '--endpoint',
+            'https://one.example',
+            'https://two.example'
+          ],
+          { from: 'user' }
+        )
+        const doc = await readJson<{
+          service: { type: string[]; serviceEndpoint: string[] }[]
+        }>(docPath)
+        assert.deepEqual(doc.service[0].type, ['A', 'B'])
+        assert.deepEqual(doc.service[0].serviceEndpoint, [
+          'https://one.example',
+          'https://two.example'
+        ])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('add-service rejects a duplicate id', async () => {
+      const { didsDir, did } = await createSavedWeb()
+      try {
+        const args = [
+          'add-service',
+          did,
+          '--id',
+          'dwn',
+          '--type',
+          'LinkedDomains',
+          '--endpoint',
+          'https://example.com'
+        ]
+        await makeDidCommand().parseAsync(args, { from: 'user' })
+        logs.length = 0
+        errors.length = 0
+        await makeDidCommand().parseAsync(args, { from: 'user' })
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('already exists'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('add-service rejects both --endpoint and --endpoint-json', async () => {
+      const { didsDir, did } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://example.com',
+            '--endpoint-json',
+            '{}'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('exactly one'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('add-service rejects neither --endpoint nor --endpoint-json', async () => {
+      const { didsDir, did } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          ['add-service', did, '--id', 'dwn', '--type', 'LinkedDomains'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('exactly one'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:web remove-service drops the entry (and the empty service array)', async () => {
+      const { didsDir, did, docPath } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://example.com'
+          ],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'dwn'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const doc = await readJson<Record<string, unknown>>(docPath)
+        // The last service was removed, so the property is dropped entirely.
+        assert.equal(doc.service, undefined)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('remove-service rejects a missing id', async () => {
+      const { didsDir, did } = await createSavedWeb()
+      try {
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'nope'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('No service with id'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects an unsupported method (did:key)', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', 'key', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+        errors.length = 0
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://example.com'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('only supported for'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:webvh add-service appends a log entry, leaving keys unchanged (no pre-rotation)', async () => {
+      const { didsDir, did, docPath, updateKeysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        const beforeKeys =
+          await readJson<Record<string, unknown>>(updateKeysPath)
+        const beforeMeta = await resolveStoredWebvhMeta(didsDir, did)
+
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://dwn.example',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+
+        const doc = await readJson<{ service: { id: string }[] }>(docPath)
+        assert.ok(doc.service.some(service => service.id === `${did}#dwn`))
+
+        // An ordinary (non-pre-rotation) service update carries the update
+        // keys forward and leaves the sidecar untouched.
+        const afterKeys =
+          await readJson<Record<string, unknown>>(updateKeysPath)
+        assert.deepEqual(afterKeys, beforeKeys)
+
+        const afterMeta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(afterMeta.versionId.split('-')[0], '2')
+        assert.deepEqual(afterMeta.updateKeys, beforeMeta.updateKeys)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:webvh remove-service appends a log entry removing the service', async () => {
+      const { didsDir, did, docPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://dwn.example',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        logs.length = 0
+        errors.length = 0
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'dwn', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const doc = await readJson<{ service?: { id: string }[] }>(docPath)
+        assert.ok(!doc.service?.some(service => service.id === `${did}#dwn`))
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '3')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:webvh add-service rejects a default relative-id service (#files)', async () => {
+      const { didsDir, did } = await createSavedWebvh(['--no-prerotation'])
+      try {
+        // The resolved doc carries the default `#files` service (a relative
+        // id); adding `files` must be caught as a duplicate even though the new
+        // id is normalized to an absolute DID URL.
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'files',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://example.com',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('already exists'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:webvh remove-service removes a default relative-id service (#whois)', async () => {
+      const { didsDir, did, docPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'whois', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const doc = await readJson<{ service?: { id: string }[] }>(docPath)
+        assert.ok(!doc.service?.some(service => service.id === '#whois'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('did:webvh add-service advances the ratchet under pre-rotation', async () => {
+      const { didsDir, did, docPath, updateKeysPath } = await createSavedWebvh()
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'dwn',
+            '--type',
+            'LinkedDomains',
+            '--endpoint',
+            'https://dwn.example',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+
+        const after = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        // The staged key was revealed (now active) and a fresh one staged.
+        assert.equal(
+          after.active.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+        assert.notEqual(
+          after.staged.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+
+        const doc = await readJson<{ service: { id: string }[] }>(docPath)
+        assert.ok(doc.service.some(service => service.id === `${did}#dwn`))
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.prerotation, true)
+        assert.deepEqual(meta.updateKeys, [after.active.publicKeyMultibase])
+        assert.ok(errors.join('\n').includes('Pre-rotation'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+  })
 })

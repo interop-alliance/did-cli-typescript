@@ -89,6 +89,8 @@ spelled out under "Command Tests" in [CONTRIBUTING.md](CONTRIBUTING.md).
 ```
 di did create [method]          create a DID (key | web | webvh; default key)
 di did add-key <did>            add a verification method to a stored DID
+di did add-service <did>        add a service entry to a stored did:web/webvh
+di did remove-service <did>     remove a service entry from a stored did:web/webvh
 di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
 di did get|resolve <did>        resolve a DID (or DID URL) via the document loader
 di did show|view|cat <did>      show a stored DID document
