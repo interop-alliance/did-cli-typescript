@@ -24,8 +24,8 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2
       '@interop/did-method-webvh':
-        specifier: ^3.3.0
-        version: 3.3.0
+        specifier: ^3.4.0
+        version: 3.4.0
       '@interop/did-web-resolver':
         specifier: ^6.2.2
         version: 6.2.2
@@ -464,8 +464,8 @@ packages:
     resolution: {integrity: sha512-JE0KPMCWhCSLM5l07BD2MvYfyyY56kjJUtanObCJBurwxqKykpHh3YjWs9QD9DkxqkaG6qrKo6JYPK5DXzImlw==}
     engines: {node: '>=24.0'}
 
-  '@interop/did-method-webvh@3.3.0':
-    resolution: {integrity: sha512-HpZ+NJRsKAFjqCv9soNqj4BPvJRuv3bBAT4OuVvf80m58pAcc7jTRKy6kYK/8KYu4saYgwW+ptRXZHCKV8IJZg==}
+  '@interop/did-method-webvh@3.4.0':
+    resolution: {integrity: sha512-n1+6VvG0nIMhgMf6LH/jzbGf3Rj60RLHHi4heIDYBuBGfta+BI2grP3bfy/kbbni5JbSS+qB2z9o4JamIQxK7Q==}
     engines: {node: '>=22'}
 
   '@interop/did-web-resolver@6.2.2':
@@ -1493,8 +1493,8 @@ packages:
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
 
-  node-releases@2.0.48:
-    resolution: {integrity: sha512-1uz8041X6LoI6ZSdZacM9lVY28vuzDlSKitnpbSNK0RfKoIJkX29NBPVEFXhnuSuEOA9Ww0xnPJ+ILWbGAv8DA==}
+  node-releases@2.0.49:
+    resolution: {integrity: sha512-f06bl1D+8ZDkn2oOQQKAh5/otFWqVnM1Q5oerA8Pex7UfT66Tx4IPHIqVVFKqFT3FUtaDstdgkM7yT7JWhqxfw==}
     engines: {node: '>=18'}
 
   nullthrows@1.1.1:
@@ -2181,7 +2181,7 @@ snapshots:
     transitivePeerDependencies:
       - react-native-get-random-values
 
-  '@interop/did-method-webvh@3.3.0':
+  '@interop/did-method-webvh@3.4.0':
     dependencies:
       '@noble/hashes': 2.2.0
       json-canonicalize: 2.0.0
@@ -2748,7 +2748,7 @@ snapshots:
       baseline-browser-mapping: 2.10.38
       caniuse-lite: 1.0.30001799
       electron-to-chromium: 1.5.378
-      node-releases: 2.0.48
+      node-releases: 2.0.49
       update-browserslist-db: 1.2.3(browserslist@4.28.4)
 
   bser@2.1.1:
@@ -3417,7 +3417,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-releases@2.0.48: {}
+  node-releases@2.0.49: {}
 
   nullthrows@1.1.1: {}
 
