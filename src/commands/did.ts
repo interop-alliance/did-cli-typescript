@@ -11,9 +11,7 @@ import {
   createDID,
   resolveDIDFromLog,
   updateDID,
-  type DIDDoc,
-  type DIDLog,
-  type VerificationMethod
+  type DIDLog
 } from '@interop/did-method-webvh'
 import {
   createDefaultDidResolver,
@@ -117,51 +115,6 @@ export function parseDidLog(logText: string): DIDLog {
     .split('\n')
     .filter(line => line.trim().length > 0)
     .map(line => JSON.parse(line)) as DIDLog
-}
-
-/**
- * The five DID-Core verification relationships, in document order.
- */
-const VERIFICATION_RELATIONSHIPS = [
-  'authentication',
-  'assertionMethod',
-  'keyAgreement',
-  'capabilityDelegation',
-  'capabilityInvocation'
-] as const
-
-/**
- * Reconstruct the `createDID`/`updateDID` verification-method directives from a
- * resolved DID document's state, so an update that only rotates update keys can
- * re-supply the document unchanged. `updateDID` rebuilds the document from the
- * directives it is given -- omitting them would blank it -- so each method's
- * `purpose` is recovered from which relationship arrays reference its id.
- *
- * @param state {DIDDoc} a resolved did:webvh DID document.
- * @returns {{ verificationMethods: VerificationMethod[], alsoKnownAs?: string[], services?: object[] }}
- */
-function reconstructDocInputs(state: DIDDoc): {
-  verificationMethods: VerificationMethod[]
-  alsoKnownAs?: string[]
-  services?: object[]
-} {
-  const verificationMethods = (state.verificationMethod ?? []).map(vm => {
-    const purpose = VERIFICATION_RELATIONSHIPS.filter(relationship => {
-      const refs = ((state as Record<string, unknown>)[relationship] ??
-        []) as unknown[]
-      return refs.some(
-        ref =>
-          (typeof ref === 'string' ? ref : (ref as { id?: string }).id) ===
-          vm.id
-      )
-    })
-    return { ...vm, purpose }
-  })
-  return {
-    verificationMethods,
-    ...(state.alsoKnownAs ? { alsoKnownAs: state.alsoKnownAs } : {}),
-    ...(state.service ? { services: state.service } : {})
-  }
 }
 
 /**
@@ -1304,11 +1257,10 @@ export function makeDidCommand(): Command {
         // `keyPair.signer()` requires an id to be set before signing.
         signerKeyPair.id = signer.getVerificationMethodId()
 
-        // Re-supply the document verification methods unchanged: updateDID
-        // rebuilds the document from the inputs it is given, so omitting them
-        // would blank it.
-        const docInputs = reconstructDocInputs(log[log.length - 1].state)
-
+        // A sparse updateDID() carries the prior DID document state forward and
+        // only overlays the fields an update actually supplies, so a key-only
+        // rotation omits all document directives to leave the document
+        // unchanged.
         let result: Awaited<ReturnType<typeof updateDID>>
         try {
           result = await updateDID({
@@ -1316,8 +1268,7 @@ export function makeDidCommand(): Command {
             signer,
             verifier: webvhLogVerifier,
             updateKeys: [newActive.publicKeyMultibase],
-            nextKeyHashes,
-            ...docInputs
+            nextKeyHashes
           })
         } catch (err) {
           console.error(`Key rotation failed: ${(err as Error).message}`)

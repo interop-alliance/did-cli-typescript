@@ -563,6 +563,38 @@ describe('di did', () => {
       }
     })
 
+    it('leaves the relationship arrays and services untouched', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        const docPath = join(didsDir, 'webvh', `${did}.json`)
+        const before = await readJson<Record<string, unknown>>(docPath)
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+
+        const after = await readJson<Record<string, unknown>>(docPath)
+        // A key-only rotation supplies no document directives, so the sparse
+        // updateDID() must carry every relationship array and the service set
+        // forward unchanged (and inject no implicit services).
+        for (const relationship of [
+          'authentication',
+          'assertionMethod',
+          'keyAgreement',
+          'capabilityDelegation',
+          'capabilityInvocation'
+        ]) {
+          assert.deepEqual(after[relationship], before[relationship])
+        }
+        assert.deepEqual(after.service, before.service)
+        // The whole document is preserved, byte for byte.
+        assert.deepEqual(after, before)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
     it('--stop-prerotation turns pre-rotation off', async () => {
       const { didsDir, did, updateKeysPath } = await createSavedWebvh()
       try {

@@ -53,6 +53,15 @@
   document; a `did#fragment` URL is dereferenced to its verification method.
   Requires `@interop/security-document-loader` >= 9.4.0.
 
+### Changed
+
+- Update to `@interop/did-method-webvh` >= 3.3.0. `updateDID` now performs a
+  sparse update -- it carries the prior DID document state forward and overlays
+  only the fields an update actually supplies -- so `did webvh rotate-keys` no
+  longer reconstructs and re-supplies the document's verification methods to
+  keep them unchanged; the key-only rotation simply omits all document
+  directives.
+
 ## 0.9.0 - 2026-06-14
 
 ### Added

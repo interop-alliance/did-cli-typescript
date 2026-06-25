@@ -24,8 +24,8 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2
       '@interop/did-method-webvh':
-        specifier: ^3.2.0
-        version: 3.2.0
+        specifier: ^3.3.0
+        version: 3.3.0
       '@interop/did-web-resolver':
         specifier: ^6.2.2
         version: 6.2.2
@@ -464,10 +464,9 @@ packages:
     resolution: {integrity: sha512-JE0KPMCWhCSLM5l07BD2MvYfyyY56kjJUtanObCJBurwxqKykpHh3YjWs9QD9DkxqkaG6qrKo6JYPK5DXzImlw==}
     engines: {node: '>=24.0'}
 
-  '@interop/did-method-webvh@3.2.0':
-    resolution: {integrity: sha512-YJgZ8OZ153kh+KWqKemmbMyzih3Ri5il3llv6WJZeCU+kPtIg6H8JJD58MyZL+yTC6HqiWd0/0QhBekj3HGuNA==}
+  '@interop/did-method-webvh@3.3.0':
+    resolution: {integrity: sha512-HpZ+NJRsKAFjqCv9soNqj4BPvJRuv3bBAT4OuVvf80m58pAcc7jTRKy6kYK/8KYu4saYgwW+ptRXZHCKV8IJZg==}
     engines: {node: '>=22'}
-    hasBin: true
 
   '@interop/did-web-resolver@6.2.2':
     resolution: {integrity: sha512-ViVu+hy2yz4zd+e7WY/tiibT0D+8bvaTiiVWpP+5xyUX8ACQLoVJEtEoPQOBdIp7ZPP7QiXlS7mjvGLH7/BKdw==}
@@ -708,23 +707,11 @@ packages:
   '@stablelib/constant-time@2.0.1':
     resolution: {integrity: sha512-0NWPogffRm+UWBH0+iM5otZmNrVe5OHFIvyoNIVankMAYOQzMwcdVALOVPrB5Ho0dST+Oc3H8/hPh65Z8R/uew==}
 
-  '@stablelib/ed25519@2.1.0':
-    resolution: {integrity: sha512-8GLWoJur9nJiErABKHs5MjceSiYJJ2n8QP9k8Q5x6GWU2y5oAQ6qzPh8kCgQy5aHlUxcmRA1frQ5Gu2bHoIDPw==}
-
-  '@stablelib/hash@2.0.0':
-    resolution: {integrity: sha512-u3WPSqGido8lwJuMcrBgM5K54LrPGhkWAdtsyccf7dGsLixAZUds77zOAbu7bvKPwQlmoByH0txBi5rTmEKuHg==}
-
   '@stablelib/int@2.0.1':
     resolution: {integrity: sha512-Ht63fQp3wz/F8U4AlXEPb7hfJOIILs8Lq55jgtD7KueWtyjhVuzcsGLSTAWtZs3XJDZYdF1WcSKn+kBtbzupww==}
 
   '@stablelib/poly1305@2.0.1':
     resolution: {integrity: sha512-D8xfZcL/5zeVARJ9I2fZOUCnZvsJx8G4JDQvD+ecsnaCildPtqZDwqqjtOc4cfHAdScrMjOzUVsssjXUTBw3YQ==}
-
-  '@stablelib/random@2.0.1':
-    resolution: {integrity: sha512-W6GAtXEEs7r+dSbuBsvoFmlyL3gLxle41tQkjKu17dDWtDdjhVUbtRfRCQcCUeczwkgjQxMPopgwYEvxXtHXGw==}
-
-  '@stablelib/sha512@2.0.1':
-    resolution: {integrity: sha512-DUNe5cbnoH3sSIN+MG04RvTCLXtkbyy/SnQxiNO+GgF/KSXkkUSlF6mUVvCUdZBZ2X3NgogR+tAvaRSn8wxnLw==}
 
   '@stablelib/wipe@2.0.1':
     resolution: {integrity: sha512-1eU2K9EgOcV4qc9jcP6G72xxZxEm5PfeI5H55l08W95b4oRJaqhmlWRc4xZAm6IVSKhVNxMi66V67hCzzuMTAg==}
@@ -1036,8 +1023,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electron-to-chromium@1.5.377:
-    resolution: {integrity: sha512-cH1jZgJHoezfTnKfKwnScpHywTFVnJUNITDPREFdhNjiuD502+QFpG0Qk7G8jhsV/f+CEAFlIrzP1fT+IMb92g==}
+  electron-to-chromium@1.5.378:
+    resolution: {integrity: sha512-VinvOAuuPmdD1guEgGv5f2Qp7/vlfqOrUOMYNnOD4wj3pit8kRsQHzfIf6teyUGWo15Tg5+bOJaRunvyltpVWQ==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -2194,10 +2181,9 @@ snapshots:
     transitivePeerDependencies:
       - react-native-get-random-values
 
-  '@interop/did-method-webvh@3.2.0':
+  '@interop/did-method-webvh@3.3.0':
     dependencies:
       '@noble/hashes': 2.2.0
-      '@stablelib/ed25519': 2.1.0
       json-canonicalize: 2.0.0
 
   '@interop/did-web-resolver@6.2.2':
@@ -2554,30 +2540,11 @@ snapshots:
 
   '@stablelib/constant-time@2.0.1': {}
 
-  '@stablelib/ed25519@2.1.0':
-    dependencies:
-      '@stablelib/random': 2.0.1
-      '@stablelib/sha512': 2.0.1
-      '@stablelib/wipe': 2.0.1
-
-  '@stablelib/hash@2.0.0': {}
-
   '@stablelib/int@2.0.1': {}
 
   '@stablelib/poly1305@2.0.1':
     dependencies:
       '@stablelib/constant-time': 2.0.1
-      '@stablelib/wipe': 2.0.1
-
-  '@stablelib/random@2.0.1':
-    dependencies:
-      '@stablelib/binary': 2.0.1
-      '@stablelib/wipe': 2.0.1
-
-  '@stablelib/sha512@2.0.1':
-    dependencies:
-      '@stablelib/binary': 2.0.1
-      '@stablelib/hash': 2.0.0
       '@stablelib/wipe': 2.0.1
 
   '@stablelib/wipe@2.0.1': {}
@@ -2780,7 +2747,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.10.38
       caniuse-lite: 1.0.30001799
-      electron-to-chromium: 1.5.377
+      electron-to-chromium: 1.5.378
       node-releases: 2.0.48
       update-browserslist-db: 1.2.3(browserslist@4.28.4)
 
@@ -2887,7 +2854,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electron-to-chromium@1.5.377: {}
+  electron-to-chromium@1.5.378: {}
 
   emoji-regex@8.0.0: {}
 
