@@ -196,6 +196,36 @@ async function resolveWebvhForUpdate({
 }
 
 /**
+ * Resolve a locally stored did:webvh DID from its history log (`.jsonl`) -- the
+ * source of truth for the current document and its accumulated parameters.
+ * Unlike `resolveWebvhForUpdate` this does not reject a deactivated DID, since
+ * `show` should still display it; it returns `undefined` when no log is stored
+ * so the caller can fall back to the stored document snapshot.
+ *
+ * @param did {string} the resolved did:webvh DID.
+ * @returns {Promise<{ doc, meta } | undefined>}
+ * @throws {Error} if a log exists but fails to resolve/verify.
+ */
+async function resolveStoredWebvh(did: string): Promise<
+  | {
+      doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
+      meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+    }
+  | undefined
+> {
+  let logText: string
+  try {
+    logText = await loadDidLog(did)
+  } catch {
+    return undefined
+  }
+  const { doc, meta } = await resolveDIDFromLog(parseDidLog(logText), {
+    verifier: webvhLogVerifier
+  })
+  return { doc, meta }
+}
+
+/**
  * Load a did:webvh DID's update-keys sidecar, treating an absent file as
  * `undefined` (no stored secrets) rather than an error.
  *
@@ -1631,7 +1661,8 @@ export function makeDidCommand(): Command {
     .aliases(['view', 'cat'])
     .description(
       'Show a locally stored DID document (no secret key material) by DID ' +
-        'or handle'
+        'or handle. For did:webvh the document is resolved from its history ' +
+        'log -- the source of truth -- rather than the stored snapshot.'
     )
     .option('--meta', 'show the DID metadata instead of the DID document')
     .option('--json', 'with --meta, output the metadata as JSON')
@@ -1645,13 +1676,45 @@ export function makeDidCommand(): Command {
           process.exit(1)
           return
         }
+        const targetDid = did ?? didRef
+
+        // For did:webvh the history log is the source of truth, so resolve the
+        // current document (and its accumulated parameters) from it rather than
+        // trusting the stored snapshot. A DID with no stored log falls through
+        // to the stored document below.
+        let webvhMeta:
+          | Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+          | undefined
+        let resolvedDoc: Record<string, unknown> | undefined
+        if (targetDid.startsWith('did:webvh:')) {
+          let resolved: Awaited<ReturnType<typeof resolveStoredWebvh>>
+          try {
+            resolved = await resolveStoredWebvh(targetDid)
+          } catch (err) {
+            console.error(
+              `Could not resolve the DID log for ${targetDid}: ` +
+                (err as Error).message
+            )
+            process.exit(1)
+            return
+          }
+          if (resolved) {
+            resolvedDoc = resolved.doc as Record<string, unknown>
+            webvhMeta = resolved.meta
+          }
+        }
+
         let didDocument: Record<string, unknown>
-        try {
-          didDocument = await loadDidDocument(did ?? didRef)
-        } catch {
-          console.error(`No locally stored DID found for ${didRef}`)
-          process.exit(1)
-          return
+        if (resolvedDoc) {
+          didDocument = resolvedDoc
+        } else {
+          try {
+            didDocument = await loadDidDocument(targetDid)
+          } catch {
+            console.error(`No locally stored DID found for ${didRef}`)
+            process.exit(1)
+            return
+          }
         }
 
         if (options.meta) {
@@ -1660,6 +1723,10 @@ export function makeDidCommand(): Command {
           const keyCount = Array.isArray(didDocument.verificationMethod)
             ? didDocument.verificationMethod.length
             : 0
+          // Parameters resolved from the did:webvh log (absent for other
+          // methods, and for a webvh DID with no stored log).
+          const witnessCount = webvhMeta?.witness?.witnesses?.length ?? 0
+          const watcherCount = webvhMeta?.watchers?.length ?? 0
           if (options.json) {
             const output = {
               did: docDid,
@@ -1667,7 +1734,17 @@ export function makeDidCommand(): Command {
               ...(meta?.created && { created: meta.created }),
               ...(meta?.handle && { handle: meta.handle }),
               ...(meta?.description && { description: meta.description }),
-              keys: keyCount
+              keys: keyCount,
+              ...(webvhMeta && {
+                versionId: webvhMeta.versionId,
+                updated: webvhMeta.updated,
+                portable: webvhMeta.portable,
+                prerotation: webvhMeta.prerotation,
+                deactivated: webvhMeta.deactivated,
+                updateKeys: webvhMeta.updateKeys.length,
+                witnesses: witnessCount,
+                watchers: watcherCount
+              })
             }
             console.log(JSON.stringify(output, null, 2))
             return
@@ -1680,6 +1757,18 @@ export function makeDidCommand(): Command {
             ['Description', meta?.description ?? ''],
             ['Keys', String(keyCount)]
           ]
+          if (webvhMeta) {
+            rows.push(
+              ['Version', webvhMeta.versionId],
+              ['Updated', webvhMeta.updated],
+              ['Portable', webvhMeta.portable ? 'yes' : 'no'],
+              ['Prerotation', webvhMeta.prerotation ? 'yes' : 'no'],
+              ['Deactivated', webvhMeta.deactivated ? 'yes' : 'no'],
+              ['Update keys', String(webvhMeta.updateKeys.length)],
+              ['Witnesses', String(witnessCount)],
+              ['Watchers', String(watcherCount)]
+            )
+          }
           console.log(
             renderTable({
               columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
@@ -1689,8 +1778,8 @@ export function makeDidCommand(): Command {
           return
         }
 
-        // The stored DID document holds no secret material -- signing keys live in
-        // the separate `<did>.keys.json` file -- so it is safe to print as-is.
+        // The DID document holds no secret material -- signing keys live in the
+        // separate `<did>.keys.json` file -- so it is safe to print as-is.
         console.log(JSON.stringify(didDocument, null, 2))
       }
     )

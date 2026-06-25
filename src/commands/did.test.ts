@@ -1266,6 +1266,88 @@ describe('di did', () => {
         await rm(didsDir, { recursive: true })
       }
     })
+
+    it('resolves a did:webvh document from its stored log', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const created = JSON.parse(logs[0])
+        const did = created.id as string
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['show', did], { from: 'user' })
+
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.id, did)
+        assert.deepEqual(
+          shown.verificationMethod,
+          created.didDocument.verificationMethod
+        )
+        assert.ok(!logs[0].includes('secretKeyMultibase'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--meta --json includes did:webvh log parameters', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did, '--meta', '--json'], {
+          from: 'user'
+        })
+
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.did, did)
+        assert.equal(parsed.method, 'webvh')
+        // Pre-rotation and portability are on by default for did:webvh.
+        assert.equal(parsed.prerotation, true)
+        assert.equal(parsed.portable, true)
+        assert.equal(parsed.deactivated, false)
+        assert.equal(parsed.updateKeys, 1)
+        assert.match(parsed.versionId, /^1-/)
+        assert.match(parsed.updated, /^\d{4}-\d{2}-\d{2}T/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--meta table includes did:webvh log parameters', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'webvh', '--url', 'https://example.com', '--save'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did, '--meta'], {
+          from: 'user'
+        })
+
+        assert.match(logs[0], /Method\s+webvh/)
+        assert.match(logs[0], /Prerotation\s+yes/)
+        assert.match(logs[0], /Portable\s+yes/)
+        assert.match(logs[0], /Deactivated\s+no/)
+        assert.match(logs[0], /Version\s+1-/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
   })
 
   describe('meta', () => {
