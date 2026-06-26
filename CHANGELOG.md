@@ -25,6 +25,16 @@
   replacing the near-identical clones previously copy-pasted across the three
   files. `did`'s metadata edit and save-flag guard reuse the same helpers. No
   behavior change.
+- The `did` command file was split, mirroring `was/`: `src/commands/did.ts` now
+  holds only the `makeDidCommand()` wiring and delegates to `run*` functions in
+  `src/commands/did/` -- `create` (create / add-key), `service`
+  (add / remove-service), `manage` (get / show / list / meta / remove), and
+  `webvh-update` (the did:webvh log / update-key plumbing plus rotate-keys). The
+  in-`create` duplication was folded into shared `deriveSeed`,
+  `rejectSeedForNonDeterministic`, `resolveEcdsaCurveOrReport`, and
+  `printDidOutput` helpers (and a `DEFAULT_VERIFICATION_PURPOSES` constant), and
+  the `did.split(':')[1]` method-index idiom became `methodOf` in `storage.ts`.
+  No behavior change.
 - All commands now share a single JSON-LD document loader (`src/documentLoader.ts`)
   for DID resolution, DID-URL dereferencing, and context loading -- replacing the
   per-module loaders previously built in `vc/issue`, `vc/verify` (none was passed

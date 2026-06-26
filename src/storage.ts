@@ -243,6 +243,18 @@ function getDidsDir(): string {
 }
 
 /**
+ * Extract the method name from a DID -- the segment between the first two
+ * colons (`did:web:example.com` -> `web`). Used to pick the per-method storage
+ * subdirectory and to label DIDs in listings.
+ *
+ * @param did {string}
+ * @returns {string}
+ */
+export function methodOf(did: string): string {
+  return did.split(':')[1]
+}
+
+/**
  * List the DIDs saved in local storage, across all method subdirectories.
  *
  * Each saved DID is stored as `<did>.json` (the DID document) alongside a
@@ -295,7 +307,7 @@ export async function listDids(): Promise<string[]> {
  * @returns {Promise<T>}
  */
 export async function loadDidDocument<T = unknown>(did: string): Promise<T> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.json`)
   return JSON.parse(await readFile(filePath, 'utf8')) as T
 }
@@ -310,7 +322,7 @@ export async function loadDidDocument<T = unknown>(did: string): Promise<T> {
  * @returns {Promise<T>}
  */
 export async function loadDidKeys<T = unknown>(did: string): Promise<T> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.keys.json`)
   return JSON.parse(await readFile(filePath, 'utf8')) as T
 }
@@ -327,7 +339,7 @@ export async function loadDidMeta({
 }: {
   did: string
 }): Promise<ItemMetadata | undefined> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.meta.json`)
   try {
     return JSON.parse(await readFile(filePath, 'utf8')) as ItemMetadata
@@ -354,7 +366,7 @@ export async function saveDidMeta({
   did: string
   meta: ItemMetadata
 }): Promise<string> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   return saveToDids({ method, did, suffix: 'meta', data: meta })
 }
 
@@ -372,7 +384,7 @@ export async function removeDidFiles({
 }: {
   did: string
 }): Promise<string[]> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const dir = join(getDidsDir(), method)
   const removed: string[] = []
   const docPath = join(dir, `${did}.json`)
@@ -413,7 +425,7 @@ export async function saveDidLog({
   did: string
   log: object[]
 }): Promise<string> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const dir = join(getDidsDir(), method)
   await mkdir(dir, { recursive: true })
   const filePath = join(dir, `${did}.jsonl`)
@@ -432,7 +444,7 @@ export async function saveDidLog({
  * @returns {Promise<string>}
  */
 export async function loadDidLog(did: string): Promise<string> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.jsonl`)
   return readFile(filePath, 'utf8')
 }
@@ -479,7 +491,7 @@ export async function saveDidUpdateKeys({
   did: string
   updateKeys: WebvhUpdateKeys
 }): Promise<string> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   return saveToDids({ method, did, suffix: 'update-keys', data: updateKeys })
 }
 
@@ -491,7 +503,7 @@ export async function saveDidUpdateKeys({
  * @returns {Promise<WebvhUpdateKeys>}
  */
 export async function loadDidUpdateKeys(did: string): Promise<WebvhUpdateKeys> {
-  const method = did.split(':')[1]
+  const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.update-keys.json`)
   return JSON.parse(await readFile(filePath, 'utf8')) as WebvhUpdateKeys
 }
