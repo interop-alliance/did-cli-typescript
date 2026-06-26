@@ -5,7 +5,14 @@ import type {
   CheckResult,
   CredentialVerificationResult
 } from '@interop/verifier-core'
-import { findParseFailure, toSummary } from './verify.js'
+import {
+  findParseFailure,
+  toSummary,
+  unresolvedMethodDetail
+} from './verify.js'
+
+const VERIFICATION_METHOD_UNRESOLVED =
+  'https://www.w3.org/TR/vc-data-model#VERIFICATION_METHOD_UNRESOLVED'
 
 /**
  * Builds a minimal CredentialVerificationResult from a list of check results,
@@ -171,5 +178,31 @@ describe('findParseFailure', () => {
       results: [successCheck('proof.signature')]
     })
     assert.equal(findParseFailure(result), undefined)
+  })
+})
+
+describe('unresolvedMethodDetail', () => {
+  it('returns the problem detail when the proof DID method is unresolved', () => {
+    const result = makeResult({
+      verified: false,
+      results: [failureCheck('proof.signature', VERIFICATION_METHOD_UNRESOLVED)]
+    })
+    assert.equal(unresolvedMethodDetail(result), 'detail')
+  })
+
+  it('returns undefined for a genuine invalid-signature failure', () => {
+    const result = makeResult({
+      verified: false,
+      results: [failureCheck('proof.signature', ProblemTypes.INVALID_SIGNATURE)]
+    })
+    assert.equal(unresolvedMethodDetail(result), undefined)
+  })
+
+  it('returns undefined when verification succeeded', () => {
+    const result = makeResult({
+      verified: true,
+      results: [successCheck('proof.signature')]
+    })
+    assert.equal(unresolvedMethodDetail(result), undefined)
   })
 })

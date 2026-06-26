@@ -18,6 +18,7 @@ import type {
 } from '@interop/verifier-core'
 import { expirationSuite } from './suites/expirationSuite.js'
 import { issuerDetailsSuite } from './suites/issuerDetailsSuite.js'
+import { documentLoader } from '../documentLoader.js'
 
 /**
  * Dot-separated check ids emitted by the verifier-core pipeline (and the two
@@ -67,6 +68,10 @@ export async function verifyCredentialFully({
     credential: credential as never,
     registries,
     additionalSuites: [expirationSuite, issuerDetailsSuite],
+    // The shared loader resolves did:webvh (and did:web / did:key) verification
+    // methods; verifier-core's default loader knows only did:key + did:web, so
+    // without this a did:webvh issuer's signature can never be checked.
+    documentLoader: documentLoader as never,
     // verbose so results[] carries EVERY check (incl. successes and the
     // issuer-details payload), not just failures folded into summary[].
     verbose: true
@@ -87,6 +92,41 @@ export function findParseFailure(
     check =>
       check.check === CHECK_ID.parsing && check.outcome.status === 'failure'
   )
+}
+
+/**
+ * verifier-core problem type emitted when a proof's verification method uses a
+ * DID method the document loader has no resolver/driver for. The signature was
+ * never actually checked, so this is a loader misconfiguration, not a bad
+ * signature.
+ */
+const VERIFICATION_METHOD_UNRESOLVED =
+  'https://www.w3.org/TR/vc-data-model#VERIFICATION_METHOD_UNRESOLVED'
+
+/**
+ * Returns the explanatory `detail` of an unresolved-verification-method problem
+ * when verification failed because the proof's DID method could not be resolved,
+ * or undefined otherwise. Drives a friendly CLI hint distinguishing this
+ * misconfiguration from a genuine invalid signature.
+ *
+ * @param result {CredentialVerificationResult}
+ * @returns {string | undefined}
+ */
+export function unresolvedMethodDetail(
+  result: CredentialVerificationResult
+): string | undefined {
+  for (const check of result.results) {
+    if (check.outcome.status !== 'failure') {
+      continue
+    }
+    const problem = check.outcome.problems.find(
+      candidate => candidate.type === VERIFICATION_METHOD_UNRESOLVED
+    )
+    if (problem) {
+      return problem.detail
+    }
+  }
+  return undefined
 }
 
 /**

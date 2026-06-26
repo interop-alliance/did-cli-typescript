@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { resolveDIDFromLog } from '@interop/did-method-webvh'
 import { makeDidCommand, parseDidLog } from './did.js'
 import { makeKeyCommand } from './key.js'
-import { webvhLogVerifier } from '../keys/webvh-driver.js'
+import { webvhLogVerifier } from '../documentLoader.js'
 
 /**
  * Resolve a locally-stored did:webvh history log to its accumulated metadata,
