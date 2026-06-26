@@ -51,6 +51,7 @@ import {
   generateStagedKey,
   loadUpdateKey
 } from '../keys/webvh-update.js'
+import { runAndExit } from './was/shared.js'
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -778,6 +779,1141 @@ async function dispatchServiceUpdate({
   return 1
 }
 
+/**
+ * Create a new DID of the given method (key, web, or webvh), optionally saving
+ * its document, keys, and metadata to local storage, and print it to stdout.
+ *
+ * @param options {object}
+ * @param [options.method] {string}   DID method: key (default), web, or webvh.
+ * @param options.type {string}   Key type (ed25519 or ecdsa).
+ * @param options.curve {string}   ECDSA curve, for --type ecdsa.
+ * @param [options.url] {string}   HTTPS url (required for did:web/did:webvh).
+ * @param [options.prerotation] {boolean}   Arm did:webvh key pre-rotation.
+ * @param [options.portable] {boolean}   Create a portable did:webvh.
+ * @param [options.witness] {string[]}   did:webvh witness did:key DIDs.
+ * @param [options.witnessThreshold] {string}   Required witness approvals.
+ * @param [options.watcher] {string[]}   did:webvh watcher URLs.
+ * @param [options.withSeed] {boolean}   Include/derive the secret key seed.
+ * @param [options.save] {boolean}   Save the DID to local storage.
+ * @param [options.handle] {string}   Short tag stored in the metadata sidecar.
+ * @param [options.description] {string}   Longer description for the sidecar.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runCreate(options: {
+  method?: string
+  type: string
+  curve: string
+  url?: string
+  prerotation?: boolean
+  portable?: boolean
+  witness?: string[]
+  witnessThreshold?: string
+  watcher?: string[]
+  withSeed?: boolean
+  save?: boolean
+  handle?: string
+  description?: string
+}): Promise<number> {
+  const method = options.method ?? 'key'
+  if (
+    (options.handle !== undefined || options.description !== undefined) &&
+    !options.save
+  ) {
+    console.error('--handle and --description require --save')
+    return 1
+  }
+  switch (method) {
+    case 'key': {
+      switch (options.type) {
+        case 'ed25519': {
+          const envSeed = process.env.SECRET_KEY_SEED
+          const secretKeySeed = options.withSeed
+            ? (envSeed ?? (await generateSecretKeySeed()))
+            : envSeed
+          const seedBytes = secretKeySeed
+            ? decodeSecretKeySeed({ secretKeySeed })
+            : undefined
+          const keyPair = await Ed25519VerificationKey.generate({
+            seed: seedBytes
+          })
+
+          const didDriver = driver()
+          didDriver.use({ keyPairClass: Ed25519VerificationKey })
+          const { didDocument } = await didDriver.fromKeyPair({
+            verificationKeyPair: keyPair
+          })
+
+          if (options.save) {
+            const exported = await keyPair.export({
+              publicKey: true,
+              secretKey: true
+            })
+            await saveDidArtifacts({
+              method: 'key',
+              didDocument,
+              exportedKeys: exported,
+              fingerprints: [
+                (exported as { publicKeyMultibase?: string }).publicKeyMultibase
+              ],
+              handle: options.handle,
+              description: options.description
+            })
+          }
+
+          const output: Record<string, unknown> = { id: didDocument.id }
+          if (options.withSeed) {
+            output.secretKeySeed = secretKeySeed
+          }
+          output.didDocument = didDocument
+          console.log(JSON.stringify(output, null, 2))
+          return 0
+        }
+        case 'ecdsa': {
+          if (options.withSeed) {
+            console.error(
+              '--with-seed is not supported for ecdsa keys; ECDSA key ' +
+                'generation is non-deterministic and cannot be derived ' +
+                'from a seed.'
+            )
+            return 1
+          }
+          const curve = normalizeEcdsaCurve({ curve: options.curve })
+          if (!curve) {
+            console.error(
+              `Unknown ecdsa curve: ${options.curve}. ` +
+                `Supported: ${SUPPORTED_ECDSA_CURVES}`
+            )
+            return 1
+          }
+          warnIfNotVcIssuanceCapable({ curve })
+          const keyPair = await EcdsaMultikey.generate({ curve })
+
+          const didDriver = driver()
+          const { didDocument } = await didDriver.fromKeyPair({
+            verificationKeyPair: keyPair
+          })
+
+          if (options.save) {
+            const exported = await keyPair.export({
+              publicKey: true,
+              secretKey: true
+            })
+            await saveDidArtifacts({
+              method: 'key',
+              didDocument,
+              exportedKeys: exported,
+              fingerprints: [
+                (exported as { publicKeyMultibase?: string }).publicKeyMultibase
+              ],
+              handle: options.handle,
+              description: options.description
+            })
+          }
+
+          const output: Record<string, unknown> = { id: didDocument.id }
+          output.didDocument = didDocument
+          console.log(JSON.stringify(output, null, 2))
+          return 0
+        }
+        default:
+          console.error(
+            `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
+          )
+          return 1
+      }
+    }
+    case 'web': {
+      switch (options.type) {
+        case 'ed25519': {
+          if (!options.url) {
+            console.error(
+              'did:web requires --url (e.g. --url https://example.com)'
+            )
+            return 1
+          }
+          const envSeed = process.env.SECRET_KEY_SEED
+          const secretKeySeed = options.withSeed
+            ? (envSeed ?? (await generateSecretKeySeed()))
+            : envSeed
+          const seedBytes = secretKeySeed
+            ? decodeSecretKeySeed({ secretKeySeed })
+            : undefined
+
+          const didWebDriver = didWeb.driver()
+          didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
+          const { didDocument, keyPairs } = await didWebDriver.generate({
+            url: options.url,
+            seed: seedBytes
+          })
+
+          if (options.save) {
+            const exported: Record<string, unknown> = {}
+            const fingerprints: (string | undefined)[] = []
+            for (const [methodId, keyPair] of keyPairs) {
+              const exportedKey = (await keyPair.export({
+                publicKey: true,
+                secretKey: true
+              })) as { publicKeyMultibase?: string }
+              exported[methodId] = exportedKey
+              fingerprints.push(exportedKey.publicKeyMultibase)
+            }
+            await saveDidArtifacts({
+              method: 'web',
+              didDocument,
+              exportedKeys: exported,
+              fingerprints,
+              handle: options.handle,
+              description: options.description
+            })
+          }
+
+          const output: Record<string, unknown> = { id: didDocument.id }
+          if (options.withSeed) {
+            output.secretKeySeed = secretKeySeed
+          }
+          output.didDocument = didDocument
+          console.log(JSON.stringify(output, null, 2))
+          return 0
+        }
+        case 'ecdsa': {
+          if (!options.url) {
+            console.error(
+              'did:web requires --url (e.g. --url https://example.com)'
+            )
+            return 1
+          }
+          if (options.withSeed) {
+            console.error(
+              '--with-seed is not supported for ecdsa keys; ECDSA key ' +
+                'generation is non-deterministic and cannot be derived ' +
+                'from a seed.'
+            )
+            return 1
+          }
+          const curve = normalizeEcdsaCurve({ curve: options.curve })
+          if (!curve) {
+            console.error(
+              `Unknown ecdsa curve: ${options.curve}. ` +
+                `Supported: ${SUPPORTED_ECDSA_CURVES}`
+            )
+            return 1
+          }
+          warnIfNotVcIssuanceCapable({ curve })
+          const keyPair = await EcdsaMultikey.generate({ curve })
+
+          const didWebDriver = didWeb.driver()
+          const { didDocument, keyPairs } = await didWebDriver.generate({
+            url: options.url,
+            verificationKeyPair: keyPair
+          })
+
+          if (options.save) {
+            const exported: Record<string, unknown> = {}
+            const fingerprints: (string | undefined)[] = []
+            for (const [methodId, savedKey] of keyPairs) {
+              const exportedKey = (await savedKey.export({
+                publicKey: true,
+                secretKey: true
+              })) as { publicKeyMultibase?: string }
+              exported[methodId] = exportedKey
+              fingerprints.push(exportedKey.publicKeyMultibase)
+            }
+            await saveDidArtifacts({
+              method: 'web',
+              didDocument,
+              exportedKeys: exported,
+              fingerprints,
+              handle: options.handle,
+              description: options.description
+            })
+          }
+
+          const output: Record<string, unknown> = { id: didDocument.id }
+          output.didDocument = didDocument
+          console.log(JSON.stringify(output, null, 2))
+          return 0
+        }
+        default:
+          console.error(
+            `Unknown key type: ${options.type}. ` + `Supported: ed25519, ecdsa`
+          )
+          return 1
+      }
+    }
+    case 'webvh': {
+      if (!options.url) {
+        console.error(
+          'did:webvh requires --url (e.g. --url https://example.com)'
+        )
+        return 1
+      }
+      // The webvh library hardcodes the `eddsa-jcs-2022` cryptosuite, so
+      // only Ed25519 update keys are supported for now.
+      if (options.type !== 'ed25519') {
+        console.error(
+          `did:webvh only supports --type ed25519 (got ${options.type}); ` +
+            'the eddsa-jcs-2022 cryptosuite requires an Ed25519 key.'
+        )
+        return 1
+      }
+      // Pre-rotation is the default; --no-prerotation opts out. With no
+      // flag, commander leaves `prerotation` undefined, which is on.
+      const prerotation = options.prerotation !== false
+      // Portability is the default; --no-portable opts out (same shape).
+      const portable = options.portable !== false
+
+      // Witness declarations (declaration only -- generating the witness
+      // proofs / did-witness.json sidecar is out of scope for now).
+      const witnessDids = options.witness ?? []
+      if (options.witnessThreshold !== undefined && witnessDids.length === 0) {
+        console.error('--witness-threshold requires at least one --witness')
+        return 1
+      }
+      for (const witnessDid of witnessDids) {
+        if (!witnessDid.startsWith('did:key:')) {
+          console.error(
+            `Invalid witness "${witnessDid}": witnesses must be ` +
+              'did:key DIDs'
+          )
+          return 1
+        }
+      }
+      let witness:
+        | { threshold: number; witnesses: { id: string }[] }
+        | undefined
+      if (witnessDids.length > 0) {
+        let threshold = witnessDids.length
+        if (options.witnessThreshold !== undefined) {
+          threshold = Number.parseInt(options.witnessThreshold, 10)
+          if (
+            !Number.isInteger(threshold) ||
+            threshold < 1 ||
+            threshold > witnessDids.length
+          ) {
+            console.error(
+              '--witness-threshold must be an integer between 1 and the ' +
+                `number of witnesses (${witnessDids.length})`
+            )
+            return 1
+          }
+        }
+        witness = {
+          threshold,
+          witnesses: witnessDids.map(id => ({ id }))
+        }
+      }
+
+      // Watcher URLs: https:// (or http://localhost for local testing).
+      const watchers = options.watcher ?? []
+      for (const watcher of watchers) {
+        let watcherUrl: URL
+        try {
+          watcherUrl = new URL(watcher)
+        } catch {
+          console.error(`Invalid watcher URL: ${watcher}`)
+          return 1
+        }
+        const isLocalhost =
+          watcherUrl.protocol === 'http:' &&
+          (watcherUrl.hostname === 'localhost' ||
+            watcherUrl.hostname === '127.0.0.1')
+        if (watcherUrl.protocol !== 'https:' && !isLocalhost) {
+          console.error(
+            `Invalid watcher URL "${watcher}": must be https:// ` +
+              '(or http://localhost)'
+          )
+          return 1
+        }
+      }
+
+      const envSeed = process.env.SECRET_KEY_SEED
+      const secretKeySeed = options.withSeed
+        ? (envSeed ?? (await generateSecretKeySeed()))
+        : envSeed
+      const seedBytes = secretKeySeed
+        ? decodeSecretKeySeed({ secretKeySeed })
+        : undefined
+
+      // Update key A: the active authorization key. It is what the DID
+      // identifier (SCID) derives from, so it is the seed-derived one.
+      const updateKey = await Ed25519VerificationKey.generate({
+        seed: seedBytes
+      })
+      const signer = makeWebvhEntrySigner(updateKey)
+
+      // Document verification key V, decoupled from the update keys so
+      // that rotating the update key never disturbs the document.
+      const docKey = await Ed25519VerificationKey.generate()
+
+      // Staged next update key B: when pre-rotation is on, commit its
+      // hash now so the next update must reveal it.
+      const stagedKey = prerotation ? await generateStagedKey() : undefined
+
+      const result = await createDID({
+        address: options.url,
+        signer,
+        verifier: signer,
+        // A portable DID (the default) can later be moved to a different
+        // domain; --no-portable pins it to its origin.
+        portable,
+        updateKeys: [updateKey.publicKeyMultibase],
+        ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
+        ...(witness ? { witness } : {}),
+        ...(watchers.length > 0 ? { watchers } : {}),
+        verificationMethods: [
+          {
+            type: 'Multikey',
+            publicKeyMultibase: docKey.publicKeyMultibase,
+            // Wire the document key into the same relationships as did:web
+            // (everything but keyAgreement, which needs an X25519 key).
+            purpose: [
+              'authentication',
+              'assertionMethod',
+              'capabilityDelegation',
+              'capabilityInvocation'
+            ]
+          }
+        ]
+      })
+
+      if (options.save) {
+        // Persist the document key V keyed by its document verification
+        // method id (so it can be selected for signing), and set its id
+        // to match.
+        const docVmId = (
+          result.doc as {
+            verificationMethod?: { id: string }[]
+          }
+        ).verificationMethod?.[0]?.id
+        if (!docVmId) {
+          console.error(
+            'Created did:webvh document is missing a verification method id'
+          )
+          return 1
+        }
+        docKey.id = docVmId
+        const exportedDoc = (await docKey.export({
+          publicKey: true,
+          secretKey: true
+        })) as { publicKeyMultibase?: string }
+        await saveDidArtifacts({
+          method: 'webvh',
+          didDocument: result.doc as { id: string },
+          exportedKeys: { [docVmId]: exportedDoc },
+          fingerprints: [exportedDoc.publicKeyMultibase],
+          handle: options.handle,
+          description: options.description
+        })
+
+        // Persist the update keys (active A, and staged B when armed) in
+        // a sidecar distinct from the document's keys file.
+        const updateKeysPath = await persistUpdateKeysSidecar({
+          did: result.did,
+          newActive: await exportUpdateKey(updateKey),
+          newStaged: stagedKey
+        })
+        const logPath = await saveDidLog({
+          did: result.did,
+          log: result.log
+        })
+        console.error(`DID history log saved to ${logPath}`)
+        console.error(`Update keys saved to ${updateKeysPath}`)
+      }
+
+      const output: Record<string, unknown> = { id: result.did }
+      if (options.withSeed) {
+        output.secretKeySeed = secretKeySeed
+      }
+      output.didDocument = result.doc
+      console.log(JSON.stringify(output, null, 2))
+      return 0
+    }
+    default:
+      console.error(`Unknown method: ${method}. Supported: key, web, webvh`)
+      return 1
+  }
+}
+
+/**
+ * Add a verification key to an existing (locally stored) did:web document,
+ * re-save the document and keys file, and print the updated document.
+ *
+ * @param options {object}
+ * @param options.did {string}   The did:web DID to add a key to.
+ * @param options.type {string}   Key type: ed25519, ecdsa, or x25519.
+ * @param options.curve {string}   ECDSA curve, for --type ecdsa.
+ * @param [options.purpose] {string[]}   Verification relationship(s) to wire
+ *   the key into.
+ * @param [options.withSeed] {boolean}   Include/derive the secret key seed
+ *   (ed25519 only).
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runAddKey(options: {
+  did: string
+  type: string
+  curve: string
+  purpose?: string[]
+  withSeed?: boolean
+}): Promise<number> {
+  const { did } = options
+  if (!did.startsWith('did:web:')) {
+    console.error('add-key is only supported for did:web DIDs')
+    return 1
+  }
+  if (
+    options.type !== 'ed25519' &&
+    options.type !== 'ecdsa' &&
+    options.type !== 'x25519'
+  ) {
+    console.error(
+      `Unknown key type: ${options.type}. ` +
+        'Supported: ed25519, ecdsa, x25519'
+    )
+    return 1
+  }
+  // x25519 keys are key agreement keys; they can only be wired into the
+  // keyAgreement verification relationship.
+  let purposes = options.purpose
+  if (options.type === 'x25519') {
+    if (purposes && purposes.some(purpose => purpose !== 'keyAgreement')) {
+      console.error(
+        'x25519 keys can only be added to the keyAgreement ' +
+          'verification relationship'
+      )
+      return 1
+    }
+    purposes = ['keyAgreement']
+  }
+
+  let didDocument: Record<string, unknown>
+  let exportedKeys: Record<string, unknown>
+  try {
+    didDocument = await loadDidDocument(did)
+    exportedKeys = await loadDidKeys(did)
+  } catch {
+    console.error(`No locally stored did:web found for ${did}`)
+    return 1
+  }
+
+  // ed25519 keys are derived from a seed; ecdsa and x25519 keys are
+  // generated non-deterministically and have no seed.
+  let secretKeySeed: string | undefined
+  let keyPair: any
+  const didWebDriver = didWeb.driver()
+  if (options.type === 'ed25519') {
+    const envSeed = process.env.SECRET_KEY_SEED
+    secretKeySeed = options.withSeed
+      ? (envSeed ?? (await generateSecretKeySeed()))
+      : envSeed
+    const seedBytes = secretKeySeed
+      ? decodeSecretKeySeed({ secretKeySeed })
+      : undefined
+    keyPair = await Ed25519VerificationKey.generate({ seed: seedBytes })
+    didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
+  } else if (options.type === 'ecdsa') {
+    if (options.withSeed) {
+      console.error(
+        '--with-seed is not supported for ecdsa keys; ECDSA key ' +
+          'generation is non-deterministic and cannot be derived ' +
+          'from a seed.'
+      )
+      return 1
+    }
+    const curve = normalizeEcdsaCurve({ curve: options.curve })
+    if (!curve) {
+      console.error(
+        `Unknown ecdsa curve: ${options.curve}. ` +
+          `Supported: ${SUPPORTED_ECDSA_CURVES}`
+      )
+      return 1
+    }
+    warnIfNotVcIssuanceCapable({ curve })
+    keyPair = await EcdsaMultikey.generate({ curve })
+  } else {
+    if (options.withSeed) {
+      console.error(
+        '--with-seed is not supported for x25519 keys; X25519 key ' +
+          'generation is non-deterministic and cannot be derived ' +
+          'from a seed.'
+      )
+      return 1
+    }
+    keyPair = await X25519KeyAgreementKey2020.generate()
+  }
+
+  const keyPairs = new Map<string, any>()
+  try {
+    await didWebDriver.addVerificationMethod({
+      didDocument,
+      keyPairs,
+      keyPair,
+      purposes
+    })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Merge the new key into the stored keys file (keyed by VM id). X25519
+  // keys export their private half as `privateKeyMultibase`, the other
+  // suites as `secretKeyMultibase`.
+  const addedFingerprints: (string | undefined)[] = []
+  for (const [methodId, addedKey] of keyPairs) {
+    const exportedKey = (await addedKey.export(
+      options.type === 'x25519'
+        ? { publicKey: true, privateKey: true }
+        : { publicKey: true, secretKey: true }
+    )) as { publicKeyMultibase?: string }
+    exportedKeys[methodId] = exportedKey
+    addedFingerprints.push(exportedKey.publicKeyMultibase)
+  }
+  const docPath = await saveToDids({
+    method: 'web',
+    did,
+    data: didDocument
+  })
+  await saveToDids({
+    method: 'web',
+    did,
+    suffix: 'keys',
+    data: exportedKeys
+  })
+  // Update the key-to-DID cache of any matching wallet keys; the DID's
+  // own metadata sidecar is left untouched.
+  for (const fingerprint of addedFingerprints) {
+    if (fingerprint) {
+      await recordKeyDidAssociation({
+        publicKeyMultibase: fingerprint,
+        did
+      })
+    }
+  }
+  console.error(`DID saved to ${docPath}`)
+
+  const output: Record<string, unknown> = { id: didDocument.id }
+  if (options.withSeed) {
+    output.secretKeySeed = secretKeySeed
+  }
+  output.didDocument = didDocument
+  console.log(JSON.stringify(output, null, 2))
+  return 0
+}
+
+/**
+ * Resolve a DID to its DID document, or a DID URL to its verification method,
+ * via the security document loader, and print the result.
+ *
+ * @param options {object}
+ * @param options.didOrKeyId {string}   The DID or DID URL to resolve.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runGet(options: { didOrKeyId: string }): Promise<number> {
+  const { didOrKeyId } = options
+  let document: Record<string, unknown>
+  try {
+    ;({ document } = (await documentLoader(didOrKeyId)) as {
+      document: Record<string, unknown>
+    })
+  } catch (err) {
+    console.error(
+      `Could not resolve "${didOrKeyId}": ${(err as Error).message}`
+    )
+    return 1
+  }
+  console.log(JSON.stringify(document, null, 2))
+  return 0
+}
+
+/**
+ * Show a locally stored DID document (no secret key material), or its metadata
+ * with `--meta`, by DID or handle. For did:webvh the document is resolved from
+ * its history log rather than the stored snapshot.
+ *
+ * @param options {object}
+ * @param options.didRef {string}   The DID or metadata handle.
+ * @param [options.meta] {boolean}   Show the metadata instead of the document.
+ * @param [options.json] {boolean}   With --meta, output the metadata as JSON.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runShow(options: {
+  didRef: string
+  meta?: boolean
+  json?: boolean
+}): Promise<number> {
+  const { didRef } = options
+  let did: string | undefined
+  try {
+    did = await resolveDidRef({ ref: didRef })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  const targetDid = did ?? didRef
+
+  // For did:webvh the history log is the source of truth, so resolve the
+  // current document (and its accumulated parameters) from it rather than
+  // trusting the stored snapshot. A DID with no stored log falls through
+  // to the stored document below.
+  let webvhMeta:
+    | Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+    | undefined
+  let resolvedDoc: Record<string, unknown> | undefined
+  if (targetDid.startsWith('did:webvh:')) {
+    let resolved: Awaited<ReturnType<typeof resolveStoredWebvh>>
+    try {
+      resolved = await resolveStoredWebvh(targetDid)
+    } catch (err) {
+      console.error(
+        `Could not resolve the DID log for ${targetDid}: ` +
+          (err as Error).message
+      )
+      return 1
+    }
+    if (resolved) {
+      resolvedDoc = resolved.doc as Record<string, unknown>
+      webvhMeta = resolved.meta
+    }
+  }
+
+  let didDocument: Record<string, unknown>
+  if (resolvedDoc) {
+    didDocument = resolvedDoc
+  } else {
+    try {
+      didDocument = await loadDidDocument(targetDid)
+    } catch {
+      console.error(`No locally stored DID found for ${didRef}`)
+      return 1
+    }
+  }
+
+  if (options.meta) {
+    const docDid = didDocument.id as string
+    const meta = await loadDidMeta({ did: docDid })
+    const keyCount = Array.isArray(didDocument.verificationMethod)
+      ? didDocument.verificationMethod.length
+      : 0
+    // Parameters resolved from the did:webvh log (absent for other
+    // methods, and for a webvh DID with no stored log).
+    const witnessCount = webvhMeta?.witness?.witnesses?.length ?? 0
+    const watcherCount = webvhMeta?.watchers?.length ?? 0
+    if (options.json) {
+      const output = {
+        did: docDid,
+        method: docDid.split(':')[1],
+        ...(meta?.created && { created: meta.created }),
+        ...(meta?.handle && { handle: meta.handle }),
+        ...(meta?.description && { description: meta.description }),
+        keys: keyCount,
+        ...(webvhMeta && {
+          versionId: webvhMeta.versionId,
+          updated: webvhMeta.updated,
+          portable: webvhMeta.portable,
+          prerotation: webvhMeta.prerotation,
+          deactivated: webvhMeta.deactivated,
+          updateKeys: webvhMeta.updateKeys.length,
+          witnesses: witnessCount,
+          watchers: watcherCount
+        })
+      }
+      console.log(JSON.stringify(output, null, 2))
+      return 0
+    }
+    const rows = [
+      ['DID', docDid],
+      ['Method', docDid.split(':')[1]],
+      ['Handle', meta?.handle ?? ''],
+      ['Created', meta?.created ?? ''],
+      ['Description', meta?.description ?? ''],
+      ['Keys', String(keyCount)]
+    ]
+    if (webvhMeta) {
+      rows.push(
+        ['Version', webvhMeta.versionId],
+        ['Updated', webvhMeta.updated],
+        ['Portable', webvhMeta.portable ? 'yes' : 'no'],
+        ['Prerotation', webvhMeta.prerotation ? 'yes' : 'no'],
+        ['Deactivated', webvhMeta.deactivated ? 'yes' : 'no'],
+        ['Update keys', String(webvhMeta.updateKeys.length)],
+        ['Witnesses', String(witnessCount)],
+        ['Watchers', String(watcherCount)]
+      )
+    }
+    console.log(
+      renderTable({
+        columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
+        rows
+      })
+    )
+    return 0
+  }
+
+  // The DID document holds no secret material -- signing keys live in the
+  // separate `<did>.keys.json` file -- so it is safe to print as-is.
+  console.log(JSON.stringify(didDocument, null, 2))
+  return 0
+}
+
+/**
+ * List locally stored DIDs with their metadata: one DID per line with
+ * `--plain`, a JSON array with `--json`, otherwise a column-aligned table.
+ *
+ * @param options {object}
+ * @param [options.json] {boolean}   Output a JSON array of objects.
+ * @param [options.plain] {boolean}   Output one DID per line, sorted.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runList(options: {
+  json?: boolean
+  plain?: boolean
+}): Promise<number> {
+  const dids = await listDids()
+  if (options.plain) {
+    for (const did of dids) {
+      console.log(did)
+    }
+    return 0
+  }
+
+  const entries: ({ did: string; method: string } & ItemMetadata)[] = []
+  for (const did of dids) {
+    const meta = await loadDidMeta({ did })
+    entries.push({ did, method: did.split(':')[1], ...meta })
+  }
+
+  if (options.json) {
+    const output = entries.map(entry => ({
+      did: entry.did,
+      method: entry.method,
+      ...(entry.created && { created: entry.created }),
+      ...(entry.handle && { handle: entry.handle }),
+      ...(entry.description && { description: entry.description })
+    }))
+    console.log(JSON.stringify(output, null, 2))
+    return 0
+  }
+
+  if (entries.length === 0) {
+    return 0
+  }
+  const rows = entries.map(entry => [
+    entry.handle ?? '',
+    entry.method,
+    entry.created?.slice(0, 10) ?? '',
+    entry.did,
+    entry.description ?? ''
+  ])
+  console.log(
+    renderTable({
+      columns: [
+        { header: 'HANDLE', maxWidth: 16 },
+        { header: 'METHOD' },
+        { header: 'CREATED' },
+        { header: 'DID', maxWidth: 44 },
+        { header: 'DESCRIPTION', maxWidth: 40 }
+      ],
+      rows
+    })
+  )
+  return 0
+}
+
+/**
+ * Show or edit the metadata of a locally stored DID (by DID or handle). With no
+ * edits, prints the current metadata; otherwise applies the handle/description
+ * changes and saves the sidecar.
+ *
+ * @param options {object}
+ * @param options.didRef {string}   The DID or metadata handle.
+ * @param [options.handle] {string}   Set the handle (empty string clears it).
+ * @param [options.description] {string}   Set the description (empty clears it).
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runMeta(options: {
+  didRef: string
+  handle?: string
+  description?: string
+}): Promise<number> {
+  const { didRef } = options
+  let did: string | undefined
+  try {
+    did = await resolveDidRef({ ref: didRef })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  if (did) {
+    // Refuse to create metadata for DIDs that are not saved locally.
+    try {
+      await loadDidDocument(did)
+    } catch {
+      did = undefined
+    }
+  }
+  if (!did) {
+    console.error(`No locally stored DID found for ${didRef}`)
+    return 1
+  }
+
+  const existing = await loadDidMeta({ did })
+  const hasEdits =
+    options.handle !== undefined || options.description !== undefined
+  if (!hasEdits) {
+    console.log(JSON.stringify(existing ?? {}, null, 2))
+    return 0
+  }
+
+  const meta: ItemMetadata = { ...(existing ?? {}) }
+  if (options.handle !== undefined) {
+    if (options.handle === '') {
+      delete meta.handle
+    } else {
+      meta.handle = options.handle
+    }
+  }
+  if (options.description !== undefined) {
+    if (options.description === '') {
+      delete meta.description
+    } else {
+      meta.description = options.description
+    }
+  }
+  const filePath = await saveDidMeta({ did, meta })
+  console.error(`Metadata saved to ${filePath}`)
+  console.log(JSON.stringify(meta, null, 2))
+  return 0
+}
+
+/**
+ * Remove a locally stored DID document, its keys file, and its metadata
+ * sidecar (by DID or handle), scrubbing the cached key-to-DID associations.
+ *
+ * @param options {object}
+ * @param options.didRef {string}   The DID or metadata handle.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runRemove(options: { didRef: string }): Promise<number> {
+  const { didRef } = options
+  let did: string | undefined
+  try {
+    did = await resolveDidRef({ ref: didRef })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  let didDocument: {
+    verificationMethod?: { publicKeyMultibase?: string }[]
+  }
+  try {
+    didDocument = await loadDidDocument(did ?? didRef)
+  } catch {
+    console.error(`No locally stored DID found for ${didRef}`)
+    return 1
+  }
+  const docDid = did ?? didRef
+  // Scrub the cached key-to-DID associations of any matching wallet keys
+  // before the DID document (the source of truth) is deleted.
+  for (const method of didDocument.verificationMethod ?? []) {
+    if (method.publicKeyMultibase) {
+      await removeKeyDidAssociation({
+        publicKeyMultibase: method.publicKeyMultibase,
+        did: docDid
+      })
+    }
+  }
+  const removed = await removeDidFiles({ did: docDid })
+  for (const filePath of removed) {
+    console.error(`Removed ${filePath}`)
+  }
+  return 0
+}
+
+/**
+ * Rotate the update (authorization) key of a locally stored did:webvh DID. By
+ * default advances key pre-rotation -- reveals the staged next key and stages a
+ * fresh one -- and never touches the document verification methods.
+ *
+ * @param options {object}
+ * @param options.didRef {string}   The DID or metadata handle.
+ * @param [options.updateKey] {string[]}   Rotate to specific update key(s).
+ * @param [options.enablePrerotation] {boolean}   Turn pre-rotation on.
+ * @param [options.stopPrerotation] {boolean}   Turn pre-rotation off.
+ * @param [options.keepOldKey] {boolean}   Retain the retired update key secret.
+ * @param [options.yes] {boolean}   Skip the confirmation prompt.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runRotateKeys(options: {
+  didRef: string
+  updateKey?: string[]
+  enablePrerotation?: boolean
+  stopPrerotation?: boolean
+  keepOldKey?: boolean
+  yes?: boolean
+}): Promise<number> {
+  const { didRef } = options
+  let resolved: string | undefined
+  try {
+    resolved = await resolveDidRef({ ref: didRef })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  const targetDid = resolved ?? didRef
+  if (!targetDid.startsWith('did:webvh:')) {
+    console.error('rotate-keys is only supported for did:webvh DIDs')
+    return 1
+  }
+  // The history log is the source of truth for a stored did:webvh (the
+  // current document is just its last entry's state), so a key-only
+  // rotation ignores the resolved document.
+  let log: DIDLog
+  let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+  try {
+    ;({ log, meta } = await resolveWebvhForUpdate({
+      targetDid,
+      action: 'rotate keys'
+    }))
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Flag validation against the current pre-rotation state.
+  if (options.enablePrerotation && options.stopPrerotation) {
+    console.error(
+      '--enable-prerotation and --stop-prerotation are mutually exclusive'
+    )
+    return 1
+  }
+  if (meta.prerotation) {
+    if (options.updateKey) {
+      console.error(
+        '--update-key is not allowed while pre-rotation is armed; the ' +
+          'next update keys are fixed by the committed nextKeyHashes'
+      )
+      return 1
+    }
+    if (options.enablePrerotation) {
+      console.error('pre-rotation is already enabled for this DID')
+      return 1
+    }
+  } else if (options.stopPrerotation) {
+    console.error('pre-rotation is already off for this DID')
+    return 1
+  }
+
+  const stored = await loadStoredUpdateKeys(targetDid)
+
+  // Inbound: who signs this entry, and what becomes the active key.
+  let signerKeyPair: Ed25519VerificationKey
+  let newActive: WebvhUpdateKey
+  let retiredActive: WebvhUpdateKey | undefined
+  try {
+    if (meta.prerotation) {
+      // Pre-rotation reveal: the staged key signs its own activation.
+      ;({ signerKeyPair, newActive, retiredActive } = await revealStagedSigner({
+        stored,
+        meta,
+        targetDid,
+        action: 'rotate keys'
+      }))
+    } else {
+      // Ordinary rotation: the current active key signs.
+      let activeRecord: WebvhUpdateKey
+      ;({ signerKeyPair, activeRecord } = await loadActiveSigner({
+        stored,
+        meta,
+        targetDid,
+        action: 'rotate keys'
+      }))
+      if (options.enablePrerotation && !options.updateKey) {
+        // Stage only: arm pre-rotation without changing the active key.
+        newActive = activeRecord
+      } else if (options.updateKey) {
+        // Rotate to externally-held key(s); the secret is not ours to store.
+        newActive = { publicKeyMultibase: options.updateKey[0] }
+        retiredActive = activeRecord
+      } else {
+        newActive = await exportUpdateKey(
+          await Ed25519VerificationKey.generate()
+        )
+        retiredActive = activeRecord
+      }
+    }
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Outbound: keep the ratchet armed (stage a fresh next key) or not.
+  const arm = meta.prerotation
+    ? !options.stopPrerotation
+    : Boolean(options.enablePrerotation)
+  const newStaged = arm ? await generateStagedKey() : undefined
+  const nextKeyHashes = newStaged ? [newStaged.nextKeyHash] : []
+
+  const confirmed = await confirmAction({
+    message:
+      `Rotate the update key of ${targetDid}? This appends a new log ` +
+      'entry and is hard to undo.',
+    yes: options.yes
+  })
+  if (!confirmed) {
+    console.error('Aborted.')
+    return 0
+  }
+
+  const signer = makeWebvhEntrySigner(signerKeyPair)
+
+  // A sparse updateDID() carries the prior DID document state forward and
+  // only overlays the fields an update actually supplies, so a key-only
+  // rotation omits all document directives to leave the document
+  // unchanged.
+  let result: Awaited<ReturnType<typeof updateDID>>
+  try {
+    result = await updateDID({
+      log,
+      signer,
+      verifier: webvhLogVerifier,
+      updateKeys: [newActive.publicKeyMultibase],
+      nextKeyHashes
+    })
+  } catch (err) {
+    console.error(`Key rotation failed: ${(err as Error).message}`)
+    return 1
+  }
+
+  const logPath = await saveDidLog({ did: result.did, log: result.log })
+  const docPath = await saveToDids({
+    method: 'webvh',
+    did: result.did,
+    data: result.doc
+  })
+
+  const updateKeysPath = await persistUpdateKeysSidecar({
+    did: result.did,
+    newActive,
+    newStaged,
+    retiredActive,
+    stored,
+    keepOldKey: options.keepOldKey
+  })
+
+  console.error(`DID document saved to ${docPath}`)
+  console.error(`DID history log saved to ${logPath}`)
+  console.error(`Update keys saved to ${updateKeysPath}`)
+  console.error(
+    nextKeyHashes.length > 0
+      ? 'Pre-rotation is armed: a next update key is staged.'
+      : 'Pre-rotation is off after this rotation.'
+  )
+
+  console.log(
+    JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
+  )
+  return 0
+}
+
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
 
@@ -846,7 +1982,7 @@ export function makeDidCommand(): Command {
       'longer description of the saved DID (requires --save)'
     )
     .action(
-      async (
+      (
         method: string = 'key',
         options: {
           type: string
@@ -862,454 +1998,7 @@ export function makeDidCommand(): Command {
           handle?: string
           description?: string
         }
-      ) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(1)
-          return
-        }
-        switch (method) {
-          case 'key': {
-            switch (options.type) {
-              case 'ed25519': {
-                const envSeed = process.env.SECRET_KEY_SEED
-                const secretKeySeed = options.withSeed
-                  ? (envSeed ?? (await generateSecretKeySeed()))
-                  : envSeed
-                const seedBytes = secretKeySeed
-                  ? decodeSecretKeySeed({ secretKeySeed })
-                  : undefined
-                const keyPair = await Ed25519VerificationKey.generate({
-                  seed: seedBytes
-                })
-
-                const didDriver = driver()
-                didDriver.use({ keyPairClass: Ed25519VerificationKey })
-                const { didDocument } = await didDriver.fromKeyPair({
-                  verificationKeyPair: keyPair
-                })
-
-                if (options.save) {
-                  const exported = await keyPair.export({
-                    publicKey: true,
-                    secretKey: true
-                  })
-                  await saveDidArtifacts({
-                    method: 'key',
-                    didDocument,
-                    exportedKeys: exported,
-                    fingerprints: [
-                      (exported as { publicKeyMultibase?: string })
-                        .publicKeyMultibase
-                    ],
-                    handle: options.handle,
-                    description: options.description
-                  })
-                }
-
-                const output: Record<string, unknown> = { id: didDocument.id }
-                if (options.withSeed) {
-                  output.secretKeySeed = secretKeySeed
-                }
-                output.didDocument = didDocument
-                console.log(JSON.stringify(output, null, 2))
-                break
-              }
-              case 'ecdsa': {
-                if (options.withSeed) {
-                  console.error(
-                    '--with-seed is not supported for ecdsa keys; ECDSA key ' +
-                      'generation is non-deterministic and cannot be derived ' +
-                      'from a seed.'
-                  )
-                  process.exit(1)
-                  return
-                }
-                const curve = normalizeEcdsaCurve({ curve: options.curve })
-                if (!curve) {
-                  console.error(
-                    `Unknown ecdsa curve: ${options.curve}. ` +
-                      `Supported: ${SUPPORTED_ECDSA_CURVES}`
-                  )
-                  process.exit(1)
-                  return
-                }
-                warnIfNotVcIssuanceCapable({ curve })
-                const keyPair = await EcdsaMultikey.generate({ curve })
-
-                const didDriver = driver()
-                const { didDocument } = await didDriver.fromKeyPair({
-                  verificationKeyPair: keyPair
-                })
-
-                if (options.save) {
-                  const exported = await keyPair.export({
-                    publicKey: true,
-                    secretKey: true
-                  })
-                  await saveDidArtifacts({
-                    method: 'key',
-                    didDocument,
-                    exportedKeys: exported,
-                    fingerprints: [
-                      (exported as { publicKeyMultibase?: string })
-                        .publicKeyMultibase
-                    ],
-                    handle: options.handle,
-                    description: options.description
-                  })
-                }
-
-                const output: Record<string, unknown> = { id: didDocument.id }
-                output.didDocument = didDocument
-                console.log(JSON.stringify(output, null, 2))
-                break
-              }
-              default:
-                console.error(
-                  `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
-                )
-                process.exit(1)
-            }
-            break
-          }
-          case 'web': {
-            switch (options.type) {
-              case 'ed25519': {
-                if (!options.url) {
-                  console.error(
-                    'did:web requires --url (e.g. --url https://example.com)'
-                  )
-                  process.exit(1)
-                  return
-                }
-                const envSeed = process.env.SECRET_KEY_SEED
-                const secretKeySeed = options.withSeed
-                  ? (envSeed ?? (await generateSecretKeySeed()))
-                  : envSeed
-                const seedBytes = secretKeySeed
-                  ? decodeSecretKeySeed({ secretKeySeed })
-                  : undefined
-
-                const didWebDriver = didWeb.driver()
-                didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
-                const { didDocument, keyPairs } = await didWebDriver.generate({
-                  url: options.url,
-                  seed: seedBytes
-                })
-
-                if (options.save) {
-                  const exported: Record<string, unknown> = {}
-                  const fingerprints: (string | undefined)[] = []
-                  for (const [methodId, keyPair] of keyPairs) {
-                    const exportedKey = (await keyPair.export({
-                      publicKey: true,
-                      secretKey: true
-                    })) as { publicKeyMultibase?: string }
-                    exported[methodId] = exportedKey
-                    fingerprints.push(exportedKey.publicKeyMultibase)
-                  }
-                  await saveDidArtifacts({
-                    method: 'web',
-                    didDocument,
-                    exportedKeys: exported,
-                    fingerprints,
-                    handle: options.handle,
-                    description: options.description
-                  })
-                }
-
-                const output: Record<string, unknown> = { id: didDocument.id }
-                if (options.withSeed) {
-                  output.secretKeySeed = secretKeySeed
-                }
-                output.didDocument = didDocument
-                console.log(JSON.stringify(output, null, 2))
-                break
-              }
-              case 'ecdsa': {
-                if (!options.url) {
-                  console.error(
-                    'did:web requires --url (e.g. --url https://example.com)'
-                  )
-                  process.exit(1)
-                  return
-                }
-                if (options.withSeed) {
-                  console.error(
-                    '--with-seed is not supported for ecdsa keys; ECDSA key ' +
-                      'generation is non-deterministic and cannot be derived ' +
-                      'from a seed.'
-                  )
-                  process.exit(1)
-                  return
-                }
-                const curve = normalizeEcdsaCurve({ curve: options.curve })
-                if (!curve) {
-                  console.error(
-                    `Unknown ecdsa curve: ${options.curve}. ` +
-                      `Supported: ${SUPPORTED_ECDSA_CURVES}`
-                  )
-                  process.exit(1)
-                  return
-                }
-                warnIfNotVcIssuanceCapable({ curve })
-                const keyPair = await EcdsaMultikey.generate({ curve })
-
-                const didWebDriver = didWeb.driver()
-                const { didDocument, keyPairs } = await didWebDriver.generate({
-                  url: options.url,
-                  verificationKeyPair: keyPair
-                })
-
-                if (options.save) {
-                  const exported: Record<string, unknown> = {}
-                  const fingerprints: (string | undefined)[] = []
-                  for (const [methodId, savedKey] of keyPairs) {
-                    const exportedKey = (await savedKey.export({
-                      publicKey: true,
-                      secretKey: true
-                    })) as { publicKeyMultibase?: string }
-                    exported[methodId] = exportedKey
-                    fingerprints.push(exportedKey.publicKeyMultibase)
-                  }
-                  await saveDidArtifacts({
-                    method: 'web',
-                    didDocument,
-                    exportedKeys: exported,
-                    fingerprints,
-                    handle: options.handle,
-                    description: options.description
-                  })
-                }
-
-                const output: Record<string, unknown> = { id: didDocument.id }
-                output.didDocument = didDocument
-                console.log(JSON.stringify(output, null, 2))
-                break
-              }
-              default:
-                console.error(
-                  `Unknown key type: ${options.type}. ` +
-                    `Supported: ed25519, ecdsa`
-                )
-                process.exit(1)
-            }
-            break
-          }
-          case 'webvh': {
-            if (!options.url) {
-              console.error(
-                'did:webvh requires --url (e.g. --url https://example.com)'
-              )
-              process.exit(1)
-              return
-            }
-            // The webvh library hardcodes the `eddsa-jcs-2022` cryptosuite, so
-            // only Ed25519 update keys are supported for now.
-            if (options.type !== 'ed25519') {
-              console.error(
-                `did:webvh only supports --type ed25519 (got ${options.type}); ` +
-                  'the eddsa-jcs-2022 cryptosuite requires an Ed25519 key.'
-              )
-              process.exit(1)
-              return
-            }
-            // Pre-rotation is the default; --no-prerotation opts out. With no
-            // flag, commander leaves `prerotation` undefined, which is on.
-            const prerotation = options.prerotation !== false
-            // Portability is the default; --no-portable opts out (same shape).
-            const portable = options.portable !== false
-
-            // Witness declarations (declaration only -- generating the witness
-            // proofs / did-witness.json sidecar is out of scope for now).
-            const witnessDids = options.witness ?? []
-            if (
-              options.witnessThreshold !== undefined &&
-              witnessDids.length === 0
-            ) {
-              console.error(
-                '--witness-threshold requires at least one --witness'
-              )
-              process.exit(1)
-              return
-            }
-            for (const witnessDid of witnessDids) {
-              if (!witnessDid.startsWith('did:key:')) {
-                console.error(
-                  `Invalid witness "${witnessDid}": witnesses must be ` +
-                    'did:key DIDs'
-                )
-                process.exit(1)
-                return
-              }
-            }
-            let witness:
-              | { threshold: number; witnesses: { id: string }[] }
-              | undefined
-            if (witnessDids.length > 0) {
-              let threshold = witnessDids.length
-              if (options.witnessThreshold !== undefined) {
-                threshold = Number.parseInt(options.witnessThreshold, 10)
-                if (
-                  !Number.isInteger(threshold) ||
-                  threshold < 1 ||
-                  threshold > witnessDids.length
-                ) {
-                  console.error(
-                    '--witness-threshold must be an integer between 1 and the ' +
-                      `number of witnesses (${witnessDids.length})`
-                  )
-                  process.exit(1)
-                  return
-                }
-              }
-              witness = {
-                threshold,
-                witnesses: witnessDids.map(id => ({ id }))
-              }
-            }
-
-            // Watcher URLs: https:// (or http://localhost for local testing).
-            const watchers = options.watcher ?? []
-            for (const watcher of watchers) {
-              let watcherUrl: URL
-              try {
-                watcherUrl = new URL(watcher)
-              } catch {
-                console.error(`Invalid watcher URL: ${watcher}`)
-                process.exit(1)
-                return
-              }
-              const isLocalhost =
-                watcherUrl.protocol === 'http:' &&
-                (watcherUrl.hostname === 'localhost' ||
-                  watcherUrl.hostname === '127.0.0.1')
-              if (watcherUrl.protocol !== 'https:' && !isLocalhost) {
-                console.error(
-                  `Invalid watcher URL "${watcher}": must be https:// ` +
-                    '(or http://localhost)'
-                )
-                process.exit(1)
-                return
-              }
-            }
-
-            const envSeed = process.env.SECRET_KEY_SEED
-            const secretKeySeed = options.withSeed
-              ? (envSeed ?? (await generateSecretKeySeed()))
-              : envSeed
-            const seedBytes = secretKeySeed
-              ? decodeSecretKeySeed({ secretKeySeed })
-              : undefined
-
-            // Update key A: the active authorization key. It is what the DID
-            // identifier (SCID) derives from, so it is the seed-derived one.
-            const updateKey = await Ed25519VerificationKey.generate({
-              seed: seedBytes
-            })
-            const signer = makeWebvhEntrySigner(updateKey)
-
-            // Document verification key V, decoupled from the update keys so
-            // that rotating the update key never disturbs the document.
-            const docKey = await Ed25519VerificationKey.generate()
-
-            // Staged next update key B: when pre-rotation is on, commit its
-            // hash now so the next update must reveal it.
-            const stagedKey = prerotation
-              ? await generateStagedKey()
-              : undefined
-
-            const result = await createDID({
-              address: options.url,
-              signer,
-              verifier: signer,
-              // A portable DID (the default) can later be moved to a different
-              // domain; --no-portable pins it to its origin.
-              portable,
-              updateKeys: [updateKey.publicKeyMultibase],
-              ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
-              ...(witness ? { witness } : {}),
-              ...(watchers.length > 0 ? { watchers } : {}),
-              verificationMethods: [
-                {
-                  type: 'Multikey',
-                  publicKeyMultibase: docKey.publicKeyMultibase,
-                  // Wire the document key into the same relationships as did:web
-                  // (everything but keyAgreement, which needs an X25519 key).
-                  purpose: [
-                    'authentication',
-                    'assertionMethod',
-                    'capabilityDelegation',
-                    'capabilityInvocation'
-                  ]
-                }
-              ]
-            })
-
-            if (options.save) {
-              // Persist the document key V keyed by its document verification
-              // method id (so it can be selected for signing), and set its id
-              // to match.
-              const docVmId = (
-                result.doc as {
-                  verificationMethod?: { id: string }[]
-                }
-              ).verificationMethod?.[0]?.id
-              if (!docVmId) {
-                console.error(
-                  'Created did:webvh document is missing a verification method id'
-                )
-                process.exit(1)
-                return
-              }
-              docKey.id = docVmId
-              const exportedDoc = (await docKey.export({
-                publicKey: true,
-                secretKey: true
-              })) as { publicKeyMultibase?: string }
-              await saveDidArtifacts({
-                method: 'webvh',
-                didDocument: result.doc as { id: string },
-                exportedKeys: { [docVmId]: exportedDoc },
-                fingerprints: [exportedDoc.publicKeyMultibase],
-                handle: options.handle,
-                description: options.description
-              })
-
-              // Persist the update keys (active A, and staged B when armed) in
-              // a sidecar distinct from the document's keys file.
-              const updateKeysPath = await persistUpdateKeysSidecar({
-                did: result.did,
-                newActive: await exportUpdateKey(updateKey),
-                newStaged: stagedKey
-              })
-              const logPath = await saveDidLog({
-                did: result.did,
-                log: result.log
-              })
-              console.error(`DID history log saved to ${logPath}`)
-              console.error(`Update keys saved to ${updateKeysPath}`)
-            }
-
-            const output: Record<string, unknown> = { id: result.did }
-            if (options.withSeed) {
-              output.secretKeySeed = secretKeySeed
-            }
-            output.didDocument = result.doc
-            console.log(JSON.stringify(output, null, 2))
-            break
-          }
-          default:
-            console.error(
-              `Unknown method: ${method}. Supported: key, web, webvh`
-            )
-            process.exit(1)
-        }
-      }
+      ) => runAndExit(runCreate({ method, ...options }))
     )
 
   did
@@ -1338,7 +2027,7 @@ export function makeDidCommand(): Command {
       'include the new secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
     .action(
-      async (
+      (
         did: string,
         options: {
           type: string
@@ -1346,155 +2035,7 @@ export function makeDidCommand(): Command {
           purpose?: string[]
           withSeed?: boolean
         }
-      ) => {
-        if (!did.startsWith('did:web:')) {
-          console.error('add-key is only supported for did:web DIDs')
-          process.exit(1)
-        }
-        if (
-          options.type !== 'ed25519' &&
-          options.type !== 'ecdsa' &&
-          options.type !== 'x25519'
-        ) {
-          console.error(
-            `Unknown key type: ${options.type}. ` +
-              'Supported: ed25519, ecdsa, x25519'
-          )
-          process.exit(1)
-        }
-        // x25519 keys are key agreement keys; they can only be wired into the
-        // keyAgreement verification relationship.
-        let purposes = options.purpose
-        if (options.type === 'x25519') {
-          if (
-            purposes &&
-            purposes.some(purpose => purpose !== 'keyAgreement')
-          ) {
-            console.error(
-              'x25519 keys can only be added to the keyAgreement ' +
-                'verification relationship'
-            )
-            process.exit(1)
-            return
-          }
-          purposes = ['keyAgreement']
-        }
-
-        let didDocument: Record<string, unknown>
-        let exportedKeys: Record<string, unknown>
-        try {
-          didDocument = await loadDidDocument(did)
-          exportedKeys = await loadDidKeys(did)
-        } catch {
-          console.error(`No locally stored did:web found for ${did}`)
-          process.exit(1)
-        }
-
-        // ed25519 keys are derived from a seed; ecdsa and x25519 keys are
-        // generated non-deterministically and have no seed.
-        let secretKeySeed: string | undefined
-        let keyPair: any
-        const didWebDriver = didWeb.driver()
-        if (options.type === 'ed25519') {
-          const envSeed = process.env.SECRET_KEY_SEED
-          secretKeySeed = options.withSeed
-            ? (envSeed ?? (await generateSecretKeySeed()))
-            : envSeed
-          const seedBytes = secretKeySeed
-            ? decodeSecretKeySeed({ secretKeySeed })
-            : undefined
-          keyPair = await Ed25519VerificationKey.generate({ seed: seedBytes })
-          didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
-        } else if (options.type === 'ecdsa') {
-          if (options.withSeed) {
-            console.error(
-              '--with-seed is not supported for ecdsa keys; ECDSA key ' +
-                'generation is non-deterministic and cannot be derived ' +
-                'from a seed.'
-            )
-            process.exit(1)
-            return
-          }
-          const curve = normalizeEcdsaCurve({ curve: options.curve })
-          if (!curve) {
-            console.error(
-              `Unknown ecdsa curve: ${options.curve}. ` +
-                `Supported: ${SUPPORTED_ECDSA_CURVES}`
-            )
-            process.exit(1)
-            return
-          }
-          warnIfNotVcIssuanceCapable({ curve })
-          keyPair = await EcdsaMultikey.generate({ curve })
-        } else {
-          if (options.withSeed) {
-            console.error(
-              '--with-seed is not supported for x25519 keys; X25519 key ' +
-                'generation is non-deterministic and cannot be derived ' +
-                'from a seed.'
-            )
-            process.exit(1)
-            return
-          }
-          keyPair = await X25519KeyAgreementKey2020.generate()
-        }
-
-        const keyPairs = new Map<string, any>()
-        try {
-          await didWebDriver.addVerificationMethod({
-            didDocument,
-            keyPairs,
-            keyPair,
-            purposes
-          })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-        }
-
-        // Merge the new key into the stored keys file (keyed by VM id). X25519
-        // keys export their private half as `privateKeyMultibase`, the other
-        // suites as `secretKeyMultibase`.
-        const addedFingerprints: (string | undefined)[] = []
-        for (const [methodId, addedKey] of keyPairs) {
-          const exportedKey = (await addedKey.export(
-            options.type === 'x25519'
-              ? { publicKey: true, privateKey: true }
-              : { publicKey: true, secretKey: true }
-          )) as { publicKeyMultibase?: string }
-          exportedKeys[methodId] = exportedKey
-          addedFingerprints.push(exportedKey.publicKeyMultibase)
-        }
-        const docPath = await saveToDids({
-          method: 'web',
-          did,
-          data: didDocument
-        })
-        await saveToDids({
-          method: 'web',
-          did,
-          suffix: 'keys',
-          data: exportedKeys
-        })
-        // Update the key-to-DID cache of any matching wallet keys; the DID's
-        // own metadata sidecar is left untouched.
-        for (const fingerprint of addedFingerprints) {
-          if (fingerprint) {
-            await recordKeyDidAssociation({
-              publicKeyMultibase: fingerprint,
-              did
-            })
-          }
-        }
-        console.error(`DID saved to ${docPath}`)
-
-        const output: Record<string, unknown> = { id: didDocument.id }
-        if (options.withSeed) {
-          output.secretKeySeed = secretKeySeed
-        }
-        output.didDocument = didDocument
-        console.log(JSON.stringify(output, null, 2))
-      }
+      ) => runAndExit(runAddKey({ did, ...options }))
     )
 
   did
@@ -1553,15 +2094,14 @@ export function makeDidCommand(): Command {
           })
           return addServiceEntry({ current, entry, did: resolvedDid })
         }
-        const code = await dispatchServiceUpdate({
-          ref: did,
-          transform,
-          yes: options.yes,
-          keepOldKey: options.keepOldKey
-        })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        return runAndExit(
+          dispatchServiceUpdate({
+            ref: did,
+            transform,
+            yes: options.yes,
+            keepOldKey: options.keepOldKey
+          })
+        )
       }
     )
 
@@ -1598,15 +2138,14 @@ export function makeDidCommand(): Command {
             id: normalizeServiceId({ did: resolvedDid, id: options.id }),
             did: resolvedDid
           })
-        const code = await dispatchServiceUpdate({
-          ref: did,
-          transform,
-          yes: options.yes,
-          keepOldKey: options.keepOldKey
-        })
-        if (code !== 0) {
-          process.exit(code)
-        }
+        return runAndExit(
+          dispatchServiceUpdate({
+            ref: did,
+            transform,
+            yes: options.yes,
+            keepOldKey: options.keepOldKey
+          })
+        )
       }
     )
 
@@ -1617,21 +2156,7 @@ export function makeDidCommand(): Command {
       'Resolve a DID to its DID document, or a DID URL (a did#fragment key ' +
         'id) to its verification method, via the security document loader'
     )
-    .action(async (didOrKeyId: string) => {
-      let document: Record<string, unknown>
-      try {
-        ;({ document } = (await documentLoader(didOrKeyId)) as {
-          document: Record<string, unknown>
-        })
-      } catch (err) {
-        console.error(
-          `Could not resolve "${didOrKeyId}": ${(err as Error).message}`
-        )
-        process.exit(1)
-        return
-      }
-      console.log(JSON.stringify(document, null, 2))
-    })
+    .action((didOrKeyId: string) => runAndExit(runGet({ didOrKeyId })))
 
   did
     .command('show <did>')
@@ -1643,122 +2168,8 @@ export function makeDidCommand(): Command {
     )
     .option('--meta', 'show the DID metadata instead of the DID document')
     .option('--json', 'with --meta, output the metadata as JSON')
-    .action(
-      async (didRef: string, options: { meta?: boolean; json?: boolean }) => {
-        let did: string | undefined
-        try {
-          did = await resolveDidRef({ ref: didRef })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-        const targetDid = did ?? didRef
-
-        // For did:webvh the history log is the source of truth, so resolve the
-        // current document (and its accumulated parameters) from it rather than
-        // trusting the stored snapshot. A DID with no stored log falls through
-        // to the stored document below.
-        let webvhMeta:
-          | Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
-          | undefined
-        let resolvedDoc: Record<string, unknown> | undefined
-        if (targetDid.startsWith('did:webvh:')) {
-          let resolved: Awaited<ReturnType<typeof resolveStoredWebvh>>
-          try {
-            resolved = await resolveStoredWebvh(targetDid)
-          } catch (err) {
-            console.error(
-              `Could not resolve the DID log for ${targetDid}: ` +
-                (err as Error).message
-            )
-            process.exit(1)
-            return
-          }
-          if (resolved) {
-            resolvedDoc = resolved.doc as Record<string, unknown>
-            webvhMeta = resolved.meta
-          }
-        }
-
-        let didDocument: Record<string, unknown>
-        if (resolvedDoc) {
-          didDocument = resolvedDoc
-        } else {
-          try {
-            didDocument = await loadDidDocument(targetDid)
-          } catch {
-            console.error(`No locally stored DID found for ${didRef}`)
-            process.exit(1)
-            return
-          }
-        }
-
-        if (options.meta) {
-          const docDid = didDocument.id as string
-          const meta = await loadDidMeta({ did: docDid })
-          const keyCount = Array.isArray(didDocument.verificationMethod)
-            ? didDocument.verificationMethod.length
-            : 0
-          // Parameters resolved from the did:webvh log (absent for other
-          // methods, and for a webvh DID with no stored log).
-          const witnessCount = webvhMeta?.witness?.witnesses?.length ?? 0
-          const watcherCount = webvhMeta?.watchers?.length ?? 0
-          if (options.json) {
-            const output = {
-              did: docDid,
-              method: docDid.split(':')[1],
-              ...(meta?.created && { created: meta.created }),
-              ...(meta?.handle && { handle: meta.handle }),
-              ...(meta?.description && { description: meta.description }),
-              keys: keyCount,
-              ...(webvhMeta && {
-                versionId: webvhMeta.versionId,
-                updated: webvhMeta.updated,
-                portable: webvhMeta.portable,
-                prerotation: webvhMeta.prerotation,
-                deactivated: webvhMeta.deactivated,
-                updateKeys: webvhMeta.updateKeys.length,
-                witnesses: witnessCount,
-                watchers: watcherCount
-              })
-            }
-            console.log(JSON.stringify(output, null, 2))
-            return
-          }
-          const rows = [
-            ['DID', docDid],
-            ['Method', docDid.split(':')[1]],
-            ['Handle', meta?.handle ?? ''],
-            ['Created', meta?.created ?? ''],
-            ['Description', meta?.description ?? ''],
-            ['Keys', String(keyCount)]
-          ]
-          if (webvhMeta) {
-            rows.push(
-              ['Version', webvhMeta.versionId],
-              ['Updated', webvhMeta.updated],
-              ['Portable', webvhMeta.portable ? 'yes' : 'no'],
-              ['Prerotation', webvhMeta.prerotation ? 'yes' : 'no'],
-              ['Deactivated', webvhMeta.deactivated ? 'yes' : 'no'],
-              ['Update keys', String(webvhMeta.updateKeys.length)],
-              ['Witnesses', String(witnessCount)],
-              ['Watchers', String(watcherCount)]
-            )
-          }
-          console.log(
-            renderTable({
-              columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
-              rows
-            })
-          )
-          return
-        }
-
-        // The DID document holds no secret material -- signing keys live in the
-        // separate `<did>.keys.json` file -- so it is safe to print as-is.
-        console.log(JSON.stringify(didDocument, null, 2))
-      }
+    .action((didRef: string, options: { meta?: boolean; json?: boolean }) =>
+      runAndExit(runShow({ didRef, ...options }))
     )
 
   did
@@ -1769,56 +2180,9 @@ export function makeDidCommand(): Command {
       'output the list as a JSON array of objects with metadata'
     )
     .option('--plain', 'output one DID per line, sorted (no metadata)')
-    .action(async (options: { json?: boolean; plain?: boolean }) => {
-      const dids = await listDids()
-      if (options.plain) {
-        for (const did of dids) {
-          console.log(did)
-        }
-        return
-      }
-
-      const entries: ({ did: string; method: string } & ItemMetadata)[] = []
-      for (const did of dids) {
-        const meta = await loadDidMeta({ did })
-        entries.push({ did, method: did.split(':')[1], ...meta })
-      }
-
-      if (options.json) {
-        const output = entries.map(entry => ({
-          did: entry.did,
-          method: entry.method,
-          ...(entry.created && { created: entry.created }),
-          ...(entry.handle && { handle: entry.handle }),
-          ...(entry.description && { description: entry.description })
-        }))
-        console.log(JSON.stringify(output, null, 2))
-        return
-      }
-
-      if (entries.length === 0) {
-        return
-      }
-      const rows = entries.map(entry => [
-        entry.handle ?? '',
-        entry.method,
-        entry.created?.slice(0, 10) ?? '',
-        entry.did,
-        entry.description ?? ''
-      ])
-      console.log(
-        renderTable({
-          columns: [
-            { header: 'HANDLE', maxWidth: 16 },
-            { header: 'METHOD' },
-            { header: 'CREATED' },
-            { header: 'DID', maxWidth: 44 },
-            { header: 'DESCRIPTION', maxWidth: 40 }
-          ],
-          rows
-        })
-      )
-    })
+    .action((options: { json?: boolean; plain?: boolean }) =>
+      runAndExit(runList(options))
+    )
 
   did
     .command('meta <did>')
@@ -1832,59 +2196,8 @@ export function makeDidCommand(): Command {
       'set the description (an empty string clears it)'
     )
     .action(
-      async (
-        didRef: string,
-        options: { handle?: string; description?: string }
-      ) => {
-        let did: string | undefined
-        try {
-          did = await resolveDidRef({ ref: didRef })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-        if (did) {
-          // Refuse to create metadata for DIDs that are not saved locally.
-          try {
-            await loadDidDocument(did)
-          } catch {
-            did = undefined
-          }
-        }
-        if (!did) {
-          console.error(`No locally stored DID found for ${didRef}`)
-          process.exit(1)
-          return
-        }
-
-        const existing = await loadDidMeta({ did })
-        const hasEdits =
-          options.handle !== undefined || options.description !== undefined
-        if (!hasEdits) {
-          console.log(JSON.stringify(existing ?? {}, null, 2))
-          return
-        }
-
-        const meta: ItemMetadata = { ...(existing ?? {}) }
-        if (options.handle !== undefined) {
-          if (options.handle === '') {
-            delete meta.handle
-          } else {
-            meta.handle = options.handle
-          }
-        }
-        if (options.description !== undefined) {
-          if (options.description === '') {
-            delete meta.description
-          } else {
-            meta.description = options.description
-          }
-        }
-        const filePath = await saveDidMeta({ did, meta })
-        console.error(`Metadata saved to ${filePath}`)
-        console.log(JSON.stringify(meta, null, 2))
-      }
+      (didRef: string, options: { handle?: string; description?: string }) =>
+        runAndExit(runMeta({ didRef, ...options }))
     )
 
   did
@@ -1894,41 +2207,7 @@ export function makeDidCommand(): Command {
       'Remove a locally stored DID document, its keys file, and its ' +
         'metadata sidecar (by DID or handle)'
     )
-    .action(async (didRef: string) => {
-      let did: string | undefined
-      try {
-        did = await resolveDidRef({ ref: didRef })
-      } catch (err) {
-        console.error((err as Error).message)
-        process.exit(1)
-        return
-      }
-      let didDocument: {
-        verificationMethod?: { publicKeyMultibase?: string }[]
-      }
-      try {
-        didDocument = await loadDidDocument(did ?? didRef)
-      } catch {
-        console.error(`No locally stored DID found for ${didRef}`)
-        process.exit(1)
-        return
-      }
-      const docDid = did ?? didRef
-      // Scrub the cached key-to-DID associations of any matching wallet keys
-      // before the DID document (the source of truth) is deleted.
-      for (const method of didDocument.verificationMethod ?? []) {
-        if (method.publicKeyMultibase) {
-          await removeKeyDidAssociation({
-            publicKeyMultibase: method.publicKeyMultibase,
-            did: docDid
-          })
-        }
-      }
-      const removed = await removeDidFiles({ did: docDid })
-      for (const filePath of removed) {
-        console.error(`Removed ${filePath}`)
-      }
-    })
+    .action((didRef: string) => runAndExit(runRemove({ didRef })))
 
   const webvh = new Command('webvh').description(
     'Manage did:webvh DIDs: rotate update (authorization) keys'
@@ -1964,7 +2243,7 @@ export function makeDidCommand(): Command {
     )
     .option('-y, --yes', 'skip the confirmation prompt')
     .action(
-      async (
+      (
         didRef: string,
         options: {
           updateKey?: string[]
@@ -1973,178 +2252,7 @@ export function makeDidCommand(): Command {
           keepOldKey?: boolean
           yes?: boolean
         }
-      ) => {
-        let resolved: string | undefined
-        try {
-          resolved = await resolveDidRef({ ref: didRef })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-        const targetDid = resolved ?? didRef
-        if (!targetDid.startsWith('did:webvh:')) {
-          console.error('rotate-keys is only supported for did:webvh DIDs')
-          process.exit(1)
-          return
-        }
-        // The history log is the source of truth for a stored did:webvh (the
-        // current document is just its last entry's state), so a key-only
-        // rotation ignores the resolved document.
-        let log: DIDLog
-        let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
-        try {
-          ;({ log, meta } = await resolveWebvhForUpdate({
-            targetDid,
-            action: 'rotate keys'
-          }))
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-
-        // Flag validation against the current pre-rotation state.
-        if (options.enablePrerotation && options.stopPrerotation) {
-          console.error(
-            '--enable-prerotation and --stop-prerotation are mutually exclusive'
-          )
-          process.exit(1)
-          return
-        }
-        if (meta.prerotation) {
-          if (options.updateKey) {
-            console.error(
-              '--update-key is not allowed while pre-rotation is armed; the ' +
-                'next update keys are fixed by the committed nextKeyHashes'
-            )
-            process.exit(1)
-            return
-          }
-          if (options.enablePrerotation) {
-            console.error('pre-rotation is already enabled for this DID')
-            process.exit(1)
-            return
-          }
-        } else if (options.stopPrerotation) {
-          console.error('pre-rotation is already off for this DID')
-          process.exit(1)
-          return
-        }
-
-        const stored = await loadStoredUpdateKeys(targetDid)
-
-        // Inbound: who signs this entry, and what becomes the active key.
-        let signerKeyPair: Ed25519VerificationKey
-        let newActive: WebvhUpdateKey
-        let retiredActive: WebvhUpdateKey | undefined
-        try {
-          if (meta.prerotation) {
-            // Pre-rotation reveal: the staged key signs its own activation.
-            ;({ signerKeyPair, newActive, retiredActive } =
-              await revealStagedSigner({
-                stored,
-                meta,
-                targetDid,
-                action: 'rotate keys'
-              }))
-          } else {
-            // Ordinary rotation: the current active key signs.
-            let activeRecord: WebvhUpdateKey
-            ;({ signerKeyPair, activeRecord } = await loadActiveSigner({
-              stored,
-              meta,
-              targetDid,
-              action: 'rotate keys'
-            }))
-            if (options.enablePrerotation && !options.updateKey) {
-              // Stage only: arm pre-rotation without changing the active key.
-              newActive = activeRecord
-            } else if (options.updateKey) {
-              // Rotate to externally-held key(s); the secret is not ours to store.
-              newActive = { publicKeyMultibase: options.updateKey[0] }
-              retiredActive = activeRecord
-            } else {
-              newActive = await exportUpdateKey(
-                await Ed25519VerificationKey.generate()
-              )
-              retiredActive = activeRecord
-            }
-          }
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-
-        // Outbound: keep the ratchet armed (stage a fresh next key) or not.
-        const arm = meta.prerotation
-          ? !options.stopPrerotation
-          : Boolean(options.enablePrerotation)
-        const newStaged = arm ? await generateStagedKey() : undefined
-        const nextKeyHashes = newStaged ? [newStaged.nextKeyHash] : []
-
-        const confirmed = await confirmAction({
-          message:
-            `Rotate the update key of ${targetDid}? This appends a new log ` +
-            'entry and is hard to undo.',
-          yes: options.yes
-        })
-        if (!confirmed) {
-          console.error('Aborted.')
-          return
-        }
-
-        const signer = makeWebvhEntrySigner(signerKeyPair)
-
-        // A sparse updateDID() carries the prior DID document state forward and
-        // only overlays the fields an update actually supplies, so a key-only
-        // rotation omits all document directives to leave the document
-        // unchanged.
-        let result: Awaited<ReturnType<typeof updateDID>>
-        try {
-          result = await updateDID({
-            log,
-            signer,
-            verifier: webvhLogVerifier,
-            updateKeys: [newActive.publicKeyMultibase],
-            nextKeyHashes
-          })
-        } catch (err) {
-          console.error(`Key rotation failed: ${(err as Error).message}`)
-          process.exit(1)
-          return
-        }
-
-        const logPath = await saveDidLog({ did: result.did, log: result.log })
-        const docPath = await saveToDids({
-          method: 'webvh',
-          did: result.did,
-          data: result.doc
-        })
-
-        const updateKeysPath = await persistUpdateKeysSidecar({
-          did: result.did,
-          newActive,
-          newStaged,
-          retiredActive,
-          stored,
-          keepOldKey: options.keepOldKey
-        })
-
-        console.error(`DID document saved to ${docPath}`)
-        console.error(`DID history log saved to ${logPath}`)
-        console.error(`Update keys saved to ${updateKeysPath}`)
-        console.error(
-          nextKeyHashes.length > 0
-            ? 'Pre-rotation is armed: a next update key is staged.'
-            : 'Pre-rotation is off after this rotation.'
-        )
-
-        console.log(
-          JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
-        )
-      }
+      ) => runAndExit(runRotateKeys({ didRef, ...options }))
     )
 
   did.addCommand(webvh)
