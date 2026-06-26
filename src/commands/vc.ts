@@ -27,6 +27,7 @@ import { loadKnownRegistries } from '../vc/registries.js'
 import {
   findParseFailure,
   toSummary,
+  unresolvedMethodDetail,
   verifyCredentialFully
 } from '../vc/verify.js'
 import {
@@ -244,6 +245,15 @@ export async function runVerify(
   if (findParseFailure(result)) {
     return 2
   }
+
+  // The signature could not be checked because no resolver/driver is registered
+  // for the proof's DID method -- a loader misconfiguration, not a bad
+  // signature. Surface it on stderr so stdout stays machine-parseable JSON.
+  const unresolved = unresolvedMethodDetail(result)
+  if (unresolved) {
+    console.error(`\nCannot verify: ${unresolved}`)
+  }
+
   return result.verified ? 0 : 1
 }
 

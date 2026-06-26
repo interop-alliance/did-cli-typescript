@@ -10,22 +10,13 @@
  * for decrypt.
  */
 import { readFile } from 'node:fs/promises'
-import { securityLoader } from '@interop/security-document-loader'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
+import { documentLoader } from '../documentLoader.js'
 import { listCollection, loadFromCollection } from '../storage.js'
 import { resolveKeyRef } from '../meta.js'
 
 /** The X25519 key-agreement verification-method type minimal-cipher expects. */
 export const KEY_AGREEMENT_TYPE = 'X25519KeyAgreementKey2020'
-
-/**
- * Document loader for DID-URL recipient resolution: resolves a bare DID to its
- * DID document and dereferences a `did#fragment` URL straight to its
- * verification-method node, for both did:key (offline) and did:web (fetched).
- * Built once and reused. (Per project convention, DID/JSON-LD resolution goes
- * through `@interop/security-document-loader`, never a hand-rolled loader.)
- */
-const documentLoader = securityLoader().build()
 
 /**
  * An X25519 key-agreement key instance with its `.id` (`kid`) populated. Used

@@ -23,16 +23,9 @@ import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { ecdsaRdfc2019 } from '@interop/ecdsa-signature'
 import { DataIntegrityProof } from '@interop/data-integrity-proof'
 import { issue } from '@interop/vc'
-import { securityLoader } from '@interop/security-document-loader'
+import { documentLoader } from '../documentLoader.js'
 import { loadDidDocument, loadDidKeys } from '../storage.js'
 import { isEcdsaPublicKeyMultibase } from '../keys/ecdsa.js'
-
-/**
- * Offline document loader for signing: bundles the VC / Data Integrity / suite
- * contexts (including the `ed25519-2020` suite context) and a did:key resolver.
- * Built once and reused across calls.
- */
-const documentLoader = securityLoader().build()
 
 /**
  * The supported `--suite` values per key type. The signing key's type (read

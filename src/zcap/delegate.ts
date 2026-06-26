@@ -16,17 +16,11 @@
  */
 import { Ed25519Signature2020 } from '@interop/ed25519-signature'
 import { ZcapClient } from '@interop/ezcap'
-import { securityLoader } from '@interop/security-document-loader'
 import type { IDelegatedZcap, IZcap } from '@interop/data-integrity-core/zcap'
+import { documentLoader } from '../documentLoader.js'
 import { encodeCapability } from './encoding.js'
 import { expiresFromTtl } from './ttl.js'
 import { loadDelegationSigner } from './signer.js'
-
-/**
- * Offline document loader for signing: bundles the zcap, VC, Data Integrity, and
- * suite contexts plus a did:key resolver. Built once and reused across calls.
- */
-const documentLoader = securityLoader().build()
 
 /**
  * Signs a delegated capability.

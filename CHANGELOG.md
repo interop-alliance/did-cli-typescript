@@ -4,10 +4,28 @@
 
 ### Fixed
 
+- `vc verify` now verifies credentials issued by `did:webvh` (and `did:web`)
+  issuers. Verification ran through `@interop/verifier-core`'s default document
+  loader, which resolves only `did:key` and `did:web`, so a `did:webvh` proof's
+  verification method could never be fetched and the signature was reported as
+  invalid. Verification now uses the CLI's shared loader (which registers the
+  `did:webvh` driver), passed through to `verifyCredential`.
 - `vc issue --did` now accepts a metadata handle (not just a full DID id),
   resolving it via the same lookup used by the other DID-referencing commands.
   Previously passing a handle failed with a confusing `The "path" argument must
   be of type string. Received undefined` error.
+
+### Changed
+
+- All commands now share a single JSON-LD document loader (`src/documentLoader.ts`)
+  for DID resolution, DID-URL dereferencing, and context loading -- replacing the
+  per-module loaders previously built in `vc/issue`, `vc/verify` (none was passed
+  before), `edv/recipients`, `zcap/delegate`, and `commands/did`. The shared
+  loader resolves `did:key`, `did:web`, and `did:webvh`.
+- `vc verify` prints a friendly `Cannot verify: ...` hint on stderr (stdout stays
+  machine-parseable JSON) when a proof's verification method uses a DID method the
+  loader has no driver for, distinguishing a loader misconfiguration from a
+  genuine invalid signature.
 
 ## 0.10.0 - 2026-06-25
 
