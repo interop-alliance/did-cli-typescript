@@ -12,7 +12,8 @@ and tested with the native `node:test` runner.
 
 ## Entry point and command wiring
 
-`src/index.ts` is the executable. It builds a single [`commander`](https://github.com/tj/commander.js)
+`src/index.ts` is the executable. It builds a single [
+`commander`](https://github.com/tj/commander.js)
 program named `di` and registers each command group:
 
 ```ts
@@ -40,20 +41,21 @@ live in their own directory, `src/commands/was/` (see the module map), while
 
 ## Module map
 
-| Path | Responsibility |
-| --- | --- |
-| `src/index.ts` | Executable entry point; builds the `di` program and registers command groups. |
-| `src/commands/` | Command factories: `did`, `edv`, `key`, `vc`, `wallet`, `was`, `zcap`. |
-| `src/edv/` | EDV support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt), `core.ts` (EDV Document encrypt/decrypt and blinded indexing delegated to `@interop/edv-client`'s `EdvClientCore`), `document.ts` (the decrypted payload type and envelope detection), `hmac.ts` (wallet resolution of the `Sha256HmacKey2019` blinding key), and `stream.ts` (chunked-stream encrypt/decrypt and the `*.edvdoc/` bundle layout). |
-| `src/commands/was/` | The `was` group's `run*` functions, split by noun: `space`, `collection`, `resource`, `tree` (the `ls`/`rm` shorthands), `policy`, `publish` (publish/unpublish/grant), and `shared` (option factories, address parsing, listing renderers). |
-| `src/storage.ts` | Wallet + DID-document file I/O: `listCollection`, `loadFromCollection`, `saveToCollection`, and `.meta.json` sidecars. |
-| `src/meta.ts` | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`. |
-| `src/table.ts` | Dependency-free column-aligned table rendering (`renderTable`, `truncateMiddle`). |
-| `src/keys/ecdsa.ts` | ECDSA curve normalization and VC-issuance capability checks. |
-| `src/keys/webvh-signer.ts`, `webvh-driver.ts`, `webvh-update.ts` | did:webvh glue: a fixed-key `Signer`/`Verifier` bridge, the resolver driver (with the generic log `webvhLogVerifier`), and update-key/pre-rotation helpers (`generateUpdateKey`, `loadUpdateKey`, `generateStagedKey`). |
-| `src/vc/` | Verifiable Credential `issue`/`verify`, issuer registries, and signature suites. |
-| `src/was/` | WAS client logic (non-CLI): `client`, `address`, `registry`, `capability`, `io`. |
-| `src/zcap/` | Capability `create`/`delegate`/`signer`/`encoding`/`resolve`/`ttl`. |
+| Path                                          | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+|-----------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `src/index.ts`                                | Executable entry point; builds the `di` program and registers command groups.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/commands/`                               | Command factories: `did`, `edv`, `key`, `vc`, `wallet`, `was`, `zcap`.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `src/edv/`                                    | EDV support: `recipients.ts` (recipient reference forms, the cipher `keyResolver`, and stored-key reconstruction for decrypt), `core.ts` (EDV Document encrypt/decrypt and blinded indexing delegated to `@interop/edv-client`'s `EdvClientCore`), `document.ts` (the decrypted payload type and envelope detection), `hmac.ts` (wallet resolution of the `Sha256HmacKey2019` blinding key), and `stream.ts` (chunked-stream encrypt/decrypt and the `*.edvdoc/` bundle layout). |
+| `src/commands/was/`                           | The `was` group's `run*` functions, split by noun: `space`, `collection`, `resource`, `tree` (the `ls`/`rm` shorthands), `policy`, `publish` (publish/unpublish/grant), and `shared` (option factories, address parsing, listing renderers).                                                                                                                                                                                                                                     |
+| `src/storage.ts`                              | Wallet + DID-document file I/O: `listCollection`, `loadFromCollection`, `saveToCollection`, and `.meta.json` sidecars.                                                                                                                                                                                                                                                                                                                                                           |
+| `src/meta.ts`                                 | Key/DID resolution: `resolve*Ref` (DID, key, zcap, credential), `parseKeyStorageId`, `mapFingerprintsToDids`, and the key-DID association writers `recordKeyDidAssociation`/`removeKeyDidAssociation`.                                                                                                                                                                                                                                                                           |
+| `src/table.ts`                                | Dependency-free column-aligned table rendering (`renderTable`, `truncateMiddle`).                                                                                                                                                                                                                                                                                                                                                                                                |
+| `src/documentLoader.ts`                       | The shared JSON-LD/DID `documentLoader` (resolves did:key, did:web, did:webvh); registers the did:webvh driver and re-exports the `webvhLogVerifier`.                                                                                                                                                                                                                                                                                                                            |
+| `src/keys/ecdsa.ts`                           | ECDSA curve normalization and VC-issuance capability checks.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `src/keys/webvh-signer.ts`, `webvh-update.ts` | did:webvh glue: a fixed-key `Signer`/`Verifier` bridge and update-key/pre-rotation helpers (`loadUpdateKey`, `exportUpdateKey`, `generateStagedKey`). The resolver driver and the generic log `webvhLogVerifier` are wired in `src/documentLoader.ts` (which registers the `createDidWebvhDriver()` onto the default resolver and re-exports the log verifier).                                                                                                                  |
+| `src/vc/`                                     | Verifiable Credential `issue`/`verify`, issuer registries, and signature suites.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `src/was/`                                    | WAS client logic (non-CLI): `client`, `address`, `registry`, `capability`, `io`.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `src/zcap/`                                   | Capability `create`/`delegate`/`signer`/`encoding`/`resolve`/`ttl`.                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Storage and configuration
 
@@ -79,7 +81,8 @@ node --test --import tsx --enable-source-maps src/commands/<name>.test.ts
 ## Testing
 
 Tests use `node:test` with `node:assert/strict`. Command tests capture output by
-mocking `console.log`/`console.error` into arrays, point storage at temp dirs via
+mocking `console.log`/`console.error` into arrays, point storage at temp dirs
+via
 the `WALLET_DIR`/`DIDS_DIR` env vars, and invoke a command through its factory:
 `makeXCommand().parseAsync([...args], { from: 'user' })`. The conventions are
 spelled out under "Command Tests" in [CONTRIBUTING.md](CONTRIBUTING.md).
