@@ -8,10 +8,6 @@ import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
 import { SHA256HMACKey } from '@interop/data-integrity-core'
 import {
-  listCollection,
-  loadFromCollection,
-  loadMetaFromCollection,
-  removeFromCollection,
   saveMetaToCollection,
   saveToCollection,
   type KeyMetadata
@@ -29,6 +25,17 @@ import {
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
 import { runAndExit } from './was/shared.js'
+import {
+  applyMetaEdits,
+  requireSaveForMetaFlags,
+  resolveRefOrReport,
+  runListCollection,
+  runRemoveCollection,
+  writeCreateMeta
+} from './collection-command.js'
+
+/** The wallet collection name for stored keys. */
+const COLLECTION = 'keys'
 
 /**
  * Build the human-readable key type label shown in list/show output, e.g.
@@ -69,38 +76,6 @@ function didsCell({ dids }: { dids: string[] }): string {
 }
 
 /**
- * Write the metadata sidecar of a freshly saved key: the creation timestamp,
- * plus the handle and description when given.
- *
- * @param options {object}
- * @param options.storageId {string}
- * @param options.created {string}
- * @param [options.handle] {string}
- * @param [options.description] {string}
- * @returns {Promise<void>}
- */
-async function writeCreateMeta({
-  storageId,
-  created,
-  handle,
-  description
-}: {
-  storageId: string
-  created: string
-  handle?: string
-  description?: string
-}): Promise<void> {
-  const meta: KeyMetadata = { created }
-  if (handle) {
-    meta.handle = handle
-  }
-  if (description) {
-    meta.description = description
-  }
-  await saveMetaToCollection({ collection: 'keys', storageId, meta })
-}
-
-/**
  * Generates a key pair of the requested type, optionally saving it to the
  * wallet, and prints the key (or the seed-wrapped form) to stdout.
  *
@@ -122,11 +97,7 @@ export async function runCreate(options: {
   description?: string
   withSeed?: boolean
 }): Promise<number> {
-  if (
-    (options.handle !== undefined || options.description !== undefined) &&
-    !options.save
-  ) {
-    console.error('--handle and --description require --save')
+  if (!requireSaveForMetaFlags(options)) {
     return 1
   }
   switch (options.type) {
@@ -155,6 +126,7 @@ export async function runCreate(options: {
         )
         const filePath = await saveToCollection('keys', storageId, exported)
         await writeCreateMeta({
+          collection: COLLECTION,
           storageId,
           created: now.toISOString(),
           handle: options.handle,
@@ -202,6 +174,7 @@ export async function runCreate(options: {
         )
         const filePath = await saveToCollection('keys', storageId, exported)
         await writeCreateMeta({
+          collection: COLLECTION,
           storageId,
           created: now.toISOString(),
           handle: options.handle,
@@ -233,6 +206,7 @@ export async function runCreate(options: {
         const storageId = `${date}-x25519-${rawId}`.replaceAll(':', '_')
         const filePath = await saveToCollection('keys', storageId, exported)
         await writeCreateMeta({
+          collection: COLLECTION,
           storageId,
           created: now.toISOString(),
           handle: options.handle,
@@ -260,6 +234,7 @@ export async function runCreate(options: {
         const storageId = `${date}-hmac-${exported.id}`.replaceAll(':', '_')
         const filePath = await saveToCollection('keys', storageId, exported)
         await writeCreateMeta({
+          collection: COLLECTION,
           storageId,
           created: now.toISOString(),
           handle: options.handle,
@@ -292,67 +267,51 @@ export async function runList(options: {
   json?: boolean
   plain?: boolean
 }): Promise<number> {
-  const storageIds = await listCollection('keys')
-  if (options.plain) {
-    const keyIds: string[] = []
-    for (const storageId of storageIds) {
-      const key = await loadFromCollection<{ publicKeyMultibase?: string }>(
-        'keys',
-        storageId
-      )
-      if (key.publicKeyMultibase) {
-        keyIds.push(key.publicKeyMultibase)
+  // The key-to-DID associations (one pass over all stored DID documents) are
+  // only needed for the table/JSON output, so derive them lazily and once.
+  let fingerprintDidsCache: Map<string, string[]> | undefined
+  const fingerprintDids = async (): Promise<Map<string, string[]>> =>
+    (fingerprintDidsCache ??= await mapFingerprintsToDids())
+
+  return runListCollection<
+    { id?: string; publicKeyMultibase?: string },
+    {
+      fingerprint: string
+      storageId: string
+      type?: string
+      curve?: string
+      created?: string
+      handle?: string
+      description?: string
+      dids: string[]
+    }
+  >({
+    collection: COLLECTION,
+    plain: options.plain,
+    json: options.json,
+    plainId: key => key.publicKeyMultibase,
+    // Storage IDs carry a YYYY-MM-DD prefix, so the listing order is
+    // chronological.
+    toEntry: async ({ storageId, item, meta }) => {
+      // Asymmetric keys are identified by their publicKeyMultibase
+      // fingerprint; an HMAC key has no public half, so fall back to its id.
+      const fingerprint = item.publicKeyMultibase ?? item.id
+      if (!fingerprint) {
+        return undefined
       }
-    }
-    keyIds.sort()
-    for (const keyId of keyIds) {
-      console.log(keyId)
-    }
-    return 0
-  }
-
-  const fingerprintDids = await mapFingerprintsToDids()
-  const entries: {
-    fingerprint: string
-    storageId: string
-    type?: string
-    curve?: string
-    created?: string
-    handle?: string
-    description?: string
-    dids: string[]
-  }[] = []
-  // Storage IDs carry a YYYY-MM-DD prefix, so this order is chronological.
-  for (const storageId of storageIds) {
-    const key = await loadFromCollection<{
-      id?: string
-      publicKeyMultibase?: string
-    }>('keys', storageId)
-    // Asymmetric keys are identified by their publicKeyMultibase
-    // fingerprint; an HMAC key has no public half, so fall back to its id.
-    const fingerprint = key.publicKeyMultibase ?? key.id
-    if (!fingerprint) {
-      continue
-    }
-    const meta = await loadMetaFromCollection({
-      collection: 'keys',
-      storageId
-    })
-    const parsed = parseKeyStorageId({ storageId })
-    entries.push({
-      fingerprint,
-      storageId,
-      type: parsed.type,
-      curve: parsed.curve,
-      created: meta?.created ?? parsed.date,
-      handle: meta?.handle,
-      description: meta?.description,
-      dids: fingerprintDids.get(fingerprint) ?? []
-    })
-  }
-
-  if (options.json) {
-    const output = entries.map(entry => ({
+      const parsed = parseKeyStorageId({ storageId })
+      return {
+        fingerprint,
+        storageId,
+        type: parsed.type,
+        curve: parsed.curve,
+        created: meta?.created ?? parsed.date,
+        handle: meta?.handle,
+        description: meta?.description,
+        dids: (await fingerprintDids()).get(fingerprint) ?? []
+      }
+    },
+    toJson: entry => ({
       fingerprint: entry.fingerprint,
       storageId: entry.storageId,
       ...(entry.type && { type: entry.type }),
@@ -361,36 +320,24 @@ export async function runList(options: {
       ...(entry.handle && { handle: entry.handle }),
       ...(entry.description && { description: entry.description }),
       dids: entry.dids
-    }))
-    console.log(JSON.stringify(output, null, 2))
-    return 0
-  }
-
-  if (entries.length === 0) {
-    return 0
-  }
-  const rows = entries.map(entry => [
-    entry.handle ?? '',
-    keyTypeLabel({ type: entry.type, curve: entry.curve }),
-    entry.created?.slice(0, 10) ?? '',
-    entry.fingerprint,
-    didsCell({ dids: entry.dids }),
-    entry.description ?? ''
-  ])
-  console.log(
-    renderTable({
-      columns: [
-        { header: 'HANDLE', maxWidth: 16 },
-        { header: 'TYPE' },
-        { header: 'CREATED' },
-        { header: 'FINGERPRINT', maxWidth: 28 },
-        { header: 'DIDS' },
-        { header: 'DESCRIPTION', maxWidth: 40 }
-      ],
-      rows
-    })
-  )
-  return 0
+    }),
+    columns: [
+      { header: 'HANDLE', maxWidth: 16 },
+      { header: 'TYPE' },
+      { header: 'CREATED' },
+      { header: 'FINGERPRINT', maxWidth: 28 },
+      { header: 'DIDS' },
+      { header: 'DESCRIPTION', maxWidth: 40 }
+    ],
+    toRow: entry => [
+      entry.handle ?? '',
+      keyTypeLabel({ type: entry.type, curve: entry.curve }),
+      entry.created?.slice(0, 10) ?? '',
+      entry.fingerprint,
+      didsCell({ dids: entry.dids }),
+      entry.description ?? ''
+    ]
+  })
 }
 
 /**
@@ -409,16 +356,17 @@ export async function runShow(options: {
   json?: boolean
 }): Promise<number> {
   const { id } = options
-  let resolved
-  try {
-    resolved = await resolveKeyRef({ ref: id })
-  } catch (err) {
-    console.error((err as Error).message)
+  const resolved = await resolveRefOrReport({
+    resolve: ref => resolveKeyRef({ ref }),
+    ref: id,
+    noun: 'key'
+  })
+  if (!resolved) {
     return 1
   }
   // An HMAC key has no public fingerprint, so fall back to its id.
-  const fingerprint = resolved?.key.publicKeyMultibase ?? resolved?.key.id
-  if (!resolved || !fingerprint) {
+  const fingerprint = resolved.key.publicKeyMultibase ?? resolved.key.id
+  if (!fingerprint) {
     console.error(`No locally stored key found for ${id}`)
     return 1
   }
@@ -517,14 +465,15 @@ export async function runMeta(options: {
   description?: string
 }): Promise<number> {
   const { id } = options
-  let resolved
-  try {
-    resolved = await resolveKeyRef({ ref: id })
-  } catch (err) {
-    console.error((err as Error).message)
+  const resolved = await resolveRefOrReport({
+    resolve: ref => resolveKeyRef({ ref }),
+    ref: id,
+    noun: 'key'
+  })
+  if (!resolved) {
     return 1
   }
-  if (!resolved?.key.publicKeyMultibase) {
+  if (!resolved.key.publicKeyMultibase) {
     console.error(`No locally stored key found for ${id}`)
     return 1
   }
@@ -553,20 +502,10 @@ export async function runMeta(options: {
       meta.created = date
     }
   }
-  if (options.handle !== undefined) {
-    if (options.handle === '') {
-      delete meta.handle
-    } else {
-      meta.handle = options.handle
-    }
-  }
-  if (options.description !== undefined) {
-    if (options.description === '') {
-      delete meta.description
-    } else {
-      meta.description = options.description
-    }
-  }
+  applyMetaEdits(meta, {
+    handle: options.handle,
+    description: options.description
+  })
   // Every write also refreshes the cached key-to-DID associations.
   if (dids.length > 0) {
     meta.dids = dids
@@ -574,7 +513,7 @@ export async function runMeta(options: {
     delete meta.dids
   }
   const filePath = await saveMetaToCollection({
-    collection: 'keys',
+    collection: COLLECTION,
     storageId: resolved.storageId,
     meta
   })
@@ -592,26 +531,12 @@ export async function runMeta(options: {
  * @returns {Promise<number>}   The process exit code.
  */
 export async function runRemove(options: { id: string }): Promise<number> {
-  const { id } = options
-  let resolved
-  try {
-    resolved = await resolveKeyRef({ ref: id })
-  } catch (err) {
-    console.error((err as Error).message)
-    return 1
-  }
-  if (!resolved) {
-    console.error(`No locally stored key found for ${id}`)
-    return 1
-  }
-  const removed = await removeFromCollection({
-    collection: 'keys',
-    storageId: resolved.storageId
+  return runRemoveCollection({
+    collection: COLLECTION,
+    noun: 'key',
+    resolve: ref => resolveKeyRef({ ref }),
+    ref: options.id
   })
-  for (const filePath of removed) {
-    console.error(`Removed ${filePath}`)
-  }
-  return 0
 }
 
 /**

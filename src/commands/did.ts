@@ -52,6 +52,10 @@ import {
   loadUpdateKey
 } from '../keys/webvh-update.js'
 import { runAndExit } from './was/shared.js'
+import {
+  applyMetaEdits,
+  requireSaveForMetaFlags
+} from './collection-command.js'
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -815,11 +819,7 @@ export async function runCreate(options: {
   description?: string
 }): Promise<number> {
   const method = options.method ?? 'key'
-  if (
-    (options.handle !== undefined || options.description !== undefined) &&
-    !options.save
-  ) {
-    console.error('--handle and --description require --save')
+  if (!requireSaveForMetaFlags(options)) {
     return 1
   }
   switch (method) {
@@ -1664,20 +1664,10 @@ export async function runMeta(options: {
   }
 
   const meta: ItemMetadata = { ...(existing ?? {}) }
-  if (options.handle !== undefined) {
-    if (options.handle === '') {
-      delete meta.handle
-    } else {
-      meta.handle = options.handle
-    }
-  }
-  if (options.description !== undefined) {
-    if (options.description === '') {
-      delete meta.description
-    } else {
-      meta.description = options.description
-    }
-  }
+  applyMetaEdits(meta, {
+    handle: options.handle,
+    description: options.description
+  })
   const filePath = await saveDidMeta({ did, meta })
   console.error(`Metadata saved to ${filePath}`)
   console.log(JSON.stringify(meta, null, 2))

@@ -7,7 +7,8 @@ import { saveToCollection } from '../../storage.js'
 import { encodeCapability } from '../../zcap/encoding.js'
 import { expiresFromTtl } from '../../zcap/ttl.js'
 import { resolveWasTarget } from '../../was/client.js'
-import { storageIdFor, writeCreateMeta } from '../zcap.js'
+import { storageIdFor } from '../zcap.js'
+import { writeCreateMeta } from '../collection-command.js'
 import { handleForTarget, reportError, wasUrl } from './shared.js'
 
 /** The capability actions WAS servers match against (HTTP verbs). */
@@ -164,6 +165,7 @@ export async function runGrant(options: {
         delegatedCapability
       )
       await writeCreateMeta({
+        collection: 'zcaps',
         storageId,
         created: new Date().toISOString(),
         handle: options.handle,

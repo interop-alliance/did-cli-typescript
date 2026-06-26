@@ -23,17 +23,23 @@ import { createCapability } from '../zcap/create.js'
 import { delegateCapability } from '../zcap/delegate.js'
 import { resolveCapabilityInput } from '../zcap/resolve.js'
 import {
-  listCollection,
-  loadFromCollection,
-  loadMetaFromCollection,
-  removeFromCollection,
-  saveMetaToCollection,
   saveToCollection,
   sanitizeStorageId,
   type ItemMetadata
 } from '../storage.js'
 import { resolveZcapRef, type StoredZcap } from '../meta.js'
 import { renderTable } from '../table.js'
+import {
+  requireSaveForMetaFlags,
+  resolveRefOrReport,
+  runListCollection,
+  runMetaCollection,
+  runRemoveCollection,
+  writeCreateMeta
+} from './collection-command.js'
+
+/** The wallet collection name for stored authorization capabilities. */
+const COLLECTION = 'zcaps'
 
 /**
  * Derives a filesystem-safe storage id from a capability id (the `urn:...`
@@ -60,39 +66,6 @@ function zcapTypeLabel({ zcap }: { zcap: StoredZcap }): string {
 }
 
 /**
- * Write the metadata sidecar of a freshly saved zcap: the creation timestamp,
- * plus the handle and description when given. Exported for reuse by
- * `was grant --save`.
- *
- * @param options {object}
- * @param options.storageId {string}
- * @param options.created {string}
- * @param [options.handle] {string}
- * @param [options.description] {string}
- * @returns {Promise<void>}
- */
-export async function writeCreateMeta({
-  storageId,
-  created,
-  handle,
-  description
-}: {
-  storageId: string
-  created: string
-  handle?: string
-  description?: string
-}): Promise<void> {
-  const meta: ItemMetadata = { created }
-  if (handle) {
-    meta.handle = handle
-  }
-  if (description) {
-    meta.description = description
-  }
-  await saveMetaToCollection({ collection: 'zcaps', storageId, meta })
-}
-
-/**
  * Creates a root capability and prints it (with its encoding) to stdout.
  *
  * @param options {object}
@@ -111,6 +84,9 @@ export async function runCreate(options: {
   handle?: string
   description?: string
 }): Promise<number> {
+  if (!requireSaveForMetaFlags(options)) {
+    return 1
+  }
   try {
     const result = createCapability({
       controller: options.controller,
@@ -119,11 +95,12 @@ export async function runCreate(options: {
     if (options.save) {
       const storageId = storageIdFor(result.rootCapability.id)
       const filePath = await saveToCollection(
-        'zcaps',
+        COLLECTION,
         storageId,
         result.rootCapability
       )
       await writeCreateMeta({
+        collection: COLLECTION,
         storageId,
         created: new Date().toISOString(),
         handle: options.handle,
@@ -177,6 +154,9 @@ export async function runDelegate(options: {
   handle?: string
   description?: string
 }): Promise<number> {
+  if (!requireSaveForMetaFlags(options)) {
+    return 1
+  }
   try {
     const capability = options.capability
       ? await resolveCapabilityInput({ ref: options.capability })
@@ -195,11 +175,12 @@ export async function runDelegate(options: {
     if (options.save) {
       const storageId = storageIdFor(result.delegatedCapability.id)
       const filePath = await saveToCollection(
-        'zcaps',
+        COLLECTION,
         storageId,
         result.delegatedCapability
       )
       await writeCreateMeta({
+        collection: COLLECTION,
         storageId,
         created: new Date().toISOString(),
         handle: options.handle,
@@ -250,14 +231,6 @@ export function makeZcapCommand(): Command {
         handle?: string
         description?: string
       }) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(1)
-          return
-        }
         const code = await runCreate(options)
         if (code !== 0) {
           process.exit(code)
@@ -326,14 +299,6 @@ export function makeZcapCommand(): Command {
         handle?: string
         description?: string
       }) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(1)
-          return
-        }
         const code = await runDelegate(options)
         if (code !== 0) {
           process.exit(code)
@@ -353,69 +318,40 @@ export function makeZcapCommand(): Command {
       'output one capability id per line, sorted (no metadata)'
     )
     .action(async (options: { json?: boolean; plain?: boolean }) => {
-      const storageIds = await listCollection('zcaps')
-      if (options.plain) {
-        const zcapIds: string[] = []
-        for (const storageId of storageIds) {
-          const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
-          if (zcap.id) {
-            zcapIds.push(zcap.id)
-          }
-        }
-        zcapIds.sort()
-        for (const zcapId of zcapIds) {
-          console.log(zcapId)
-        }
-        return
-      }
-
-      const entries: ({ id: string; type: string } & ItemMetadata)[] = []
-      for (const storageId of storageIds) {
-        const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
-        if (!zcap.id) {
-          continue
-        }
-        const meta = await loadMetaFromCollection({
-          collection: 'zcaps',
-          storageId
-        })
-        entries.push({ id: zcap.id, type: zcapTypeLabel({ zcap }), ...meta })
-      }
-
-      if (options.json) {
-        const output = entries.map(entry => ({
+      await runListCollection<
+        StoredZcap,
+        { id: string; type: string } & ItemMetadata
+      >({
+        collection: COLLECTION,
+        plain: options.plain,
+        json: options.json,
+        plainId: zcap => zcap.id,
+        toEntry: ({ item, meta }) =>
+          item.id
+            ? { id: item.id, type: zcapTypeLabel({ zcap: item }), ...meta }
+            : undefined,
+        toJson: entry => ({
           id: entry.id,
           type: entry.type,
           ...(entry.created && { created: entry.created }),
           ...(entry.handle && { handle: entry.handle }),
           ...(entry.description && { description: entry.description })
-        }))
-        console.log(JSON.stringify(output, null, 2))
-        return
-      }
-
-      if (entries.length === 0) {
-        return
-      }
-      const rows = entries.map(entry => [
-        entry.handle ?? '',
-        entry.type,
-        entry.created?.slice(0, 10) ?? '',
-        entry.id,
-        entry.description ?? ''
-      ])
-      console.log(
-        renderTable({
-          columns: [
-            { header: 'HANDLE', maxWidth: 16 },
-            { header: 'TYPE' },
-            { header: 'CREATED' },
-            { header: 'ID', maxWidth: 44 },
-            { header: 'DESCRIPTION', maxWidth: 40 }
-          ],
-          rows
-        })
-      )
+        }),
+        columns: [
+          { header: 'HANDLE', maxWidth: 16 },
+          { header: 'TYPE' },
+          { header: 'CREATED' },
+          { header: 'ID', maxWidth: 44 },
+          { header: 'DESCRIPTION', maxWidth: 40 }
+        ],
+        toRow: entry => [
+          entry.handle ?? '',
+          entry.type,
+          entry.created?.slice(0, 10) ?? '',
+          entry.id,
+          entry.description ?? ''
+        ]
+      })
     })
 
   zcap
@@ -427,16 +363,12 @@ export function makeZcapCommand(): Command {
     .option('--meta', 'show the zcap metadata instead of the capability')
     .option('--json', 'with --meta, output the metadata as JSON')
     .action(async (id: string, options: { meta?: boolean; json?: boolean }) => {
-      let resolved
-      try {
-        resolved = await resolveZcapRef({ ref: id })
-      } catch (err) {
-        console.error((err as Error).message)
-        process.exit(1)
-        return
-      }
+      const resolved = await resolveRefOrReport({
+        resolve: ref => resolveZcapRef({ ref }),
+        ref: id,
+        noun: 'zcap'
+      })
       if (!resolved) {
-        console.error(`No locally stored zcap found for ${id}`)
         process.exit(1)
         return
       }
@@ -504,49 +436,17 @@ export function makeZcapCommand(): Command {
         id: string,
         options: { handle?: string; description?: string }
       ) => {
-        let resolved
-        try {
-          resolved = await resolveZcapRef({ ref: id })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-        if (!resolved) {
-          console.error(`No locally stored zcap found for ${id}`)
-          process.exit(1)
-          return
-        }
-
-        const hasEdits =
-          options.handle !== undefined || options.description !== undefined
-        if (!hasEdits) {
-          console.log(JSON.stringify(resolved.meta ?? {}, null, 2))
-          return
-        }
-
-        const meta: ItemMetadata = { ...(resolved.meta ?? {}) }
-        if (options.handle !== undefined) {
-          if (options.handle === '') {
-            delete meta.handle
-          } else {
-            meta.handle = options.handle
-          }
-        }
-        if (options.description !== undefined) {
-          if (options.description === '') {
-            delete meta.description
-          } else {
-            meta.description = options.description
-          }
-        }
-        const filePath = await saveMetaToCollection({
-          collection: 'zcaps',
-          storageId: resolved.storageId,
-          meta
+        const code = await runMetaCollection({
+          collection: COLLECTION,
+          noun: 'zcap',
+          resolve: ref => resolveZcapRef({ ref }),
+          ref: id,
+          handle: options.handle,
+          description: options.description
         })
-        console.error(`Metadata saved to ${filePath}`)
-        console.log(JSON.stringify(meta, null, 2))
+        if (code !== 0) {
+          process.exit(code)
+        }
       }
     )
 
@@ -558,25 +458,14 @@ export function makeZcapCommand(): Command {
         'id or handle)'
     )
     .action(async (id: string) => {
-      let resolved
-      try {
-        resolved = await resolveZcapRef({ ref: id })
-      } catch (err) {
-        console.error((err as Error).message)
-        process.exit(1)
-        return
-      }
-      if (!resolved) {
-        console.error(`No locally stored zcap found for ${id}`)
-        process.exit(1)
-        return
-      }
-      const removed = await removeFromCollection({
-        collection: 'zcaps',
-        storageId: resolved.storageId
+      const code = await runRemoveCollection({
+        collection: COLLECTION,
+        noun: 'zcap',
+        resolve: ref => resolveZcapRef({ ref }),
+        ref: id
       })
-      for (const filePath of removed) {
-        console.error(`Removed ${filePath}`)
+      if (code !== 0) {
+        process.exit(code)
       }
     })
 

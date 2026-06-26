@@ -17,6 +17,14 @@
 
 ### Changed
 
+- The `list` / `show` / `meta` / `remove` subcommands and metadata handling of
+  the `vc`, `key`, and `zcap` command families now share a single
+  `src/commands/collection-command.ts` module (`runListCollection`,
+  `runMetaCollection`, `runRemoveCollection`, `resolveRefOrReport`,
+  `applyMetaEdits`, `requireSaveForMetaFlags`, and a unified `writeCreateMeta`),
+  replacing the near-identical clones previously copy-pasted across the three
+  files. `did`'s metadata edit and save-flag guard reuse the same helpers. No
+  behavior change.
 - All commands now share a single JSON-LD document loader (`src/documentLoader.ts`)
   for DID resolution, DID-URL dereferencing, and context loading -- replacing the
   per-module loaders previously built in `vc/issue`, `vc/verify` (none was passed

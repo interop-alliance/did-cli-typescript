@@ -31,11 +31,6 @@ import {
   verifyCredentialFully
 } from '../vc/verify.js'
 import {
-  listCollection,
-  loadFromCollection,
-  loadMetaFromCollection,
-  removeFromCollection,
-  saveMetaToCollection,
   saveToCollection,
   sanitizeStorageId,
   type ItemMetadata
@@ -46,6 +41,17 @@ import {
   type StoredCredential
 } from '../meta.js'
 import { renderTable } from '../table.js'
+import {
+  requireSaveForMetaFlags,
+  resolveRefOrReport,
+  runListCollection,
+  runMetaCollection,
+  runRemoveCollection,
+  writeCreateMeta
+} from './collection-command.js'
+
+/** The wallet collection name for stored Verifiable Credentials. */
+const COLLECTION = 'credentials'
 
 /**
  * Reads all of stdin to a string. Used when no file argument is given.
@@ -196,22 +202,15 @@ async function saveCredential({
   description?: string
 }): Promise<string> {
   const storageId = credentialStorageId({ credential })
-  const existingMeta = await loadMetaFromCollection({
-    collection: 'credentials',
-    storageId
-  })
-  const filePath = await saveToCollection('credentials', storageId, credential)
-  const meta: ItemMetadata = {
+  const filePath = await saveToCollection(COLLECTION, storageId, credential)
+  await writeCreateMeta({
+    collection: COLLECTION,
+    storageId,
     created: new Date().toISOString(),
-    ...existingMeta
-  }
-  if (handle) {
-    meta.handle = handle
-  }
-  if (description) {
-    meta.description = description
-  }
-  await saveMetaToCollection({ collection: 'credentials', storageId, meta })
+    handle,
+    description,
+    mergeExisting: true
+  })
   return filePath
 }
 
@@ -289,6 +288,9 @@ export async function runIssue(
     description?: string
   }
 ): Promise<number> {
+  if (!requireSaveForMetaFlags(options)) {
+    return 1
+  }
   const credential = await readCredentialJson(file)
   if (credential === undefined) {
     return 2
@@ -426,14 +428,6 @@ export function makeVcCommand(): Command {
           description?: string
         }
       ) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(1)
-          return
-        }
         const code = await runIssue(file, options)
         if (code !== 0) {
           process.exit(code)
@@ -474,84 +468,47 @@ export function makeVcCommand(): Command {
       'output one credential id per line, sorted (no metadata)'
     )
     .action(async (options: { json?: boolean; plain?: boolean }) => {
-      const storageIds = await listCollection('credentials')
-      if (options.plain) {
-        const credentialIds: string[] = []
-        for (const storageId of storageIds) {
-          const credential = await loadFromCollection<StoredCredential>(
-            'credentials',
-            storageId
-          )
-          // An id-less credential is listed by its storage id, which is how
-          // `show` / `remove` address it.
-          credentialIds.push(credential.id ?? storageId)
-        }
-        credentialIds.sort()
-        for (const credentialId of credentialIds) {
-          console.log(credentialId)
-        }
-        return
-      }
-
-      const entries: ({
-        id: string
-        type: string
-        issuer: string
-      } & ItemMetadata)[] = []
-      for (const storageId of storageIds) {
-        const credential = await loadFromCollection<StoredCredential>(
-          'credentials',
-          storageId
-        )
-        const meta = await loadMetaFromCollection({
-          collection: 'credentials',
-          storageId
-        })
-        entries.push({
-          id: credential.id ?? storageId,
-          type: credentialTypeLabel({ credential }),
-          issuer: credentialIssuerId({ credential }),
+      await runListCollection<
+        StoredCredential,
+        { id: string; type: string; issuer: string } & ItemMetadata
+      >({
+        collection: COLLECTION,
+        plain: options.plain,
+        json: options.json,
+        // An id-less credential is listed by its storage id, which is how
+        // `show` / `remove` address it.
+        plainId: (credential, storageId) => credential.id ?? storageId,
+        toEntry: ({ storageId, item, meta }) => ({
+          id: item.id ?? storageId,
+          type: credentialTypeLabel({ credential: item }),
+          issuer: credentialIssuerId({ credential: item }),
           ...meta
-        })
-      }
-
-      if (options.json) {
-        const output = entries.map(entry => ({
+        }),
+        toJson: entry => ({
           id: entry.id,
           type: entry.type,
           issuer: entry.issuer,
           ...(entry.created && { created: entry.created }),
           ...(entry.handle && { handle: entry.handle }),
           ...(entry.description && { description: entry.description })
-        }))
-        console.log(JSON.stringify(output, null, 2))
-        return
-      }
-
-      if (entries.length === 0) {
-        return
-      }
-      const rows = entries.map(entry => [
-        entry.handle ?? '',
-        entry.type,
-        entry.issuer,
-        entry.created?.slice(0, 10) ?? '',
-        entry.id,
-        entry.description ?? ''
-      ])
-      console.log(
-        renderTable({
-          columns: [
-            { header: 'HANDLE', maxWidth: 16 },
-            { header: 'TYPE', maxWidth: 24 },
-            { header: 'ISSUER', maxWidth: 28 },
-            { header: 'CREATED' },
-            { header: 'ID', maxWidth: 44 },
-            { header: 'DESCRIPTION', maxWidth: 40 }
-          ],
-          rows
-        })
-      )
+        }),
+        columns: [
+          { header: 'HANDLE', maxWidth: 16 },
+          { header: 'TYPE', maxWidth: 24 },
+          { header: 'ISSUER', maxWidth: 28 },
+          { header: 'CREATED' },
+          { header: 'ID', maxWidth: 44 },
+          { header: 'DESCRIPTION', maxWidth: 40 }
+        ],
+        toRow: entry => [
+          entry.handle ?? '',
+          entry.type,
+          entry.issuer,
+          entry.created?.slice(0, 10) ?? '',
+          entry.id,
+          entry.description ?? ''
+        ]
+      })
     })
 
   vc.command('show <id>')
@@ -562,16 +519,12 @@ export function makeVcCommand(): Command {
     .option('--meta', 'show the credential metadata instead of the credential')
     .option('--json', 'with --meta, output the metadata as JSON')
     .action(async (id: string, options: { meta?: boolean; json?: boolean }) => {
-      let resolved
-      try {
-        resolved = await resolveCredentialRef({ ref: id })
-      } catch (err) {
-        console.error((err as Error).message)
-        process.exit(1)
-        return
-      }
+      const resolved = await resolveRefOrReport({
+        resolve: ref => resolveCredentialRef({ ref }),
+        ref: id,
+        noun: 'credential'
+      })
       if (!resolved) {
-        console.error(`No locally stored credential found for ${id}`)
         process.exit(1)
         return
       }
@@ -639,49 +592,17 @@ export function makeVcCommand(): Command {
         id: string,
         options: { handle?: string; description?: string }
       ) => {
-        let resolved
-        try {
-          resolved = await resolveCredentialRef({ ref: id })
-        } catch (err) {
-          console.error((err as Error).message)
-          process.exit(1)
-          return
-        }
-        if (!resolved) {
-          console.error(`No locally stored credential found for ${id}`)
-          process.exit(1)
-          return
-        }
-
-        const hasEdits =
-          options.handle !== undefined || options.description !== undefined
-        if (!hasEdits) {
-          console.log(JSON.stringify(resolved.meta ?? {}, null, 2))
-          return
-        }
-
-        const meta: ItemMetadata = { ...(resolved.meta ?? {}) }
-        if (options.handle !== undefined) {
-          if (options.handle === '') {
-            delete meta.handle
-          } else {
-            meta.handle = options.handle
-          }
-        }
-        if (options.description !== undefined) {
-          if (options.description === '') {
-            delete meta.description
-          } else {
-            meta.description = options.description
-          }
-        }
-        const filePath = await saveMetaToCollection({
-          collection: 'credentials',
-          storageId: resolved.storageId,
-          meta
+        const code = await runMetaCollection({
+          collection: COLLECTION,
+          noun: 'credential',
+          resolve: ref => resolveCredentialRef({ ref }),
+          ref: id,
+          handle: options.handle,
+          description: options.description
         })
-        console.error(`Metadata saved to ${filePath}`)
-        console.log(JSON.stringify(meta, null, 2))
+        if (code !== 0) {
+          process.exit(code)
+        }
       }
     )
 
@@ -692,25 +613,14 @@ export function makeVcCommand(): Command {
         'credential id or handle)'
     )
     .action(async (id: string) => {
-      let resolved
-      try {
-        resolved = await resolveCredentialRef({ ref: id })
-      } catch (err) {
-        console.error((err as Error).message)
-        process.exit(1)
-        return
-      }
-      if (!resolved) {
-        console.error(`No locally stored credential found for ${id}`)
-        process.exit(1)
-        return
-      }
-      const removed = await removeFromCollection({
-        collection: 'credentials',
-        storageId: resolved.storageId
+      const code = await runRemoveCollection({
+        collection: COLLECTION,
+        noun: 'credential',
+        resolve: ref => resolveCredentialRef({ ref }),
+        ref: id
       })
-      for (const filePath of removed) {
-        console.error(`Removed ${filePath}`)
+      if (code !== 0) {
+        process.exit(code)
       }
     })
 
