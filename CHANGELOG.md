@@ -44,6 +44,19 @@
   machine-parseable JSON) when a proof's verification method uses a DID method the
   loader has no driver for, distinguishing a loader misconfiguration from a
   genuine invalid signature.
+- Internal typing and consistency cleanups (no behavior change): the exported
+  key-pair shape is named once as `StoredKeyPair` in `storage.ts` (replacing the
+  three verbatim copies in `vc/issue`, `zcap/signer`, `was/client` and the inline
+  shapes in `storage`/`meta`); `loadMetaFromCollection` is generic over the
+  metadata type (so only the `keys` collection carries the key-specific `dids`
+  field); `loadFromCollection` / `saveToCollection` take an options object like
+  the rest of the storage helpers; `vc/issue` and `vc/verify` replace their
+  `as never` casts with typed ones; `edv/recipients` replaces `Record<string,
+  any>` with a named `VerificationMethodNode` type; `edv`'s encrypt functions
+  share an `EnvelopeOptions` type and a `resolveEncryptContextOrReport` wrapper;
+  and the `z6Mk` / `z6LS` multibase prefixes are named constants. Added the
+  file-level JSDoc header to `key.ts` and moved the `zcap revoke` stub message to
+  stderr.
 
 ## 0.10.0 - 2026-06-25
 

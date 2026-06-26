@@ -205,7 +205,7 @@ export async function runListCollection<Item, Entry>({
   if (plain) {
     const ids: string[] = []
     for (const storageId of storageIds) {
-      const item = await loadFromCollection<Item>(collection, storageId)
+      const item = await loadFromCollection<Item>({ collection, storageId })
       const id = plainId(item, storageId)
       if (id !== undefined) {
         ids.push(id)
@@ -220,8 +220,11 @@ export async function runListCollection<Item, Entry>({
 
   const entries: Entry[] = []
   for (const storageId of storageIds) {
-    const item = await loadFromCollection<Item>(collection, storageId)
-    const meta = await loadMetaFromCollection({ collection, storageId })
+    const item = await loadFromCollection<Item>({ collection, storageId })
+    const meta = await loadMetaFromCollection<KeyMetadata>({
+      collection,
+      storageId
+    })
     const entry = await toEntry({ storageId, item, meta })
     if (entry !== undefined) {
       entries.push(entry)

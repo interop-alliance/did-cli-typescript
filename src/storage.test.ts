@@ -63,7 +63,11 @@ describe('storage', () => {
     })
 
     it('listCollection excludes .meta.json sidecars', async () => {
-      await saveToCollection('keys', 'some-key', { type: 'Multikey' })
+      await saveToCollection({
+        collection: 'keys',
+        storageId: 'some-key',
+        data: { type: 'Multikey' }
+      })
       await saveMetaToCollection({
         collection: 'keys',
         storageId: 'some-key',
@@ -115,11 +119,15 @@ describe('storage', () => {
 
   describe('findStoredKey', () => {
     it('finds a stored key by fingerprint', async () => {
-      await saveToCollection('keys', 'key-a', {
-        publicKeyMultibase: 'z6MkAaa'
+      await saveToCollection({
+        collection: 'keys',
+        storageId: 'key-a',
+        data: { publicKeyMultibase: 'z6MkAaa' }
       })
-      await saveToCollection('keys', 'key-b', {
-        publicKeyMultibase: 'z6MkBbb'
+      await saveToCollection({
+        collection: 'keys',
+        storageId: 'key-b',
+        data: { publicKeyMultibase: 'z6MkBbb' }
       })
       const found = await findStoredKey({ fingerprint: 'z6MkBbb' })
       assert.equal(found?.storageId, 'key-b')

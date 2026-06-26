@@ -100,11 +100,11 @@ export async function grantAccess({
     return { delegatedCapability, encoded }
   }
   const storageId = sanitizeStorageId(delegatedCapability.id)
-  const savedPath = await saveToCollection(
-    ZCAP_COLLECTION,
+  const savedPath = await saveToCollection({
+    collection: ZCAP_COLLECTION,
     storageId,
-    delegatedCapability
-  )
+    data: delegatedCapability
+  })
   await writeCreateMeta({
     collection: ZCAP_COLLECTION,
     storageId,

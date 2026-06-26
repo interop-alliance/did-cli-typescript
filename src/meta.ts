@@ -15,7 +15,9 @@ import {
   loadFromCollection,
   loadMetaFromCollection,
   saveMetaToCollection,
-  type KeyMetadata
+  type ItemMetadata,
+  type KeyMetadata,
+  type StoredKeyPair
 } from './storage.js'
 
 /**
@@ -97,7 +99,7 @@ export async function recordKeyDidAssociation({
     return
   }
   const meta =
-    (await loadMetaFromCollection({
+    (await loadMetaFromCollection<KeyMetadata>({
       collection: 'keys',
       storageId: found.storageId
     })) ?? {}
@@ -130,7 +132,7 @@ export async function removeKeyDidAssociation({
   if (!found) {
     return
   }
-  const meta = await loadMetaFromCollection({
+  const meta = await loadMetaFromCollection<KeyMetadata>({
     collection: 'keys',
     storageId: found.storageId
   })
@@ -251,19 +253,22 @@ export interface StoredZcap {
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<{storageId: string, zcap: StoredZcap, meta?: KeyMetadata} | undefined>}
+ * @returns {Promise<{storageId: string, zcap: StoredZcap, meta?: ItemMetadata} | undefined>}
  */
 export async function resolveZcapRef({ ref }: { ref: string }): Promise<
   | {
       storageId: string
       zcap: StoredZcap
-      meta?: KeyMetadata
+      meta?: ItemMetadata
     }
   | undefined
 > {
   const storageIds = await listCollection('zcaps')
   for (const storageId of storageIds) {
-    const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
+    const zcap = await loadFromCollection<StoredZcap>({
+      collection: 'zcaps',
+      storageId
+    })
     if (zcap.id === ref) {
       const meta = await loadMetaFromCollection({
         collection: 'zcaps',
@@ -283,7 +288,10 @@ export async function resolveZcapRef({ ref }: { ref: string }): Promise<
   if (!match) {
     return undefined
   }
-  const zcap = await loadFromCollection<StoredZcap>('zcaps', match.storageId)
+  const zcap = await loadFromCollection<StoredZcap>({
+    collection: 'zcaps',
+    storageId: match.storageId
+  })
   return { storageId: match.storageId, zcap, meta: match.meta }
 }
 
@@ -312,22 +320,22 @@ export interface StoredCredential {
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<{storageId: string, credential: StoredCredential, meta?: KeyMetadata} | undefined>}
+ * @returns {Promise<{storageId: string, credential: StoredCredential, meta?: ItemMetadata} | undefined>}
  */
 export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
   | {
       storageId: string
       credential: StoredCredential
-      meta?: KeyMetadata
+      meta?: ItemMetadata
     }
   | undefined
 > {
   const storageIds = await listCollection('credentials')
   for (const storageId of storageIds) {
-    const credential = await loadFromCollection<StoredCredential>(
-      'credentials',
+    const credential = await loadFromCollection<StoredCredential>({
+      collection: 'credentials',
       storageId
-    )
+    })
     if (credential.id === ref) {
       const meta = await loadMetaFromCollection({
         collection: 'credentials',
@@ -337,10 +345,10 @@ export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
     }
   }
   if (storageIds.includes(ref)) {
-    const credential = await loadFromCollection<StoredCredential>(
-      'credentials',
-      ref
-    )
+    const credential = await loadFromCollection<StoredCredential>({
+      collection: 'credentials',
+      storageId: ref
+    })
     const meta = await loadMetaFromCollection({
       collection: 'credentials',
       storageId: ref
@@ -358,10 +366,10 @@ export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
   if (!match) {
     return undefined
   }
-  const credential = await loadFromCollection<StoredCredential>(
-    'credentials',
-    match.storageId
-  )
+  const credential = await loadFromCollection<StoredCredential>({
+    collection: 'credentials',
+    storageId: match.storageId
+  })
   return { storageId: match.storageId, credential, meta: match.meta }
 }
 
@@ -374,23 +382,19 @@ export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<{storageId: string, key: object, meta?: KeyMetadata} | undefined>}
+ * @returns {Promise<{storageId: string, key: StoredKeyPair, meta?: KeyMetadata} | undefined>}
  */
 export async function resolveKeyRef({ ref }: { ref: string }): Promise<
   | {
       storageId: string
-      key: {
-        id?: string
-        publicKeyMultibase?: string
-        secretKeyMultibase?: string
-      }
+      key: StoredKeyPair
       meta?: KeyMetadata
     }
   | undefined
 > {
   const byFingerprint = await findStoredKey({ fingerprint: ref })
   if (byFingerprint) {
-    const meta = await loadMetaFromCollection({
+    const meta = await loadMetaFromCollection<KeyMetadata>({
       collection: 'keys',
       storageId: byFingerprint.storageId
     })
@@ -402,15 +406,14 @@ export async function resolveKeyRef({ ref }: { ref: string }): Promise<
     alternative: 'publicKeyMultibase fingerprint',
     storageIds: await listCollection('keys'),
     loadMeta: storageId =>
-      loadMetaFromCollection({ collection: 'keys', storageId })
+      loadMetaFromCollection<KeyMetadata>({ collection: 'keys', storageId })
   })
   if (!match) {
     return undefined
   }
-  const key = await loadFromCollection<{
-    id?: string
-    publicKeyMultibase?: string
-    secretKeyMultibase?: string
-  }>('keys', match.storageId)
+  const key = await loadFromCollection<StoredKeyPair>({
+    collection: 'keys',
+    storageId: match.storageId
+  })
   return { storageId: match.storageId, key, meta: match.meta }
 }

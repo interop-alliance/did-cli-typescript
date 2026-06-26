@@ -94,11 +94,11 @@ export async function runCreate(options: {
     })
     if (options.save) {
       const storageId = storageIdFor(result.rootCapability.id)
-      const filePath = await saveToCollection(
-        COLLECTION,
+      const filePath = await saveToCollection({
+        collection: COLLECTION,
         storageId,
-        result.rootCapability
-      )
+        data: result.rootCapability
+      })
       await writeCreateMeta({
         collection: COLLECTION,
         storageId,
@@ -174,11 +174,11 @@ export async function runDelegate(options: {
     })
     if (options.save) {
       const storageId = storageIdFor(result.delegatedCapability.id)
-      const filePath = await saveToCollection(
-        COLLECTION,
+      const filePath = await saveToCollection({
+        collection: COLLECTION,
         storageId,
-        result.delegatedCapability
-      )
+        data: result.delegatedCapability
+      })
       await writeCreateMeta({
         collection: COLLECTION,
         storageId,
@@ -473,7 +473,7 @@ export function makeZcapCommand(): Command {
     .command('revoke <id>')
     .description('Revoke a zcap by ID')
     .action((zcapId: string) => {
-      console.log(`Revoking zcap ${zcapId}...`)
+      console.error(`Revoking zcap ${zcapId}...`)
       // TODO: implement
     })
 

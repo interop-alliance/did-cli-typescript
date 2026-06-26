@@ -35,7 +35,7 @@ async function listStoredHmacs(): Promise<StoredHmac[]> {
   const storageIds = await listCollection('keys')
   const stored = await Promise.all(
     storageIds.map(storageId =>
-      loadFromCollection<ISHA256HMACKey>('keys', storageId)
+      loadFromCollection<ISHA256HMACKey>({ collection: 'keys', storageId })
     )
   )
   return storageIds

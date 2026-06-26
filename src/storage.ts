@@ -46,6 +46,20 @@ export interface KeyMetadata extends ItemMetadata {
 }
 
 /**
+ * The shape of an exported key pair saved in a `<did>.keys.json` file (a DID
+ * signing key) or a wallet `keys/` collection item. Only `id` is always
+ * present: `controller`/`type` are absent from some exports, and the
+ * `publicKeyMultibase`/`secretKeyMultibase` pair is absent for a symmetric key.
+ */
+export interface StoredKeyPair {
+  id: string
+  controller?: string
+  type?: string
+  publicKeyMultibase?: string
+  secretKeyMultibase?: string
+}
+
+/**
  * List the storage IDs of all items saved in a wallet collection.
  *
  * The storage ID of an item is its file name without the `.json` extension --
@@ -76,23 +90,40 @@ export async function listCollection(collection: string): Promise<string[]> {
 /**
  * Load and JSON-parse a single item from a wallet collection.
  *
- * @param collection {string}
- * @param storageId {string}
+ * @param options {object}
+ * @param options.collection {string}
+ * @param options.storageId {string}
  * @returns {Promise<T>}
  */
-export async function loadFromCollection<T = unknown>(
-  collection: string,
+export async function loadFromCollection<T = unknown>({
+  collection,
+  storageId
+}: {
+  collection: string
   storageId: string
-): Promise<T> {
+}): Promise<T> {
   const filePath = join(getWalletDir(), collection, `${storageId}.json`)
   return JSON.parse(await readFile(filePath, 'utf8')) as T
 }
 
-export async function saveToCollection(
-  collection: string,
-  storageId: string,
+/**
+ * JSON-serialize and save a single item into a wallet collection.
+ *
+ * @param options {object}
+ * @param options.collection {string}
+ * @param options.storageId {string}
+ * @param options.data {object}
+ * @returns {Promise<string>} the item file path.
+ */
+export async function saveToCollection({
+  collection,
+  storageId,
+  data
+}: {
+  collection: string
+  storageId: string
   data: object
-): Promise<string> {
+}): Promise<string> {
   const dir = join(getWalletDir(), collection)
   await mkdir(dir, { recursive: true })
   const filePath = join(dir, `${storageId}.json`)
@@ -106,18 +137,20 @@ export async function saveToCollection(
  * @param options {object}
  * @param options.collection {string}
  * @param options.storageId {string}
- * @returns {Promise<KeyMetadata | undefined>} undefined when no sidecar exists.
+ * @returns {Promise<T | undefined>} undefined when no sidecar exists.
  */
-export async function loadMetaFromCollection({
+export async function loadMetaFromCollection<
+  T extends ItemMetadata = ItemMetadata
+>({
   collection,
   storageId
 }: {
   collection: string
   storageId: string
-}): Promise<KeyMetadata | undefined> {
+}): Promise<T | undefined> {
   const filePath = join(getWalletDir(), collection, `${storageId}.meta.json`)
   try {
-    return JSON.parse(await readFile(filePath, 'utf8')) as KeyMetadata
+    return JSON.parse(await readFile(filePath, 'utf8')) as T
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined
@@ -207,30 +240,19 @@ export async function removeFromCollection({
  *
  * @param options {object}
  * @param options.fingerprint {string}
- * @returns {Promise<{storageId: string, key: object} | undefined>}
+ * @returns {Promise<{storageId: string, key: StoredKeyPair} | undefined>}
  */
 export async function findStoredKey({
   fingerprint
 }: {
   fingerprint: string
-}): Promise<
-  | {
-      storageId: string
-      key: {
-        id?: string
-        publicKeyMultibase?: string
-        secretKeyMultibase?: string
-      }
-    }
-  | undefined
-> {
+}): Promise<{ storageId: string; key: StoredKeyPair } | undefined> {
   const storageIds = await listCollection('keys')
   for (const storageId of storageIds) {
-    const key = await loadFromCollection<{
-      id?: string
-      publicKeyMultibase?: string
-      secretKeyMultibase?: string
-    }>('keys', storageId)
+    const key = await loadFromCollection<StoredKeyPair>({
+      collection: 'keys',
+      storageId
+    })
     if (key.publicKeyMultibase === fingerprint || key.id === fingerprint) {
       return { storageId, key }
     }

@@ -41,6 +41,7 @@ import {
   loadKeyAgreementKey,
   resolveRecipient,
   resolveRecipientFile,
+  X25519_MULTIBASE_PREFIX,
   type KeyAgreementKey
 } from '../edv/recipients.js'
 import { isEncryptedDocument, type DocumentPayload } from '../edv/document.js'
@@ -110,7 +111,10 @@ function parseJson(bytes: Uint8Array): unknown {
  */
 function recipientRefFromKid(kid: string): string {
   const fragment = kid.includes('#') ? kid.slice(kid.indexOf('#') + 1) : ''
-  if (kid.startsWith('did:key:') && fragment.startsWith('z6LS')) {
+  if (
+    kid.startsWith('did:key:') &&
+    fragment.startsWith(X25519_MULTIBASE_PREFIX)
+  ) {
     return fragment
   }
   return kid
@@ -208,6 +212,20 @@ function parseJsonObjectOption({
 }
 
 /**
+ * The envelope-shaping options shared by `--document` and `--stream` encrypt
+ * (and the context resolver): the JSON `--meta` blob, the `--index`/`--unique`
+ * blinded-attribute declarations, the `--hmac` blinding-key ref, and an
+ * `--update` target whose id/sequence/recipients are carried forward.
+ */
+interface EnvelopeOptions {
+  meta?: string
+  index: string[]
+  unique?: boolean
+  hmac?: string
+  update?: string
+}
+
+/**
  * The encrypt-time context shared by `--document` and `--stream`: the parsed
  * `--meta`, the resolved blinding `hmac` and `--index` declarations, and the
  * envelope `base` -- absent for a fresh document, or (with `--update`) the
@@ -244,14 +262,7 @@ async function resolveEncryptContext({
   index,
   unique,
   hmac
-}: {
-  keys: KeyAgreementKey[]
-  meta?: string
-  update?: string
-  index: string[]
-  unique?: boolean
-  hmac?: string
-}): Promise<EncryptContext> {
+}: { keys: KeyAgreementKey[] } & EnvelopeOptions): Promise<EncryptContext> {
   const metaObject =
     meta !== undefined
       ? parseJsonObjectOption({ value: meta, label: '--meta' })
@@ -279,6 +290,25 @@ async function resolveEncryptContext({
       indexed: existing.indexed ?? []
     },
     encryptKeys: await mergeUpdateRecipients({ keys, existing })
+  }
+}
+
+/**
+ * Resolve the encrypt-time context, reporting a thrown error to stderr and
+ * returning undefined (the caller returns exit code 2). Wraps the try/catch
+ * shared by the `--document` and `--stream` branches.
+ *
+ * @param options {object}   See `resolveEncryptContext`.
+ * @returns {Promise<EncryptContext | undefined>}
+ */
+async function resolveEncryptContextOrReport(
+  options: { keys: KeyAgreementKey[] } & EnvelopeOptions
+): Promise<EncryptContext | undefined> {
+  try {
+    return await resolveEncryptContext(options)
+  } catch (err) {
+    console.error((err as Error).message)
+    return undefined
   }
 }
 
@@ -327,13 +357,8 @@ export async function runEncrypt({
   document?: boolean
   stream?: boolean
   chunkSize?: number
-  meta?: string
-  index: string[]
-  unique?: boolean
-  hmac?: string
-  update?: string
   out?: string
-}): Promise<number> {
+} & EnvelopeOptions): Promise<number> {
   const envelopeMode = Boolean(document) || Boolean(stream)
   if (!envelopeMode && (meta !== undefined || update !== undefined)) {
     console.error('--meta and --update require --document or --stream.')
@@ -440,31 +465,23 @@ async function runEncryptDocument({
 }: {
   bytes: Uint8Array
   keys: KeyAgreementKey[]
-  meta?: string
-  index: string[]
-  unique?: boolean
-  hmac?: string
-  update?: string
   out?: string
-}): Promise<number> {
+} & EnvelopeOptions): Promise<number> {
   const content = parseJson(bytes)
   if (content === null || typeof content !== 'object') {
     console.error('--document requires the input to be a JSON object.')
     return 2
   }
 
-  let context
-  try {
-    context = await resolveEncryptContext({
-      keys,
-      meta,
-      update,
-      index,
-      unique,
-      hmac
-    })
-  } catch (err) {
-    console.error((err as Error).message)
+  const context = await resolveEncryptContextOrReport({
+    keys,
+    meta,
+    update,
+    index,
+    unique,
+    hmac
+  })
+  if (!context) {
     return 2
   }
 
@@ -517,32 +534,24 @@ async function runEncryptStream({
 }: {
   bytes: Uint8Array
   keys: KeyAgreementKey[]
-  meta?: string
-  index: string[]
-  unique?: boolean
-  hmac?: string
-  update?: string
   chunkSize?: number
   out?: string
   cipher: Cipher
-}): Promise<number> {
+} & EnvelopeOptions): Promise<number> {
   if (!out) {
     console.error('--stream requires -o/--out (the bundle directory to write).')
     return 2
   }
 
-  let context
-  try {
-    context = await resolveEncryptContext({
-      keys,
-      meta,
-      update,
-      index,
-      unique,
-      hmac
-    })
-  } catch (err) {
-    console.error((err as Error).message)
+  const context = await resolveEncryptContextOrReport({
+    keys,
+    meta,
+    update,
+    index,
+    unique,
+    hmac
+  })
+  if (!context) {
     return 2
   }
 
@@ -862,13 +871,8 @@ export function makeEdvCommand(): Command {
           document?: boolean
           stream?: boolean
           chunkSize?: number
-          meta?: string
-          index: string[]
-          unique?: boolean
-          hmac?: string
-          update?: string
           out?: string
-        }
+        } & EnvelopeOptions
       ) => runAndExit(runEncrypt({ file, ...options }))
     )
 
