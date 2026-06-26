@@ -15,6 +15,7 @@ import {
   loadFromCollection,
   loadMetaFromCollection
 } from '../storage.js'
+import { resolveByHandle } from '../meta.js'
 
 /** The stored `type` value of an HMAC blinding key (the EDV protocol string). */
 export const HMAC_KEY_TYPE = 'Sha256HmacKey2019'
@@ -83,25 +84,19 @@ export async function resolveHmac({
     return SHA256HMACKey.from(direct.stored)
   }
 
-  const metas = await Promise.all(
-    candidates.map(candidate =>
-      loadMetaFromCollection({
-        collection: 'keys',
-        storageId: candidate.storageId
-      })
-    )
-  )
-  const byHandle = candidates.filter(
-    (_candidate, index) => metas[index]?.handle === ref
-  )
-  if (byHandle.length === 0) {
+  const match = await resolveByHandle({
+    ref,
+    noun: 'HMAC keys',
+    alternative: 'key id',
+    storageIds: candidates.map(candidate => candidate.storageId),
+    loadMeta: storageId =>
+      loadMetaFromCollection({ collection: 'keys', storageId })
+  })
+  if (!match) {
     throw new Error(`No HMAC key found for "${ref}".`)
   }
-  if (byHandle.length > 1) {
-    throw new Error(
-      `Handle "${ref}" matches ${byHandle.length} HMAC keys; ` +
-        'use the key id instead.'
-    )
-  }
-  return SHA256HMACKey.from(byHandle[0].stored)
+  const candidate = candidates.find(
+    candidate => candidate.storageId === match.storageId
+  )!
+  return SHA256HMACKey.from(candidate.stored)
 }
