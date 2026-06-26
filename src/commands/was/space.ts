@@ -16,7 +16,15 @@ import {
   saveSpaceRecord
 } from '../../was/registry.js'
 import { renderTable } from '../../table.js'
-import { parseSpaceAddress, reportError, wasUrl } from './shared.js'
+import { requireSaveForMetaFlags } from '../collection-command.js'
+import {
+  parseSpaceAddress,
+  printFieldValueTable,
+  reportDeleted,
+  reportError,
+  reportNotFound,
+  wasUrl
+} from './shared.js'
 
 /**
  * Creates a space on the server and prints `{ id, url, name?, controller }`.
@@ -41,6 +49,9 @@ export async function runSpaceCreate(options: {
   description?: string
 }): Promise<number> {
   try {
+    if (!requireSaveForMetaFlags(options)) {
+      return 2
+    }
     const { client, server, did } = await buildWasClient({
       server: options.server,
       did: options.did
@@ -209,7 +220,7 @@ export async function runSpaceShow(options: {
         console.log(JSON.stringify(output, null, 2))
         return 0
       }
-      const rows = [
+      printFieldValueTable([
         ['ID', entry.record.id],
         ['Name', entry.record.name ?? ''],
         ['Server', entry.record.server],
@@ -217,13 +228,7 @@ export async function runSpaceShow(options: {
         ['Handle', entry.meta?.handle ?? ''],
         ['Created', entry.meta?.created ?? ''],
         ['Description', entry.meta?.description ?? '']
-      ]
-      console.log(
-        renderTable({
-          columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
-          rows
-        })
-      )
+      ])
       return 0
     }
 
@@ -234,11 +239,9 @@ export async function runSpaceShow(options: {
     })
     const description = await target.client.space(target.spaceId).describe()
     if (description === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({ server: target.server, spaceId: target.spaceId })
+      return reportNotFound(
+        wasUrl({ server: target.server, spaceId: target.spaceId })
       )
-      return 1
     }
     console.log(JSON.stringify(description, null, 2))
     return 0
@@ -310,11 +313,7 @@ export async function runSpaceDelete(options: {
       did: options.did
     })
     await target.client.space(target.spaceId).delete()
-    console.error(
-      'Deleted ' +
-        wasUrl({ server: target.server, spaceId: target.spaceId }) +
-        ' on the server.'
-    )
+    reportDeleted(wasUrl({ server: target.server, spaceId: target.spaceId }))
     if (target.entry) {
       const removed = await removeSpaceRecord({
         storageId: target.entry.storageId
@@ -426,11 +425,9 @@ export async function runSpaceAdd(options: {
     })
     const description = await target.client.space(target.spaceId).describe()
     if (description === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({ server: target.server, spaceId: target.spaceId })
+      return reportNotFound(
+        wasUrl({ server: target.server, spaceId: target.spaceId })
       )
-      return 1
     }
     const filePath = await saveSpaceRecord({
       record: {

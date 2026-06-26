@@ -10,7 +10,9 @@ import {
   assertOneAddressing,
   printCollectionListing,
   printResourceListing,
-  reportError
+  reportDeleted,
+  reportError,
+  reportNotFound
 } from './shared.js'
 import { runCollectionDelete, runCollectionList } from './collection.js'
 import { runResourceDelete, runResourceList } from './resource.js'
@@ -55,8 +57,7 @@ export async function runLs(options: {
       if (resolved.depth === 'space') {
         const listing = await resolved.handle.collections()
         if (listing === null) {
-          console.error(`Not found (or not visible to you): ${resolved.url}`)
-          return 1
+          return reportNotFound(resolved.url)
         }
         printCollectionListing({
           listing,
@@ -66,8 +67,7 @@ export async function runLs(options: {
       } else {
         const listing = await resolved.handle.list()
         if (listing === null) {
-          console.error(`Not found (or not visible to you): ${resolved.url}`)
-          return 1
+          return reportNotFound(resolved.url)
         }
         printResourceListing({
           listing,
@@ -128,7 +128,7 @@ export async function runRm(options: {
         did: options.did
       })
       await resolved.handle.delete()
-      console.error(`Deleted ${resolved.url} on the server.`)
+      reportDeleted(resolved.url)
       return 0
     } catch (err) {
       return reportError({ action: 'delete the path', err })

@@ -33,6 +33,7 @@ import {
   capabilityOption,
   contentTypeOption,
   didOption,
+  disambiguatePayloadArgs,
   runAndExit,
   serverOption
 } from './was/shared.js'
@@ -71,6 +72,76 @@ import {
 import { runLs, runRm } from './was/tree.js'
 import { runPolicyClear, runPolicySet, runPolicyShow } from './was/policy.js'
 import { runGrant, runPublish, runUnpublish } from './was/publish.js'
+
+/**
+ * Adds a resource `get [path]` verb to a parent command. Shared by
+ * `was resource get` and the top-level `was get` shorthand, which differ only
+ * in their description.
+ *
+ * @param parent {Command}
+ * @param description {string}
+ * @returns {void}
+ */
+function addGetCommand(parent: Command, description: string): void {
+  parent
+    .command('get [path]')
+    .description(description)
+    .option('--output <file>', 'write the resource content to a file')
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string | undefined,
+        options: {
+          output?: string
+          capability?: string
+          server?: string
+          did?: string
+        }
+      ) => {
+        await runAndExit(runResourceGet({ address, ...options }))
+      }
+    )
+}
+
+/**
+ * Adds a resource `put [path] [file]` verb to a parent command. Shared by
+ * `was resource put` and the top-level `was put` shorthand, which differ only
+ * in their description.
+ *
+ * @param parent {Command}
+ * @param description {string}
+ * @returns {void}
+ */
+function addPutCommand(parent: Command, description: string): void {
+  parent
+    .command('put [path] [file]')
+    .description(description)
+    .addOption(contentTypeOption())
+    .addOption(capabilityOption())
+    .addOption(serverOption())
+    .addOption(didOption())
+    .action(
+      async (
+        address: string | undefined,
+        file: string | undefined,
+        options: {
+          contentType?: string
+          capability?: string
+          server?: string
+          did?: string
+        }
+      ) => {
+        const args = disambiguatePayloadArgs({
+          address,
+          file,
+          capability: options.capability
+        })
+        await runAndExit(runResourcePut({ ...args, ...options }))
+      }
+    )
+}
 
 export function makeWasCommand(): Command {
   const was = new Command('was').description(
@@ -111,14 +182,6 @@ export function makeWasCommand(): Command {
         handle?: string
         description?: string
       }) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(2)
-          return
-        }
         await runAndExit(runSpaceCreate(options))
       }
     )
@@ -484,69 +547,25 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        // With --capability the path is omitted, so a single positional
-        // argument is the payload file.
-        if (options.capability && file === undefined) {
-          file = address
-          address = undefined
-        }
-        await runAndExit(runResourceAdd({ address, file, ...options }))
+        const args = disambiguatePayloadArgs({
+          address,
+          file,
+          capability: options.capability
+        })
+        await runAndExit(runResourceAdd({ ...args, ...options }))
       }
     )
 
-  resource
-    .command('put [path] [file]')
-    .description(
-      'Create or replace a resource at a known id (upsert); payload from ' +
-        'file or stdin'
-    )
-    .addOption(contentTypeOption())
-    .addOption(capabilityOption())
-    .addOption(serverOption())
-    .addOption(didOption())
-    .action(
-      async (
-        address: string | undefined,
-        file: string | undefined,
-        options: {
-          contentType?: string
-          capability?: string
-          server?: string
-          did?: string
-        }
-      ) => {
-        // With --capability the path is omitted, so a single positional
-        // argument is the payload file.
-        if (options.capability && file === undefined) {
-          file = address
-          address = undefined
-        }
-        await runAndExit(runResourcePut({ address, file, ...options }))
-      }
-    )
+  addPutCommand(
+    resource,
+    'Create or replace a resource at a known id (upsert); payload from ' +
+      'file or stdin'
+  )
 
-  resource
-    .command('get [path]')
-    .description(
-      'Read a resource: JSON pretty-printed to stdout, binary written raw'
-    )
-    .option('--output <file>', 'write the resource content to a file')
-    .addOption(capabilityOption())
-    .addOption(serverOption())
-    .addOption(didOption())
-    .action(
-      async (
-        address: string | undefined,
-        options: {
-          output?: string
-          capability?: string
-          server?: string
-          did?: string
-        }
-      ) => {
-        await runAndExit(runResourceGet({ address, ...options }))
-      }
-    )
+  addGetCommand(
+    resource,
+    'Read a resource: JSON pretty-printed to stdout, binary written raw'
+  )
 
   resource
     .command('list <collection>')
@@ -673,54 +692,12 @@ export function makeWasCommand(): Command {
       }
     )
 
-  was
-    .command('get [path]')
-    .description('Read a resource (shorthand for "resource get")')
-    .option('--output <file>', 'write the resource content to a file')
-    .addOption(capabilityOption())
-    .addOption(serverOption())
-    .addOption(didOption())
-    .action(
-      async (
-        address: string | undefined,
-        options: {
-          output?: string
-          capability?: string
-          server?: string
-          did?: string
-        }
-      ) => {
-        await runAndExit(runResourceGet({ address, ...options }))
-      }
-    )
+  addGetCommand(was, 'Read a resource (shorthand for "resource get")')
 
-  was
-    .command('put [path] [file]')
-    .description('Create or replace a resource (shorthand for "resource put")')
-    .addOption(contentTypeOption())
-    .addOption(capabilityOption())
-    .addOption(serverOption())
-    .addOption(didOption())
-    .action(
-      async (
-        address: string | undefined,
-        file: string | undefined,
-        options: {
-          contentType?: string
-          capability?: string
-          server?: string
-          did?: string
-        }
-      ) => {
-        // With --capability the path is omitted, so a single positional
-        // argument is the payload file.
-        if (options.capability && file === undefined) {
-          file = address
-          address = undefined
-        }
-        await runAndExit(runResourcePut({ address, file, ...options }))
-      }
-    )
+  addPutCommand(
+    was,
+    'Create or replace a resource (shorthand for "resource put")'
+  )
 
   was
     .command('rm [path]')
@@ -864,14 +841,6 @@ export function makeWasCommand(): Command {
           did?: string
         }
       ) => {
-        if (
-          (options.handle !== undefined || options.description !== undefined) &&
-          !options.save
-        ) {
-          console.error('--handle and --description require --save')
-          process.exit(2)
-          return
-        }
         await runAndExit(runGrant({ address, ...options }))
       }
     )
