@@ -1,5 +1,16 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- `did webvh rotate-keys` now accepts `--with-seed`, emitting the secret key
+  seed of the new/next update key the rotation generates (the staged next key
+  when pre-rotation stays armed, otherwise the freshly generated active key of
+  an ordinary rotation). Honors `SECRET_KEY_SEED` when set, mirroring
+  `did create`. Rejected for a rotation that generates no new key (a bare
+  `--stop-prerotation` reveal, or rotating to an external `--update-key`).
+
 ## 0.10.1 - 2026-06-26
 
 ### Fixed

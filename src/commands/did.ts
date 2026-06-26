@@ -354,6 +354,11 @@ export function makeDidCommand(): Command {
       '--keep-old-key',
       'retain the retired update key secret in the sidecar (default: drop it)'
     )
+    .option(
+      '--with-seed',
+      'emit the secret key seed of the new/next update key this rotation ' +
+        'generates (honors SECRET_KEY_SEED if set, else generated)'
+    )
     .option('-y, --yes', 'skip the confirmation prompt')
     .action(
       (
@@ -363,6 +368,7 @@ export function makeDidCommand(): Command {
           enablePrerotation?: boolean
           stopPrerotation?: boolean
           keepOldKey?: boolean
+          withSeed?: boolean
           yes?: boolean
         }
       ) => runAndExit(runRotateKeys({ didRef, ...options }))

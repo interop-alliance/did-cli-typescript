@@ -60,13 +60,18 @@ export async function exportUpdateKey(
  * (and reconstructed via `loadUpdateKey` at the next rotation), so the key pair
  * itself is not returned.
  *
+ * @param [options] {object}
+ * @param [options.seed] {Uint8Array}   derive the key deterministically from
+ *   this seed (e.g. for `--with-seed`); generated randomly when omitted.
  * @returns {Promise<WebvhUpdateKey & { nextKeyHash: string }>}
  */
-export async function generateStagedKey(): Promise<
+export async function generateStagedKey({
+  seed
+}: { seed?: Uint8Array } = {}): Promise<
   WebvhUpdateKey & { nextKeyHash: string }
 > {
   const { publicKeyMultibase, secretKeyMultibase } = await exportUpdateKey(
-    await Ed25519VerificationKey.generate()
+    await Ed25519VerificationKey.generate({ seed })
   )
   const nextKeyHash = await deriveNextKeyHash(publicKeyMultibase)
   return { publicKeyMultibase, secretKeyMultibase, nextKeyHash }

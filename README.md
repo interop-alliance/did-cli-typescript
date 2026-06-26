@@ -3,7 +3,8 @@
 [![Node.js CI](https://github.com/interop-alliance/did-cli-typescript/workflows/CI/badge.svg)](https://github.com/interop-alliance/did-cli-typescript/actions?query=workflow%3A%22CI%22)
 [![NPM Version](https://img.shields.io/npm/v/@interop/did-cli.svg)](https://npm.im/@interop/did-cli)
 
-> A command line client for managing DIDs, VCs, zCaps, and corresponding cryptographic key pairs, written in Typescript.
+> A command line client for managing DIDs, VCs, zCaps, and corresponding
+> cryptographic key pairs, written in Typescript.
 
 ## Table of Contents
 
@@ -15,7 +16,40 @@
 
 ## Background
 
+`@interop/did-cli` is a command-line wallet for the building blocks of
+decentralized identity: [Decentralized Identifiers](https://www.w3.org/TR/did-core/)
+(DIDs), [Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/) (VCs),
+[Authorization Capabilities](https://w3id.org/zcap/v1) (zCaps), and the
+cryptographic key pairs that underpin them.
+
+It lets you generate and manage these objects locally -- minting DIDs, issuing
+and verifying credentials, delegating capabilities, and encrypting data -- and
+interact with remote
+[Wallet Attached Storage](https://digitalcredentials.github.io/wallet-attached-storage-spec/)
+servers, all from the terminal and backed by a local file-based wallet.
+
+### Features
+
+- **DIDs** -- create, resolve, and manage `did:key`, `did:web`, and `did:webvh`
+  DIDs (with `did:webvh` key pre-rotation, rotation, and history logs).
+- **Keys** -- generate and store Ed25519, ECDSA, X25519, and HMAC key pairs,
+  with deterministic seed-based generation.
+- **Verifiable Credentials** -- issue (sign), verify, and import VCs, including
+  signature, expiration, revocation, and trusted-issuer checks.
+- **Authorization Capabilities (zCaps)** -- create root capabilities and
+  delegate (attenuate) authority down a signed capability chain.
+- **Encryption (EDV)** -- encrypt and decrypt to X25519 recipients as raw JWE,
+  EDV Documents, or chunked stream bundles.
+- **Wallet Attached Storage (WAS)** -- a client for WAS servers: manage spaces,
+  collections, and resources over zcap-authorized HTTP.
+- **Local wallet** -- everything is stored in a local file-based wallet with
+  searchable metadata (handles, descriptions, timestamps).
+
 ## Install
+
+```
+pnpm install -g @interop/did-cli
+```
 
 ## Usage
 
@@ -26,20 +60,71 @@ Help is available with the `--help/-h` command line option:
 ./di COMMAND -h
 ```
 
+### Command Summary
+
+```
+di did create [method]          create a DID (key | web | webvh; default key)
+di did add-key <did>            add a verification method to a stored DID
+di did add-service <did>        add a service entry to a stored did:web/webvh
+di did remove-service <did>     remove a service entry from a stored did:web/webvh
+di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
+di did get|resolve <did>        resolve a DID (or DID URL) via the document loader
+di did show|view|cat <did>      show a stored DID document
+di did list                     list stored DIDs
+di did meta <did>               show/edit a DID's local metadata
+di did remove|delete|rm <did>   remove a stored DID
+
+di key create                   generate a key pair
+di key list                     list stored keys
+di key show|view|cat <id>       show a stored key
+di key meta <id>                show/edit a key's local metadata
+di key remove|delete|rm <id>    remove a stored key
+di key export <id>              export a key pair
+
+di vc verify [file]             verify a Verifiable Credential
+di vc issue [file]              issue (sign) a Verifiable Credential
+di vc import [source]           import a credential into the wallet
+di vc list                      list stored credentials
+di vc show|view|cat <id>        show a stored credential
+di vc meta <id>                 show/edit a credential's local metadata
+di vc remove|delete|rm <id>     remove a stored credential
+
+di zcap create                  create a root capability
+di zcap delegate                delegate (attenuate) a capability
+di zcap list                    list stored capabilities
+di zcap show|view|cat <id>      show a stored capability
+di zcap meta <id>               show/edit a capability's local metadata
+di zcap remove|delete|rm <id>   remove a stored capability
+di zcap revoke <id>             revoke a delegated capability
+
+di edv encrypt [file]           encrypt to X25519 recipients (raw JWE, an EDV Document with --document, or a chunked bundle with --stream)
+di edv decrypt [file]           decrypt a JWE, EDV Document, or stream bundle with a stored X25519 key
+
+di wallet ls|list               list all wallet collections and items
+
+di was space <create|list|show|update|delete|forget|add|backends|quotas|export|import>
+di was collection|coll <create|list|show|update|delete|backend|quota>
+di was resource|res <add|put|get|list|delete>
+di was ls|get|put|rm [path]     depth-dispatching shorthands
+di was policy <show|set|clear>  manage access-control policies
+di was publish|unpublish <path> toggle world-readable access
+di was grant <path>             delegate access via a signed capability
+```
+
 ### Environment Variables
 
 These environment variables configure storage locations and provide defaults
 or secret-key seeds for individual commands. Each is also documented inline in
 the relevant command section below.
 
-| Variable | Used by | Purpose |
-| --- | --- | --- |
-| `WALLET_DIR` | all | Wallet collections directory (`keys/`, `zcaps/`, `credentials/`, `was-spaces/`). Defaults to `~/.config/did-cli-wallet/` (honors `XDG_CONFIG_HOME`). |
-| `DIDS_DIR` | `did` | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`. |
-| `SECRET_KEY_SEED` | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa` or `--type x25519`. |
-| `WAS_DID` | `was` | Default signing DID (or stored-DID handle) when `--did` is omitted. |
-| `WAS_SERVER_URL` | `was` | Default WAS server base URL when `--server` is omitted. |
-| `ZCAP_CONTROLLER_KEY_SEED` | `zcap` | Controller signing-key seed for delegating capabilities. |
+| Variable                   | Used by                    | Purpose                                                                                                                                              |
+|----------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `WALLET_DIR`               | all                        | Wallet collections directory (`keys/`, `zcaps/`, `credentials/`, `was-spaces/`). Defaults to `~/.config/did-cli-wallet/` (honors `XDG_CONFIG_HOME`). |
+| `DIDS_DIR`                 | `did`                      | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`.                                                                                           |
+| `SECRET_KEY_SEED`          | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa` or `--type x25519`.                                   |
+| `WAS_DID`                  | `was`                      | Default signing DID (or stored-DID handle) when `--did` is omitted.                                                                                  |
+| `WAS_SERVER_URL`           | `was`                      | Default WAS server base URL when `--server` is omitted.                                                                                              |
+| `ZCAP_CONTROLLER_KEY_SEED` | `zcap`                     | Controller signing-key seed for delegating capabilities.                                                                                             |
 
 ### Key Management
 
@@ -133,7 +218,8 @@ Like ECDSA, X25519 key generation is non-deterministic, so `--with-seed` and
 `SECRET_KEY_SEED` are not supported with `--type x25519`.
 
 Generate a `Sha256HmacKey2019` HMAC key -- a 32-byte symmetric secret used to
-HMAC-blind EDV index attributes (see [Blinded indexing](#blinded-indexing---index))
+HMAC-blind EDV index attributes (
+see [Blinded indexing](#blinded-indexing---index))
 -- with `--type hmac`:
 
 ```
@@ -147,14 +233,19 @@ half), identified by a random `urn:uuid:` id:
 {
   "id": "urn:uuid:...",
   "type": "Sha256HmacKey2019",
-  "secretKeyJwk": { "kty": "oct", "alg": "HS256", "k": "..." }
+  "secretKeyJwk": {
+    "kty": "oct",
+    "alg": "HS256",
+    "k": "..."
+  }
 }
 ```
 
 HMAC key generation is non-deterministic, so `--with-seed` and `SECRET_KEY_SEED`
 are not supported with `--type hmac`.
 
-Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by default, or
+Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by
+default, or
 `$WALLET_DIR/keys/` if set) with `--save`. A `.meta.json` metadata sidecar is
 written next to the key, recording the creation timestamp; `--handle` (a short
 tag for telling keys apart) and `--description` add user-defined metadata to
@@ -335,7 +426,8 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di did create
 ```
 
 Save the DID document and key material to local storage with `--save`
-(written to `~/.config/did-cli-wallet/dids/` by default, or `$DIDS_DIR` if set). A `.meta.json`
+(written to `~/.config/did-cli-wallet/dids/` by default, or `$DIDS_DIR` if set).
+A `.meta.json`
 metadata sidecar is written next to the DID document, recording the creation
 timestamp; `--handle` and `--description` add user-defined metadata to it
 (both require `--save`):
@@ -391,7 +483,8 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv \
 ```
 
 Save the DID document and key material to local storage with `--save` (written
-to `~/.config/did-cli-wallet/dids/web/` by default, or `$DIDS_DIR` if set). The key file is an
+to `~/.config/did-cli-wallet/dids/web/` by default, or `$DIDS_DIR` if set). The
+key file is an
 object keyed by verification method id, so further keys can be appended later:
 
 ```
@@ -406,7 +499,8 @@ DID saved to /home/user/.config/did-cli-wallet/dids/web/did:web:example.com.json
 #### Add a key to a did:web DID
 
 Add another verification key to an existing, locally stored `did:web` DID (the
-DID must have been saved with `did create web --save`). The new key is generated,
+DID must have been saved with `did create web --save`). The new key is
+generated,
 added to the DID document, and both the document and key file in storage are
 updated in place:
 
@@ -444,7 +538,7 @@ is rejected:
 ```
 
 For Ed25519 keys, the new key is derived from a seed (as with `did create`):
-pass `--with-seed` to generate (and print) a fresh seed, or set `SECRET_KEY_SEED`
+pass `--with-seed` to generate (and print) a fresh seed, or set`SECRET_KEY_SEED`
 to derive the key deterministically. ECDSA and X25519 keys are not
 seed-derivable, so `--with-seed` is not supported with `--type ecdsa` or
 `--type x25519`:
@@ -566,6 +660,12 @@ Flags:
   prior commitment.
 - `--keep-old-key` -- retain the retired update key's secret in the sidecar
   instead of dropping it.
+- `--with-seed` -- emit the secret key seed of the new/next update key this
+  rotation generates (the staged next key when pre-rotation stays armed, or the
+  freshly generated active key in an ordinary rotation). Honors`SECRET_KEY_SEED`
+  if set, otherwise generates a seed. Rejected for a rotation that generates no
+  new key (a bare `--stop-prerotation` reveal, or rotating to an external
+  `--update-key`).
 - `-y`, `--yes` -- skip the confirmation prompt (rotation is hard to undo).
 
 #### Add or remove a service entry
@@ -821,7 +921,8 @@ argument, an http(s) URL, or, if neither is given, from stdin, and the issued
 credential is printed to stdout. If the input already carries a proof, issuing
 appends an additional one.
 
-The DID to issue with is required (`--did`); it must have been saved locally (see
+The DID to issue with is required (`--did`); it must have been saved locally (
+see
 `di did create --save`):
 
 ```
@@ -863,7 +964,8 @@ does not match the key type (e.g. `--suite eddsa-rdfc-2022` for an ECDSA key) is
 rejected. ECDSA credentials round-trip through `vc verify` (below).
 
 Pass `--save` to also store the issued credential in local wallet storage
-(`~/.config/did-cli-wallet/credentials/` by default, or `$WALLET_DIR` if set); `--save`
+(`~/.config/did-cli-wallet/credentials/` by default, or `$WALLET_DIR` if set);
+`--save`
 records the creation timestamp in a `.meta.json` metadata sidecar, and
 `--handle` / `--description` (which require `--save`) tag the saved credential
 the same way `zcap create --save` does:
@@ -1017,9 +1119,11 @@ narrowing the allowed actions or the target.
 
 Both commands print the capability as JSON together with an `encoded` field --
 the capability serialized and `base58btc`-encoded with a multibase `z` prefix --
-which is the compact form you pass to `zcap delegate --capability` to delegate it
+which is the compact form you pass to `zcap delegate --capability` to delegate
+it
 further. Pass `--save` to also write the capability to local wallet storage
-(`~/.config/did-cli-wallet/zcaps/` by default, or `$WALLET_DIR` if set); `--save` records the
+(`~/.config/did-cli-wallet/zcaps/` by default, or `$WALLET_DIR` if set);`--save`
+records the
 creation timestamp in a `.meta.json` metadata sidecar, and `--handle` /
 `--description` (which require `--save`) tag the saved capability the same way
 `key create --save` and `did create --save` do. The exit code is `0` on
@@ -1027,8 +1131,9 @@ success and `1` on a creation / delegation or input error.
 
 #### Create a root capability
 
-Build the root capability for an invocation target. The `--controller` is the DID
-that holds root authority over the target, and `--url` is the `invocationTarget`.
+Build the root capability for an invocation target. The `--controller` is the
+DID
+that holds root authority over the target, and `--url` is the`invocationTarget`.
 Root capabilities are unsigned, so no key is needed:
 
 ```
@@ -1046,7 +1151,8 @@ Root capabilities are unsigned, so no key is needed:
 }
 ```
 
-The root capability's `id` is always `urn:zcap:root:<url-encoded invocationTarget>`,
+The root capability's `id` is always
+`urn:zcap:root:<url-encoded invocationTarget>`,
 and a root capability grants all actions (it has no `allowedAction`).
 
 #### Note about the `encoded` field
@@ -1267,7 +1373,8 @@ SPACE[/COLLECTION[/RESOURCE]]
 where `SPACE` is one of:
 
 - a **registry handle** (e.g. `home`) of a space registered in the local
-  wallet (`~/.config/did-cli-wallet/was-spaces/`), which also supplies the server URL and
+  wallet (`~/.config/did-cli-wallet/was-spaces/`), which also supplies the
+  server URL and
   signing DID defaults;
 - a **bare space id** (a server-generated uuid or urn), combined with
   `--server` / `WAS_SERVER_URL`;
@@ -1668,7 +1775,8 @@ WAS_TEST_SERVER_URL=http://localhost:3002 npm run test:node
 ### Encrypted Data (EDV)
 
 The `edv` commands encrypt an object or file to one or more X25519 recipients
-and decrypt the result, using the EDV / [minimal-cipher](https://www.npmjs.com/package/@interop/minimal-cipher)
+and decrypt the result, using the
+EDV / [minimal-cipher](https://www.npmjs.com/package/@interop/minimal-cipher)
 serialization. The output is a single raw **JWE** (the `jwe` field of an EDV
 Document), written to stdout or an `-o` file -- by convention `*.jwe.json`.
 Encryption is public-key (key-agreement) only: there is no password mode. The
@@ -1720,9 +1828,11 @@ error rather than emitting garbage.
 
 #### EDV Documents (`--document`)
 
-By default `edv encrypt` emits a bare JWE. With `-d/--document` it wraps that JWE
+By default `edv encrypt` emits a bare JWE. With `-d/--document` it wraps that
+JWE
 in a full **EDV Document** envelope -- `{ id, sequence, indexed, jwe }`, the
-shape an EDV / WAS server stores -- written by convention to `*.edvdoc.json`. The
+shape an EDV / WAS server stores -- written by convention to `*.edvdoc.json`.
+The
 input is encrypted as the document's `content`; an optional `--meta <json>`
 object is encrypted alongside it (both live inside the `jwe`, so only `id`,
 `sequence`, and `indexed` stay in cleartext). The `id` is a fresh
@@ -1759,19 +1869,24 @@ require an envelope and reject a bare JWE.
 
 For large inputs, `-s/--stream` encrypts the bytes as a sequence of fixed-size
 chunks rather than one JWE. The output is a **bundle directory** (convention
-`*.edvdoc/`, so `-o` is required) holding `document.json` -- an EDV Document whose
-cleartext `stream: { sequence, chunks }` descriptor records the chunk count -- and
+`*.edvdoc/`, so `-o` is required) holding `document.json` -- an EDV Document
+whose
+cleartext `stream: { sequence, chunks }` descriptor records the chunk count --
+and
 one `chunks/<index>.jwe.json` per chunk. This mirrors how an EDV / WAS server
 stores stream bytes as resources separate from the document. `--chunk-size
-<bytes>` sets the chunk size (default 1 MiB); `--meta` and `--update` work as for
+<bytes>` sets the chunk size (default 1 MiB); `--meta` and `--update` work as
+for
 `--document`.
 
 ```
 ./di edv encrypt photo.png --stream -r alice-kak --chunk-size 1048576 -o photo.edvdoc/
 ```
 
-`edv decrypt` recognizes a bundle directory, reassembles the chunks in order, and
-writes the original bytes to `-o`/stdout (the document's `content`/`meta`/`stream`
+`edv decrypt` recognizes a bundle directory, reassembles the chunks in order,
+and
+writes the original bytes to `-o`/stdout (the document's `content`/`meta`/
+`stream`
 are reported on stderr).
 
 ```

@@ -11,6 +11,10 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import {
+  decodeSecretKeySeed,
+  generateSecretKeySeed
+} from '@digitalcredentials/bnid'
+import {
   resolveDIDFromLog,
   updateDID,
   type DIDLog
@@ -340,6 +344,7 @@ export async function persistUpdateKeysSidecar({
  * @param [options.enablePrerotation] {boolean}   Turn pre-rotation on.
  * @param [options.stopPrerotation] {boolean}   Turn pre-rotation off.
  * @param [options.keepOldKey] {boolean}   Retain the retired update key secret.
+ * @param [options.withSeed] {boolean}   Emit the new/next update key's seed.
  * @param [options.yes] {boolean}   Skip the confirmation prompt.
  * @returns {Promise<number>}   The process exit code.
  */
@@ -349,6 +354,7 @@ export async function runRotateKeys(options: {
   enablePrerotation?: boolean
   stopPrerotation?: boolean
   keepOldKey?: boolean
+  withSeed?: boolean
   yes?: boolean
 }): Promise<number> {
   const { didRef } = options
@@ -405,6 +411,40 @@ export async function runRotateKeys(options: {
 
   const stored = await loadStoredUpdateKeys(targetDid)
 
+  // Whether this rotation stages a fresh next key only depends on the current
+  // pre-rotation state and the flags, so decide it up front: it (and the
+  // ordinary-mode generation path below) determine which freshly generated key
+  // --with-seed backs.
+  const arm = meta.prerotation
+    ? !options.stopPrerotation
+    : Boolean(options.enablePrerotation)
+  // An ordinary rotation generates a fresh active key only when it is not a
+  // stage-only --enable-prerotation and no external --update-key is supplied.
+  const generatesFreshActive =
+    !meta.prerotation && !options.enablePrerotation && !options.updateKey
+
+  // --with-seed backs the one update key this rotation freshly generates and
+  // stores: the staged next key when armed (the happy path), otherwise the
+  // fresh active key of an ordinary rotation. The two are mutually exclusive,
+  // so a single seed is unambiguous. A rotation that generates neither (a bare
+  // pre-rotation reveal, --stop-prerotation, or rotating to an external
+  // --update-key) has no secret to seed.
+  if (options.withSeed && !arm && !generatesFreshActive) {
+    console.error(
+      '--with-seed has no effect for this rotation: it does not generate a ' +
+        'new update key (no next key is staged and the active key is either ' +
+        'revealed from a prior commitment or supplied via --update-key)'
+    )
+    return 1
+  }
+  let secretKeySeed: string | undefined
+  let seedBytes: Uint8Array | undefined
+  if (options.withSeed) {
+    const envSeed = process.env.SECRET_KEY_SEED
+    secretKeySeed = envSeed ?? (await generateSecretKeySeed())
+    seedBytes = decodeSecretKeySeed({ secretKeySeed })
+  }
+
   // Inbound: who signs this entry, and what becomes the active key.
   let signerKeyPair: Ed25519VerificationKey
   let newActive: WebvhUpdateKey
@@ -435,8 +475,10 @@ export async function runRotateKeys(options: {
         newActive = { publicKeyMultibase: options.updateKey[0] }
         retiredActive = activeRecord
       } else {
+        // Fresh active key; --with-seed (when present) backs it here, since no
+        // staged key is generated in this branch.
         newActive = await exportUpdateKey(
-          await Ed25519VerificationKey.generate()
+          await Ed25519VerificationKey.generate({ seed: seedBytes })
         )
         retiredActive = activeRecord
       }
@@ -446,11 +488,13 @@ export async function runRotateKeys(options: {
     return 1
   }
 
-  // Outbound: keep the ratchet armed (stage a fresh next key) or not.
-  const arm = meta.prerotation
-    ? !options.stopPrerotation
-    : Boolean(options.enablePrerotation)
-  const newStaged = arm ? await generateStagedKey() : undefined
+  // Outbound: keep the ratchet armed (stage a fresh next key) or not. When
+  // armed, --with-seed (when present) backs the staged key; in that case the
+  // active key was revealed or supplied, not freshly generated above, so the
+  // seed is unambiguously the staged key's.
+  const newStaged = arm
+    ? await generateStagedKey({ seed: seedBytes })
+    : undefined
   const nextKeyHashes = newStaged ? [newStaged.nextKeyHash] : []
 
   const confirmed = await confirmAction({
@@ -509,8 +553,11 @@ export async function runRotateKeys(options: {
       : 'Pre-rotation is off after this rotation.'
   )
 
-  console.log(
-    JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
-  )
+  const output: Record<string, unknown> = { id: result.did }
+  if (secretKeySeed !== undefined) {
+    output.secretKeySeed = secretKeySeed
+  }
+  output.didDocument = result.doc
+  console.log(JSON.stringify(output, null, 2))
   return 0
 }

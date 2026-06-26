@@ -919,6 +919,196 @@ describe('di did', () => {
         await rm(didsDir, { recursive: true })
       }
     })
+
+    it('--keep-old-key retains the retired update key secret', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--keep-old-key', '--yes'],
+          { from: 'user' }
+        )
+
+        const after = await readJson<{
+          retired?: {
+            publicKeyMultibase: string
+            secretKeyMultibase?: string
+          }[]
+        }>(updateKeysPath)
+        // The superseded active key is kept (with its secret) in `retired`.
+        assert.equal(after.retired?.length, 1)
+        assert.equal(
+          after.retired?.[0].publicKeyMultibase,
+          before.active.publicKeyMultibase
+        )
+        assert.ok(after.retired?.[0].secretKeyMultibase)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('drops the retired update key secret by default', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+        const after = await readJson<{ retired?: unknown }>(updateKeysPath)
+        assert.equal(after.retired, undefined)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects --enable-prerotation together with --stop-prerotation', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'rotate-keys',
+            did,
+            '--enable-prerotation',
+            '--stop-prerotation',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.some(line => line.includes('mutually exclusive')))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--with-seed emits the staged next key seed', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        const parsed = JSON.parse(logs.join('\n'))
+        assert.ok(parsed.secretKeySeed)
+        assert.match(
+          parsed.secretKeySeed,
+          /^z/,
+          'secretKeySeed should be base58btc-encoded'
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--with-seed derives the staged key deterministically from SECRET_KEY_SEED', async () => {
+      const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      const first = await createSavedWebvh()
+      const second = await createSavedWebvh()
+      try {
+        // Set the seed only now, so it backs the rotation's staged key rather
+        // than either DID's create-time keys.
+        process.env.SECRET_KEY_SEED = seed
+
+        process.env.DIDS_DIR = first.didsDir
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', first.did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        const firstOut = JSON.parse(logs.join('\n'))
+        logs.length = 0
+
+        process.env.DIDS_DIR = second.didsDir
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', second.did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        const secondOut = JSON.parse(logs.join('\n'))
+
+        assert.equal(firstOut.secretKeySeed, seed)
+        assert.equal(secondOut.secretKeySeed, seed)
+        // Same seed -> same staged key across the two independent DIDs.
+        const firstStaged = await readJson<{
+          staged: { publicKeyMultibase: string }
+        }>(first.updateKeysPath)
+        const secondStaged = await readJson<{
+          staged: { publicKeyMultibase: string }
+        }>(second.updateKeysPath)
+        assert.equal(
+          firstStaged.staged.publicKeyMultibase,
+          secondStaged.staged.publicKeyMultibase
+        )
+      } finally {
+        await rm(first.didsDir, { recursive: true })
+        await rm(second.didsDir, { recursive: true })
+      }
+    })
+
+    it('--with-seed seeds the fresh active key in an ordinary rotation', async () => {
+      const seed = 'z1AjLxguobDw1Fy3sdaMQxztemkgUQPXXtU6jS9aSf5o7V5'
+      const first = await createSavedWebvh(['--no-prerotation'])
+      const second = await createSavedWebvh(['--no-prerotation'])
+      try {
+        process.env.SECRET_KEY_SEED = seed
+
+        process.env.DIDS_DIR = first.didsDir
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', first.did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        process.env.DIDS_DIR = second.didsDir
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', second.did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+
+        // No staged key in ordinary mode, so the seed backs the new active key:
+        // the same seed yields the same active key across both DIDs.
+        const firstKeys = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged?: unknown
+        }>(first.updateKeysPath)
+        const secondKeys = await readJson<{
+          active: { publicKeyMultibase: string }
+        }>(second.updateKeysPath)
+        assert.equal(firstKeys.staged, undefined)
+        assert.equal(
+          firstKeys.active.publicKeyMultibase,
+          secondKeys.active.publicKeyMultibase
+        )
+      } finally {
+        await rm(first.didsDir, { recursive: true })
+        await rm(second.didsDir, { recursive: true })
+      }
+    })
+
+    it('--with-seed errors when the rotation generates no new key', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        // A --stop-prerotation reveal activates the existing staged key and
+        // stages nothing, so there is no freshly generated secret to seed.
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'rotate-keys',
+            did,
+            '--stop-prerotation',
+            '--with-seed',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.some(line => line.includes('--with-seed has no effect'))
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
   })
 
   describe('get', () => {
