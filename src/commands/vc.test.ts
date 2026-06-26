@@ -15,7 +15,7 @@ import {
   runIssue,
   runVerify
 } from './vc.js'
-import { saveToDids } from '../storage.js'
+import { saveDidMeta, saveToDids } from '../storage.js'
 import { toSummary, verifyCredentialFully } from '../vc/verify.js'
 import { welcomeCredential } from '../vc/fixtures/welcomeCredential.js'
 
@@ -237,6 +237,23 @@ describe('did vc issue', () => {
     const code = await runIssue(file, { did })
     assert.equal(code, 2)
     assert.ok(errors[0].startsWith('Could not read credential:'))
+  })
+
+  it('resolves --did from a metadata handle', async () => {
+    await saveDidMeta({ did, meta: { handle: 'welcome-issuer' } })
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did: 'welcome-issuer' })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('returns exit code 1 when --did matches no stored DID', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did: 'no-such-handle' })
+    assert.equal(code, 1)
+    assert.equal(logs.length, 0)
+    assert.equal(errors[0], 'No locally stored DID found for no-such-handle')
   })
 
   it('produces a credential whose signature verifies', async () => {

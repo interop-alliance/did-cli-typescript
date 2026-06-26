@@ -1,5 +1,14 @@
 # History
 
+## 0.10.1 - TBD
+
+### Fixed
+
+- `vc issue --did` now accepts a metadata handle (not just a full DID id),
+  resolving it via the same lookup used by the other DID-referencing commands.
+  Previously passing a handle failed with a confusing `The "path" argument must
+  be of type string. Received undefined` error.
+
 ## 0.10.0 - 2026-06-25
 
 ### Added

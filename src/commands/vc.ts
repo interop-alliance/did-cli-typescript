@@ -39,7 +39,11 @@ import {
   sanitizeStorageId,
   type ItemMetadata
 } from '../storage.js'
-import { resolveCredentialRef, type StoredCredential } from '../meta.js'
+import {
+  resolveCredentialRef,
+  resolveDidRef,
+  type StoredCredential
+} from '../meta.js'
 import { renderTable } from '../table.js'
 
 /**
@@ -253,7 +257,8 @@ export async function runVerify(
  *
  * @param file {string | undefined}   Path to read, or undefined for stdin.
  * @param options {object}
- * @param options.did {string}   The id of the stored DID to issue (sign) with.
+ * @param options.did {string}   The id or metadata handle of the stored DID to
+ *   issue (sign) with.
  * @param [options.key] {string}   The verification method id to use.
  * @param [options.suite] {string}   The signature suite to use.
  * @param [options.save] {boolean}   Save the issued credential to local
@@ -279,10 +284,22 @@ export async function runIssue(
     return 2
   }
 
+  let did: string | undefined
+  try {
+    did = await resolveDidRef({ ref: options.did })
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+  if (!did) {
+    console.error(`No locally stored DID found for ${options.did}`)
+    return 1
+  }
+
   try {
     const signed = await issueCredential({
       credential,
-      did: options.did,
+      did,
       keyId: options.key,
       suite: options.suite
     })
@@ -362,7 +379,10 @@ export function makeVcCommand(): Command {
     .description(
       'Issue (sign) an unsigned Verifiable Credential (JSON from a file or stdin)'
     )
-    .requiredOption('--did <did>', 'id of the stored DID to issue (sign) with')
+    .requiredOption(
+      '--did <did>',
+      'id or handle of the stored DID to issue (sign) with'
+    )
     .option(
       '--key <keyId>',
       'verification method id to use (default: first assertionMethod key)'
