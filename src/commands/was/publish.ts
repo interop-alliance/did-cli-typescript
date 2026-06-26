@@ -2,37 +2,10 @@
  * `was publish`/`unpublish` (the world-readable `PublicCanRead` toggle) and
  * `was grant` (delegate a signed capability to another DID) run functions.
  */
-import { resolveDidRef } from '../../meta.js'
-import { saveToCollection } from '../../storage.js'
-import { encodeCapability } from '../../zcap/encoding.js'
-import { expiresFromTtl } from '../../zcap/ttl.js'
 import { resolveWasTarget } from '../../was/client.js'
-import { storageIdFor } from '../zcap.js'
-import { writeCreateMeta } from '../collection-command.js'
+import { grantAccess } from '../../was/grant.js'
+import { requireSaveForMetaFlags } from '../collection-command.js'
 import { handleForTarget, reportError, wasUrl } from './shared.js'
-
-/** The capability actions WAS servers match against (HTTP verbs). */
-const WAS_ACTIONS = ['GET', 'PUT', 'POST', 'DELETE'] as const
-type WasAction = (typeof WAS_ACTIONS)[number]
-
-/**
- * Normalizes grant action verbs to their canonical uppercase form,
- * rejecting anything that is not a WAS-supported HTTP verb.
- *
- * @param actions {string[]}
- * @returns {WasAction[]}
- */
-function normalizeActions(actions: string[]): WasAction[] {
-  return actions.map(action => {
-    const verb = action.toUpperCase() as WasAction
-    if (!WAS_ACTIONS.includes(verb)) {
-      throw new Error(
-        `Unknown action "${action}" (supported: GET, PUT, POST, DELETE).`
-      )
-    }
-    return verb
-  })
-}
 
 /**
  * Makes a space, collection, or resource world-readable (the
@@ -132,13 +105,9 @@ export async function runGrant(options: {
   did?: string
 }): Promise<number> {
   try {
-    const actions = normalizeActions(options.action)
-    const delegatee = await resolveDidRef({ ref: options.to })
-    if (!delegatee) {
-      throw new Error(`No locally stored DID found for "${options.to}".`)
+    if (!requireSaveForMetaFlags(options)) {
+      return 2
     }
-    const expires =
-      options.expires ?? expiresFromTtl(options.ttl ?? '1y').toISOString()
     const target = await resolveWasTarget({
       address: options.address,
       server: options.server,
@@ -150,28 +119,19 @@ export async function runGrant(options: {
       collectionId: target.collectionId,
       resourceId: target.resourceId
     })
-    const delegatedCapability = await target.client.grant({
-      to: delegatee,
-      actions,
-      expires,
-      target: url
+    const { delegatedCapability, encoded, savedPath } = await grantAccess({
+      client: target.client,
+      target: url,
+      to: options.to,
+      actions: options.action,
+      ttl: options.ttl,
+      expires: options.expires,
+      save: options.save,
+      handle: options.handle,
+      description: options.description
     })
-    const encoded = encodeCapability(delegatedCapability)
-    if (options.save) {
-      const storageId = storageIdFor(delegatedCapability.id)
-      const filePath = await saveToCollection(
-        'zcaps',
-        storageId,
-        delegatedCapability
-      )
-      await writeCreateMeta({
-        collection: 'zcaps',
-        storageId,
-        created: new Date().toISOString(),
-        handle: options.handle,
-        description: options.description
-      })
-      console.error(`Capability saved to ${filePath}`)
+    if (savedPath) {
+      console.error(`Capability saved to ${savedPath}`)
     }
     console.log(JSON.stringify({ delegatedCapability, encoded }, null, 2))
     return 0

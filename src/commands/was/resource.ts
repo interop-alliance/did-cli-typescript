@@ -10,15 +10,16 @@ import {
   type Resource,
   type ResourceMetadataCustom
 } from '@interop/was-client'
-import { resolveWasTarget } from '../../was/client.js'
 import { resolveCapabilityTarget } from '../../was/capability.js'
 import { readPayload, writeResourceOutput } from '../../was/io.js'
 import {
   assertOneAddressing,
   printResourceListing,
+  reportDeleted,
   reportError,
-  requireCollectionTarget,
-  requireResourceTarget,
+  reportNotFound,
+  resolveCollectionTarget,
+  resolveResourceTarget,
   wasUrl
 } from './shared.js'
 
@@ -61,13 +62,10 @@ async function resolveResourceHandle({
     }
     return { resource: resolved.handle, url: resolved.url }
   }
-  const target = requireResourceTarget({
-    target: await resolveWasTarget({
-      address: address as string,
-      server,
-      did
-    }),
-    address: address as string
+  const target = await resolveResourceTarget({
+    address: address as string,
+    server,
+    did
   })
   const resource = target.client
     .space(target.spaceId)
@@ -121,13 +119,10 @@ export async function runResourceAdd(options: {
       }
       collection = resolved.handle
     } else {
-      const target = requireCollectionTarget({
-        target: await resolveWasTarget({
-          address: options.address as string,
-          server: options.server,
-          did: options.did
-        }),
-        address: options.address as string
+      const target = await resolveCollectionTarget({
+        address: options.address as string,
+        server: options.server,
+        did: options.did
       })
       collection = target.client
         .space(target.spaceId)
@@ -222,8 +217,7 @@ export async function runResourceGet(options: {
     })
     const data = await resource.get()
     if (data === null) {
-      console.error(`Not found (or not visible to you): ${url}`)
-      return 1
+      return reportNotFound(url)
     }
     await writeResourceOutput({ data, output: options.output })
     return 0
@@ -258,8 +252,7 @@ export async function runResourceMetaGet(options: {
     })
     const meta = await resource.meta()
     if (meta === null) {
-      console.error(`Not found (or not visible to you): ${url}`)
-      return 1
+      return reportNotFound(url)
     }
     console.log(JSON.stringify(meta, null, 2))
     return 0
@@ -400,28 +393,19 @@ export async function runResourceList(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     const listing = await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .list()
     if (listing === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({
-            server: target.server,
-            spaceId: target.spaceId,
-            collectionId: target.collectionId
-          })
+      return reportNotFound(
+        wasUrl({
+          server: target.server,
+          spaceId: target.spaceId,
+          collectionId: target.collectionId
+        })
       )
-      return 1
     }
     printResourceListing({ listing, json: options.json, plain: options.plain })
     return 0
@@ -445,28 +429,19 @@ export async function runResourceDelete(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireResourceTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveResourceTarget(options)
     await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .resource(target.resourceId)
       .delete()
-    console.error(
-      'Deleted ' +
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId,
-          resourceId: target.resourceId
-        }) +
-        ' on the server.'
+    reportDeleted(
+      wasUrl({
+        server: target.server,
+        spaceId: target.spaceId,
+        collectionId: target.collectionId,
+        resourceId: target.resourceId
+      })
     )
     return 0
   } catch (err) {

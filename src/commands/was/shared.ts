@@ -14,7 +14,7 @@ import {
   type Space
 } from '@interop/was-client'
 import { parseWasAddress } from '../../was/address.js'
-import { type ResolvedWasTarget } from '../../was/client.js'
+import { resolveWasTarget, type ResolvedWasTarget } from '../../was/client.js'
 import { renderTable, type Column } from '../../table.js'
 
 /**
@@ -143,6 +143,28 @@ export function reportError({
 }
 
 /**
+ * Reports a missing or not-visible read target (a `null` server response)
+ * with the standard message and returns the not-found exit code (1).
+ *
+ * @param url {string}   The canonical URL of the target.
+ * @returns {number}   The process exit code (1).
+ */
+export function reportNotFound(url: string): number {
+  console.error(`Not found (or not visible to you): ${url}`)
+  return 1
+}
+
+/**
+ * Reports a successful server-side deletion with the standard message.
+ *
+ * @param url {string}   The canonical URL of the deleted target.
+ * @returns {void}
+ */
+export function reportDeleted(url: string): void {
+  console.error(`Deleted ${url} on the server.`)
+}
+
+/**
  * Parses a WAS address and asserts it addresses a space only (no
  * collection/resource segments), as the `space` subcommands require.
  *
@@ -212,6 +234,83 @@ export function requireResourceTarget({
     collectionId: string
     resourceId: string
   }
+}
+
+/**
+ * Resolves a WAS address and asserts it addresses a collection -- the
+ * `resolveWasTarget` + `requireCollectionTarget` pair the collection/resource
+ * verbs repeat.
+ *
+ * @param options {object}
+ * @param options.address {string}   The collection address.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<ResolvedWasTarget & {collectionId: string}>}
+ */
+export async function resolveCollectionTarget({
+  address,
+  server,
+  did
+}: {
+  address: string
+  server?: string
+  did?: string
+}): Promise<ResolvedWasTarget & { collectionId: string }> {
+  return requireCollectionTarget({
+    target: await resolveWasTarget({ address, server, did }),
+    address
+  })
+}
+
+/**
+ * Resolves a WAS address and asserts it addresses a resource -- the
+ * `resolveWasTarget` + `requireResourceTarget` pair the resource verbs repeat.
+ *
+ * @param options {object}
+ * @param options.address {string}   The resource address.
+ * @param [options.server] {string}   The server base URL.
+ * @param [options.did] {string}   The signing DID or stored-DID handle.
+ * @returns {Promise<ResolvedWasTarget & {collectionId: string, resourceId: string}>}
+ */
+export async function resolveResourceTarget({
+  address,
+  server,
+  did
+}: {
+  address: string
+  server?: string
+  did?: string
+}): Promise<ResolvedWasTarget & { collectionId: string; resourceId: string }> {
+  return requireResourceTarget({
+    target: await resolveWasTarget({ address, server, did }),
+    address
+  })
+}
+
+/**
+ * Resolves the `--capability`/positional payload-argument ambiguity for the
+ * resource `add`/`put` verbs: with `--capability` the path is omitted, so a
+ * single positional argument is the payload file, not the address.
+ *
+ * @param options {object}
+ * @param [options.address] {string}   The first positional argument.
+ * @param [options.file] {string}   The second positional argument.
+ * @param [options.capability] {string}   The capability reference, if any.
+ * @returns {{address?: string, file?: string}}
+ */
+export function disambiguatePayloadArgs({
+  address,
+  file,
+  capability
+}: {
+  address?: string
+  file?: string
+  capability?: string
+}): { address?: string; file?: string } {
+  if (capability && file === undefined) {
+    return { address: undefined, file: address }
+  }
+  return { address, file }
 }
 
 /**
@@ -316,6 +415,22 @@ export function printResourceListing({
     ],
     toRow: item => [item.id, item.contentType, item.url]
   })
+}
+
+/**
+ * Renders a two-column FIELD/VALUE detail table -- the shared layout of the
+ * single-record `show`/`backend`/`quota` views.
+ *
+ * @param rows {string[][]}   The `[field, value]` pairs.
+ * @returns {void}
+ */
+export function printFieldValueTable(rows: string[][]): void {
+  console.log(
+    renderTable({
+      columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
+      rows
+    })
+  )
 }
 
 /**

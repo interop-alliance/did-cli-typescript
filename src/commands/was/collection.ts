@@ -5,12 +5,14 @@
  * collection within a space.
  */
 import { resolveWasTarget } from '../../was/client.js'
-import { renderTable } from '../../table.js'
 import {
   parseSpaceAddress,
   printCollectionListing,
+  printFieldValueTable,
+  reportDeleted,
   reportError,
-  requireCollectionTarget,
+  reportNotFound,
+  resolveCollectionTarget,
   wasUrl
 } from './shared.js'
 
@@ -94,11 +96,9 @@ export async function runCollectionList(options: {
     })
     const listing = await target.client.space(target.spaceId).collections()
     if (listing === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({ server: target.server, spaceId: target.spaceId })
+      return reportNotFound(
+        wasUrl({ server: target.server, spaceId: target.spaceId })
       )
-      return 1
     }
     printCollectionListing({
       listing,
@@ -126,28 +126,19 @@ export async function runCollectionShow(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     const description = await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .describe()
     if (description === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({
-            server: target.server,
-            spaceId: target.spaceId,
-            collectionId: target.collectionId
-          })
+      return reportNotFound(
+        wasUrl({
+          server: target.server,
+          spaceId: target.spaceId,
+          collectionId: target.collectionId
+        })
       )
-      return 1
     }
     console.log(JSON.stringify(description, null, 2))
     return 0
@@ -174,14 +165,7 @@ export async function runCollectionUpdate(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     const description = await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
@@ -208,26 +192,17 @@ export async function runCollectionDelete(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .delete()
-    console.error(
-      'Deleted ' +
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId
-        }) +
-        ' on the server.'
+    reportDeleted(
+      wasUrl({
+        server: target.server,
+        spaceId: target.spaceId,
+        collectionId: target.collectionId
+      })
     )
     return 0
   } catch (err) {
@@ -255,46 +230,31 @@ export async function runCollectionBackend(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     const backend = await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .backend()
     if (backend === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({
-            server: target.server,
-            spaceId: target.spaceId,
-            collectionId: target.collectionId
-          })
+      return reportNotFound(
+        wasUrl({
+          server: target.server,
+          spaceId: target.spaceId,
+          collectionId: target.collectionId
+        })
       )
-      return 1
     }
     if (options.json) {
       console.log(JSON.stringify(backend, null, 2))
       return 0
     }
-    const rows = [
+    printFieldValueTable([
       ['ID', backend.id],
       ['Name', backend.name ?? ''],
       ['Managed By', backend.managedBy ?? ''],
       ['Storage Mode', backend.storageMode?.join(', ') ?? ''],
       ['Persistence', backend.persistence ?? '']
-    ]
-    console.log(
-      renderTable({
-        columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
-        rows
-      })
-    )
+    ])
     return 0
   } catch (err) {
     return reportError({ action: 'show the collection backend', err })
@@ -322,34 +282,25 @@ export async function runCollectionQuota(options: {
   did?: string
 }): Promise<number> {
   try {
-    const target = requireCollectionTarget({
-      target: await resolveWasTarget({
-        address: options.address,
-        server: options.server,
-        did: options.did
-      }),
-      address: options.address
-    })
+    const target = await resolveCollectionTarget(options)
     const usage = await target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .quota()
     if (usage === null) {
-      console.error(
-        'Not found (or not visible to you): ' +
-          wasUrl({
-            server: target.server,
-            spaceId: target.spaceId,
-            collectionId: target.collectionId
-          })
+      return reportNotFound(
+        wasUrl({
+          server: target.server,
+          spaceId: target.spaceId,
+          collectionId: target.collectionId
+        })
       )
-      return 1
     }
     if (options.json) {
       console.log(JSON.stringify(usage, null, 2))
       return 0
     }
-    const rows = [
+    printFieldValueTable([
       ['Backend', usage.name ? `${usage.id} (${usage.name})` : usage.id],
       ['Managed By', usage.managedBy],
       ['State', usage.state],
@@ -362,13 +313,7 @@ export async function runCollectionQuota(options: {
       ],
       ['Restricted', usage.restrictedActions.join(', ')],
       ['Measured At', usage.measuredAt]
-    ]
-    console.log(
-      renderTable({
-        columns: [{ header: 'FIELD' }, { header: 'VALUE' }],
-        rows
-      })
-    )
+    ])
     return 0
   } catch (err) {
     return reportError({ action: 'get the collection quota', err })
