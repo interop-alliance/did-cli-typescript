@@ -16,10 +16,22 @@ import { WasClient } from '@interop/was-client'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { createSigner } from '@interop/ed25519-signature'
 import type { ISigner } from '@interop/data-integrity-core'
-import { loadDidDocument, loadDidKeys, type ItemMetadata } from '../storage.js'
+import {
+  loadDidDocument,
+  loadDidKeys,
+  type ItemMetadata,
+  type StoredKeyPair
+} from '../storage.js'
 import { resolveDidRef } from '../meta.js'
 import { parseWasAddress } from './address.js'
 import { resolveSpaceRef, type SpaceRecord } from './registry.js'
+
+/**
+ * The multibase prefix of an Ed25519 `publicKeyMultibase`. Both Ed25519 and
+ * ECDSA keys export as `type: 'Multikey'`, so the multicodec prefix of the
+ * public key is what identifies the curve.
+ */
+const ED25519_MULTIBASE_PREFIX = 'z6Mk'
 
 /**
  * Constructs the `WasClient` for a resolved server URL and signer. Kept as a
@@ -52,17 +64,6 @@ let wasClientFactory: WasClientFactory = defaultWasClientFactory
  */
 export function setWasClientFactory(factory?: WasClientFactory): void {
   wasClientFactory = factory ?? defaultWasClientFactory
-}
-
-/**
- * The shape of the exported key pair saved in a `<did>.keys.json` file.
- */
-interface StoredKeyPair {
-  id: string
-  controller?: string
-  type?: string
-  publicKeyMultibase?: string
-  secretKeyMultibase?: string
 }
 
 /**
@@ -118,8 +119,8 @@ export async function loadWasSigner({
   }
   const keysData = await loadDidKeys<StoredKeyPair>(resolved)
   // Both Ed25519 and ECDSA keys export as `type: 'Multikey'`; the curve is
-  // identified by the multicodec prefix of the public key (`z6Mk` = Ed25519).
-  if (!keysData.publicKeyMultibase?.startsWith('z6Mk')) {
+  // identified by the multicodec prefix of the public key.
+  if (!keysData.publicKeyMultibase?.startsWith(ED25519_MULTIBASE_PREFIX)) {
     throw new Error(
       'WAS signing currently supports only Ed25519 keys ' +
         `(DID ${resolved} has a different key type).`

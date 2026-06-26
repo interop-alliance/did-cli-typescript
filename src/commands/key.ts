@@ -1,3 +1,18 @@
+/**
+ * `key` command -- create and manage cryptographic keys in local wallet storage.
+ *
+ * `key create` generates a key pair of the requested `--type` (ed25519, ecdsa,
+ * x25519, or hmac) and prints the exported key object to stdout; `--save` writes
+ * it to local wallet storage (`~/.config/did-cli-wallet/keys/`) along with a
+ * `.meta.json` metadata sidecar (creation timestamp plus `--handle` /
+ * `--description` when given), and `--with-seed` includes the secret key seed in
+ * the output. `list` renders a metadata table of the saved keys (with the DIDs
+ * each key participates in, re-derived from the stored DID documents), `show`
+ * prints one key's public object back (`--meta` for its metadata), `meta` edits
+ * the metadata sidecar, and `remove` deletes a stored key; `export` remains a
+ * stub. Keys are referenced by their `publicKeyMultibase` fingerprint or by a
+ * metadata handle. Data goes to stdout, diagnostics and errors to stderr.
+ */
 import { Command } from 'commander'
 import {
   decodeSecretKeySeed,
@@ -124,7 +139,11 @@ export async function runCreate(options: {
           ':',
           '_'
         )
-        const filePath = await saveToCollection('keys', storageId, exported)
+        const filePath = await saveToCollection({
+          collection: 'keys',
+          storageId,
+          data: exported
+        })
         await writeCreateMeta({
           collection: COLLECTION,
           storageId,
@@ -172,7 +191,11 @@ export async function runCreate(options: {
           ':',
           '_'
         )
-        const filePath = await saveToCollection('keys', storageId, exported)
+        const filePath = await saveToCollection({
+          collection: 'keys',
+          storageId,
+          data: exported
+        })
         await writeCreateMeta({
           collection: COLLECTION,
           storageId,
@@ -204,7 +227,11 @@ export async function runCreate(options: {
         const date = now.toISOString().slice(0, 10)
         const rawId = exported.id ?? exported.publicKeyMultibase
         const storageId = `${date}-x25519-${rawId}`.replaceAll(':', '_')
-        const filePath = await saveToCollection('keys', storageId, exported)
+        const filePath = await saveToCollection({
+          collection: 'keys',
+          storageId,
+          data: exported
+        })
         await writeCreateMeta({
           collection: COLLECTION,
           storageId,
@@ -232,7 +259,11 @@ export async function runCreate(options: {
         const now = new Date()
         const date = now.toISOString().slice(0, 10)
         const storageId = `${date}-hmac-${exported.id}`.replaceAll(':', '_')
-        const filePath = await saveToCollection('keys', storageId, exported)
+        const filePath = await saveToCollection({
+          collection: 'keys',
+          storageId,
+          data: exported
+        })
         await writeCreateMeta({
           collection: COLLECTION,
           storageId,

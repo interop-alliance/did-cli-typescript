@@ -17,18 +17,7 @@ import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { createSigner } from '@interop/ed25519-signature'
 import type { ISigner } from '@interop/data-integrity-core'
-import { loadDidDocument, loadDidKeys } from '../storage.js'
-
-/**
- * The shape of the exported key pair saved in a `<did>.keys.json` file.
- */
-interface StoredKeyPair {
-  id: string
-  controller?: string
-  type?: string
-  publicKeyMultibase?: string
-  secretKeyMultibase?: string
-}
+import { loadDidDocument, loadDidKeys, type StoredKeyPair } from '../storage.js'
 
 /**
  * A key pair that can produce a signer, as returned by `methodFor`.

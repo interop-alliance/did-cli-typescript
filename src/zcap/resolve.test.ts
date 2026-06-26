@@ -61,7 +61,11 @@ describe('resolveCapabilityInput', () => {
   })
 
   it('resolves a stored zcap by metadata handle', async () => {
-    await saveToCollection('zcaps', 'stored-share', zcap)
+    await saveToCollection({
+      collection: 'zcaps',
+      storageId: 'stored-share',
+      data: zcap
+    })
     await saveMetaToCollection({
       collection: 'zcaps',
       storageId: 'stored-share',
@@ -72,7 +76,11 @@ describe('resolveCapabilityInput', () => {
   })
 
   it('resolves a stored zcap by capability id', async () => {
-    await saveToCollection('zcaps', 'stored-share', zcap)
+    await saveToCollection({
+      collection: 'zcaps',
+      storageId: 'stored-share',
+      data: zcap
+    })
     const resolved = await resolveCapabilityInput({
       ref: 'urn:zcap:delegated:zSampleCapability'
     })

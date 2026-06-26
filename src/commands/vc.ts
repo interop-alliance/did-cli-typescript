@@ -202,7 +202,11 @@ async function saveCredential({
   description?: string
 }): Promise<string> {
   const storageId = credentialStorageId({ credential })
-  const filePath = await saveToCollection(COLLECTION, storageId, credential)
+  const filePath = await saveToCollection({
+    collection: COLLECTION,
+    storageId,
+    data: credential
+  })
   await writeCreateMeta({
     collection: COLLECTION,
     storageId,

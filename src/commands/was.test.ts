@@ -1344,10 +1344,10 @@ describe('di was', () => {
         assert.equal(exitCode, undefined)
         const storageIds = await listCollection('zcaps')
         assert.equal(storageIds.length, 1)
-        const saved = await loadFromCollection<{ id: string }>(
-          'zcaps',
-          storageIds[0]
-        )
+        const saved = await loadFromCollection<{ id: string }>({
+          collection: 'zcaps',
+          storageId: storageIds[0]
+        })
         assert.equal(saved.id, 'urn:zcap:delegated:zGranted')
         assert.match(errors[0], /Capability saved to /)
       })
@@ -1419,7 +1419,11 @@ describe('di was', () => {
           get: { name: 'Alice' }
         })
         const zcap = makeZcap('https://was.example/space/space-1/docs/vc-1')
-        await saveToCollection('zcaps', 'stored-share', zcap)
+        await saveToCollection({
+          collection: 'zcaps',
+          storageId: 'stored-share',
+          data: zcap
+        })
         await saveMetaToCollection({
           collection: 'zcaps',
           storageId: 'stored-share',

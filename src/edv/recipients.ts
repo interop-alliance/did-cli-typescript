@@ -18,6 +18,27 @@ import { resolveKeyRef } from '../meta.js'
 /** The X25519 key-agreement verification-method type minimal-cipher expects. */
 export const KEY_AGREEMENT_TYPE = 'X25519KeyAgreementKey2020'
 
+/** The multibase prefix of an X25519 `publicKeyMultibase`. */
+export const X25519_MULTIBASE_PREFIX = 'z6LS'
+
+/**
+ * A verification-method node (or a DID document) carrying the fields recipient
+ * resolution reads: the key `type` and `publicKeyMultibase`, plus `id` /
+ * `controller` (for the did:key default) and a DID document's `keyAgreement`
+ * array. All fields are optional -- a recipient may be a raw public key with no
+ * id/controller, a key file, or a full DID document -- so the library's strict
+ * `IVerificationMethod` / `IDIDDocument` types (which require `id`/`controller`/
+ * `@context` and a literal `type`) do not fit; other JSON-LD fields a resolved
+ * document carries are simply ignored.
+ */
+interface VerificationMethodNode {
+  id?: string
+  controller?: string
+  type?: string
+  publicKeyMultibase?: string
+  keyAgreement?: (string | VerificationMethodNode)[]
+}
+
 /**
  * An X25519 key-agreement key instance with its `.id` (`kid`) populated. Used
  * both as a resolved recipient (encrypt reads `id` + `publicKeyMultibase`) and
@@ -44,11 +65,11 @@ interface StoredKeyAgreementKey {
  * `type: 'Multikey'` source is normalized via `fromMultikey`. The constructor
  * validates the multibase header bytes.
  *
- * @param source {Record<string, any>}
+ * @param source {VerificationMethodNode}
  * @returns {Promise<KeyAgreementKey>}
  */
 async function keyAgreementKeyFrom(
-  source: Record<string, any>
+  source: VerificationMethodNode
 ): Promise<KeyAgreementKey> {
   const key = await X25519KeyAgreementKey2020.from({ didKey: true, ...source })
   return key as KeyAgreementKey
@@ -79,15 +100,15 @@ function splitFragment({ ref }: { ref: string }): {
  *
  * @param options {object}
  * @param options.url {string}
- * @returns {Promise<Record<string, any>>}
+ * @returns {Promise<VerificationMethodNode>}
  */
 async function resolveDidUrl({
   url
 }: {
   url: string
-}): Promise<Record<string, any>> {
+}): Promise<VerificationMethodNode> {
   const { document } = (await documentLoader(url)) as {
-    document: Record<string, any>
+    document: VerificationMethodNode
   }
   return document
 }
@@ -123,7 +144,7 @@ function isX25519PublicKey(publicKeyMultibase?: string): boolean {
  * and construct it.
  *
  * @param options {object}
- * @param options.method {Record<string, any>}
+ * @param options.method {VerificationMethodNode}
  * @param options.ref {string}
  * @returns {Promise<KeyAgreementKey>}
  */
@@ -131,7 +152,7 @@ async function toKeyAgreementKey({
   method,
   ref
 }: {
-  method: Record<string, any>
+  method: VerificationMethodNode
   ref: string
 }): Promise<KeyAgreementKey> {
   if (!isX25519PublicKey(method.publicKeyMultibase)) {
@@ -164,11 +185,8 @@ async function resolveDidRecipient({
   // A bare DID: pick the single keyAgreement key, dereferencing any entries
   // that are id references rather than embedded verification methods.
   const didDocument = await resolveDidUrl({ url: did })
-  const entries = (didDocument.keyAgreement ?? []) as (
-    | string
-    | Record<string, any>
-  )[]
-  const methods: Record<string, any>[] = []
+  const entries = didDocument.keyAgreement ?? []
+  const methods: VerificationMethodNode[] = []
   for (const entry of entries) {
     methods.push(
       typeof entry === 'string' ? await resolveDidUrl({ url: entry }) : entry
@@ -204,7 +222,7 @@ export async function resolveRecipient({
 }: {
   ref: string
 }): Promise<KeyAgreementKey> {
-  if (ref.startsWith('z6LS')) {
+  if (ref.startsWith(X25519_MULTIBASE_PREFIX)) {
     return toKeyAgreementKey({
       method: { type: KEY_AGREEMENT_TYPE, publicKeyMultibase: ref },
       ref
@@ -237,7 +255,7 @@ export async function resolveRecipientFile({
 }: {
   path: string
 }): Promise<KeyAgreementKey> {
-  let method: Record<string, any>
+  let method: VerificationMethodNode
   try {
     method = JSON.parse(await readFile(path, 'utf8'))
   } catch (err) {
@@ -301,10 +319,10 @@ export async function autoSelectKeyAgreementKey({
   const storageIds = await listCollection('keys')
   const matches: KeyAgreementKey[] = []
   for (const storageId of storageIds) {
-    const stored = await loadFromCollection<StoredKeyAgreementKey>(
-      'keys',
+    const stored = await loadFromCollection<StoredKeyAgreementKey>({
+      collection: 'keys',
       storageId
-    )
+    })
     if (
       stored.type !== KEY_AGREEMENT_TYPE ||
       !stored.privateKeyMultibase ||

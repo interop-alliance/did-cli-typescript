@@ -819,7 +819,7 @@ describe('did zcap', () => {
   describe('stubs', () => {
     it('routes revoke', () => {
       makeZcapCommand().parse(['revoke', 'zcap-id-123'], { from: 'user' })
-      assert.ok(logs[0].includes('zcap-id-123'))
+      assert.ok(errors[0].includes('zcap-id-123'))
     })
   })
 })

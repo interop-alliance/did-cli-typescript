@@ -22,9 +22,10 @@ import {
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { ecdsaRdfc2019 } from '@interop/ecdsa-signature'
 import { DataIntegrityProof } from '@interop/data-integrity-proof'
-import { issue } from '@interop/vc'
+import { issue, type IssueCredentialOptions } from '@interop/vc'
+import type { IDidDocument } from '@interop/data-integrity-core'
 import { documentLoader } from '../documentLoader.js'
-import { loadDidDocument, loadDidKeys } from '../storage.js'
+import { loadDidDocument, loadDidKeys, type StoredKeyPair } from '../storage.js'
 import { isEcdsaPublicKeyMultibase } from '../keys/ecdsa.js'
 
 /**
@@ -95,17 +96,6 @@ function reconcileIssuer({
         'Remove existing issuer, or pass in a matching DID.'
     )
   }
-}
-
-/**
- * The shape of the exported key pair saved in a `<did>.keys.json` file.
- */
-interface StoredKeyPair {
-  id: string
-  controller?: string
-  type?: string
-  publicKeyMultibase?: string
-  secretKeyMultibase?: string
 }
 
 /**
@@ -280,7 +270,7 @@ export async function issueCredential({
     selectedKeyId = keyId
   } else {
     const method = driver().publicMethodFor({
-      didDocument: didDocument as never,
+      didDocument: didDocument as unknown as IDidDocument,
       purpose: 'assertionMethod'
     }) as { id: string }
     selectedKeyId = method.id
@@ -296,9 +286,13 @@ export async function issueCredential({
 
   const signatureSuite = await buildSuite({ storedKey, suite })
 
+  // The local credential / suite / loader shapes satisfy @interop/vc's
+  // contracts structurally but are typed independently here; cast to the option
+  // types rather than the blanket `as never`.
   return issue({
-    credential: credential as never,
-    suite: signatureSuite as never,
-    documentLoader: documentLoader as never
+    credential: credential as unknown as IssueCredentialOptions['credential'],
+    suite: signatureSuite as unknown as IssueCredentialOptions['suite'],
+    documentLoader:
+      documentLoader as unknown as IssueCredentialOptions['documentLoader']
   })
 }

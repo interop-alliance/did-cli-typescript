@@ -58,7 +58,11 @@ export async function saveSpaceRecord({
   description?: string
 }): Promise<string> {
   const storageId = sanitizeStorageId(record.id)
-  const filePath = await saveToCollection(COLLECTION, storageId, record)
+  const filePath = await saveToCollection({
+    collection: COLLECTION,
+    storageId,
+    data: record
+  })
   const existing = await loadMetaFromCollection({
     collection: COLLECTION,
     storageId
@@ -100,7 +104,10 @@ export async function listSpaceRecords(): Promise<
     meta?: ItemMetadata
   }[] = []
   for (const storageId of storageIds) {
-    const record = await loadFromCollection<SpaceRecord>(COLLECTION, storageId)
+    const record = await loadFromCollection<SpaceRecord>({
+      collection: COLLECTION,
+      storageId
+    })
     const meta = await loadMetaFromCollection({
       collection: COLLECTION,
       storageId

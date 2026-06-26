@@ -14,6 +14,7 @@ import { verifyCredential, ProblemTypes } from '@interop/verifier-core'
 import type {
   CredentialVerificationResult,
   CheckResult,
+  DocumentLoader,
   EntityIdentityRegistry
 } from '@interop/verifier-core'
 import { expirationSuite } from './suites/expirationSuite.js'
@@ -65,13 +66,17 @@ export async function verifyCredentialFully({
   registries: EntityIdentityRegistry[]
 }): Promise<CredentialVerificationResult> {
   return verifyCredential({
-    credential: credential as never,
+    // `credential` is typed `unknown` by verifier-core (parsed internally via
+    // Zod), so the local object passes without a cast.
+    credential,
     registries,
     additionalSuites: [expirationSuite, issuerDetailsSuite],
     // The shared loader resolves did:webvh (and did:web / did:key) verification
     // methods; verifier-core's default loader knows only did:key + did:web, so
-    // without this a did:webvh issuer's signature can never be checked.
-    documentLoader: documentLoader as never,
+    // without this a did:webvh issuer's signature can never be checked. The
+    // local loader is typed independently, so cast to verifier-core's
+    // DocumentLoader rather than the blanket `as never`.
+    documentLoader: documentLoader as unknown as DocumentLoader,
     // verbose so results[] carries EVERY check (incl. successes and the
     // issuer-details payload), not just failures folded into summary[].
     verbose: true
