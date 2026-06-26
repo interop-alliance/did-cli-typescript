@@ -152,6 +152,55 @@ export async function removeKeyDidAssociation({
 }
 
 /**
+ * Resolve a metadata handle to a single storage id by scanning the `.meta.json`
+ * sidecars of a set of items. This is the shared core of every `resolve*Ref`
+ * helper: the direct id/fingerprint match stays in each caller, and this
+ * collapses the "scan handles, collect matches, complain on ambiguity" tail.
+ * Returns undefined when no handle matches; throws when more than one does
+ * (handles are not unique).
+ *
+ * @param options {object}
+ * @param options.ref {string}             The handle to match.
+ * @param options.noun {string}            Plural noun for the ambiguity message (e.g. `zcaps`).
+ * @param options.alternative {string}     The unambiguous identifier to suggest instead.
+ * @param options.storageIds {string[]}    The storage ids to scan.
+ * @param options.loadMeta {(storageId: string) => Promise<MetaType | undefined>}
+ *   Loads the metadata sidecar for a storage id.
+ * @returns {Promise<{storageId: string, meta: MetaType} | undefined>}
+ */
+export async function resolveByHandle<MetaType extends { handle?: string }>({
+  ref,
+  noun,
+  alternative,
+  storageIds,
+  loadMeta
+}: {
+  ref: string
+  noun: string
+  alternative: string
+  storageIds: string[]
+  loadMeta: (storageId: string) => Promise<MetaType | undefined>
+}): Promise<{ storageId: string; meta: MetaType } | undefined> {
+  const matches: { storageId: string; meta: MetaType }[] = []
+  for (const storageId of storageIds) {
+    const meta = await loadMeta(storageId)
+    if (meta?.handle === ref) {
+      matches.push({ storageId, meta })
+    }
+  }
+  if (matches.length === 0) {
+    return undefined
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Handle "${ref}" matches ${matches.length} ${noun}; ` +
+        `use the ${alternative} instead.`
+    )
+  }
+  return matches[0]
+}
+
+/**
  * Resolve a user-supplied DID reference -- a full DID or a metadata handle --
  * to a stored DID. Anything starting with `did:` is returned as-is; otherwise
  * the metadata sidecars of all stored DIDs are searched for a matching
@@ -170,24 +219,14 @@ export async function resolveDidRef({
   if (ref.startsWith('did:')) {
     return ref
   }
-  const dids = await listDids()
-  const matches: string[] = []
-  for (const did of dids) {
-    const meta = await loadDidMeta({ did })
-    if (meta?.handle === ref) {
-      matches.push(did)
-    }
-  }
-  if (matches.length === 0) {
-    return undefined
-  }
-  if (matches.length > 1) {
-    throw new Error(
-      `Handle "${ref}" matches ${matches.length} DIDs; ` +
-        'use the full DID instead.'
-    )
-  }
-  return matches[0]
+  const match = await resolveByHandle({
+    ref,
+    noun: 'DIDs',
+    alternative: 'full DID',
+    storageIds: await listDids(),
+    loadMeta: did => loadDidMeta({ did })
+  })
+  return match?.storageId
 }
 
 /**
@@ -233,28 +272,19 @@ export async function resolveZcapRef({ ref }: { ref: string }): Promise<
       return { storageId, zcap, meta }
     }
   }
-  const matches: { storageId: string; meta: KeyMetadata }[] = []
-  for (const storageId of storageIds) {
-    const meta = await loadMetaFromCollection({
-      collection: 'zcaps',
-      storageId
-    })
-    if (meta?.handle === ref) {
-      matches.push({ storageId, meta })
-    }
-  }
-  if (matches.length === 0) {
+  const match = await resolveByHandle({
+    ref,
+    noun: 'zcaps',
+    alternative: 'capability id',
+    storageIds,
+    loadMeta: storageId =>
+      loadMetaFromCollection({ collection: 'zcaps', storageId })
+  })
+  if (!match) {
     return undefined
   }
-  if (matches.length > 1) {
-    throw new Error(
-      `Handle "${ref}" matches ${matches.length} zcaps; ` +
-        'use the capability id instead.'
-    )
-  }
-  const { storageId, meta } = matches[0]
-  const zcap = await loadFromCollection<StoredZcap>('zcaps', storageId)
-  return { storageId, zcap, meta }
+  const zcap = await loadFromCollection<StoredZcap>('zcaps', match.storageId)
+  return { storageId: match.storageId, zcap, meta: match.meta }
 }
 
 /**
@@ -317,31 +347,22 @@ export async function resolveCredentialRef({ ref }: { ref: string }): Promise<
     })
     return { storageId: ref, credential, meta }
   }
-  const matches: { storageId: string; meta: KeyMetadata }[] = []
-  for (const storageId of storageIds) {
-    const meta = await loadMetaFromCollection({
-      collection: 'credentials',
-      storageId
-    })
-    if (meta?.handle === ref) {
-      matches.push({ storageId, meta })
-    }
-  }
-  if (matches.length === 0) {
+  const match = await resolveByHandle({
+    ref,
+    noun: 'credentials',
+    alternative: 'credential id',
+    storageIds,
+    loadMeta: storageId =>
+      loadMetaFromCollection({ collection: 'credentials', storageId })
+  })
+  if (!match) {
     return undefined
   }
-  if (matches.length > 1) {
-    throw new Error(
-      `Handle "${ref}" matches ${matches.length} credentials; ` +
-        'use the credential id instead.'
-    )
-  }
-  const { storageId, meta } = matches[0]
   const credential = await loadFromCollection<StoredCredential>(
     'credentials',
-    storageId
+    match.storageId
   )
-  return { storageId, credential, meta }
+  return { storageId: match.storageId, credential, meta: match.meta }
 }
 
 /**
@@ -375,28 +396,21 @@ export async function resolveKeyRef({ ref }: { ref: string }): Promise<
     })
     return { ...byFingerprint, meta }
   }
-  const storageIds = await listCollection('keys')
-  const matches: { storageId: string; meta: KeyMetadata }[] = []
-  for (const storageId of storageIds) {
-    const meta = await loadMetaFromCollection({ collection: 'keys', storageId })
-    if (meta?.handle === ref) {
-      matches.push({ storageId, meta })
-    }
-  }
-  if (matches.length === 0) {
+  const match = await resolveByHandle({
+    ref,
+    noun: 'keys',
+    alternative: 'publicKeyMultibase fingerprint',
+    storageIds: await listCollection('keys'),
+    loadMeta: storageId =>
+      loadMetaFromCollection({ collection: 'keys', storageId })
+  })
+  if (!match) {
     return undefined
   }
-  if (matches.length > 1) {
-    throw new Error(
-      `Handle "${ref}" matches ${matches.length} keys; ` +
-        'use the publicKeyMultibase fingerprint instead.'
-    )
-  }
-  const { storageId, meta } = matches[0]
   const key = await loadFromCollection<{
     id?: string
     publicKeyMultibase?: string
     secretKeyMultibase?: string
-  }>('keys', storageId)
-  return { storageId, key, meta }
+  }>('keys', match.storageId)
+  return { storageId: match.storageId, key, meta: match.meta }
 }
