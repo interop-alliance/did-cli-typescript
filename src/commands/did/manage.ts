@@ -78,8 +78,7 @@ export async function runShow(options: {
   // trusting the stored snapshot. A DID with no stored log falls through
   // to the stored document below.
   let webvhMeta:
-    | Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
-    | undefined
+    Awaited<ReturnType<typeof resolveDIDFromLog>>['meta'] | undefined
   let resolvedDoc: Record<string, unknown> | undefined
   if (targetDid.startsWith('did:webvh:')) {
     let resolved: Awaited<ReturnType<typeof resolveStoredWebvh>>

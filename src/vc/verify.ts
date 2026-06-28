@@ -231,7 +231,6 @@ function matchingIssuersFrom(check: CheckResult | undefined): unknown[] {
     return []
   }
   const payload = check.outcome.payload as
-    | { matchingIssuers?: unknown[] }
-    | undefined
+    { matchingIssuers?: unknown[] } | undefined
   return payload?.matchingIssuers ?? []
 }

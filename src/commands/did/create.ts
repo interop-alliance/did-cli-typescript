@@ -469,8 +469,7 @@ export async function runCreate(options: {
         }
       }
       let witness:
-        | { threshold: number; witnesses: { id: string }[] }
-        | undefined
+        { threshold: number; witnesses: { id: string }[] } | undefined
       if (witnessDids.length > 0) {
         let threshold = witnessDids.length
         if (options.witnessThreshold !== undefined) {
