@@ -2,8 +2,23 @@
 
 ## Unreleased - TBD
 
+### Changed
+
+- `was` command errors now surface the HTTP status and its reason phrase (e.g.
+  `Could not put the resource: Request error (HTTP 415 Unsupported Media Type)`)
+  plus any server-provided problem `details`, instead of collapsing every
+  server rejection to a bare `Request error`. The status was already on the
+  `WasError`; `reportError` now includes it.
+
 ### Added
 
+- `did meta <did>` (with no edit flags) now prints a `Location:` block to
+  stderr listing where the DID's artifacts live on disk -- the DID document,
+  keys file, metadata sidecar, and for `did:webvh` the history log and
+  update-keys sidecar. The metadata JSON still goes to stdout unchanged. Add
+  `--json` for a machine-readable `{ metadata, files }` object that folds those
+  locations in (works in both the read and edit paths). Backed by a new
+  `didStorageFiles` helper in `storage.ts`.
 - `did webvh rotate-keys` now accepts `--with-seed`, emitting the secret key
   seed of the new/next update key the rotation generates (the staged next key
   when pre-rotation stays armed, otherwise the freshly generated active key of

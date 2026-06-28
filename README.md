@@ -839,9 +839,43 @@ fields are included there too).
 #### Edit DID metadata
 
 Show or edit the metadata of a stored DID with `did meta` (looked up by DID or
-handle). With no options it prints the current metadata; with `--handle` /
-`--description` it updates the metadata sidecar (the DID document itself is
-never rewritten). Passing an empty string clears a field:
+handle). With no options it prints the current metadata (to stdout) and lists
+where the DID's artifacts live on disk (to stderr) -- the DID document, keys
+file, metadata sidecar, and for `did:webvh` the history log and update-keys
+sidecar:
+
+```
+./di did meta did:webvh:Qm...:example.com:space:abc:did
+Location:
+  document: /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:did.json
+  keys: /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:did.keys.json
+  metadata: /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:did.meta.json
+  log: /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:did.jsonl
+  update-keys: /home/user/.config/did-cli-wallet/dids/webvh/did:webvh:Qm...:did.update-keys.json
+{
+  "created": "2026-06-10T17:22:31.123Z"
+}
+```
+
+Add `--json` for a machine-readable object that folds the locations in as a
+`files` map alongside the `metadata`:
+
+```
+./di did meta did:webvh:Qm...:did --json
+{
+  "metadata": { "created": "..." },
+  "files": {
+    "document": ".../did:webvh:Qm...:did.json",
+    "keys": ".../did:webvh:Qm...:did.keys.json",
+    "metadata": ".../did:webvh:Qm...:did.meta.json",
+    "log": ".../did:webvh:Qm...:did.jsonl",
+    "updateKeys": ".../did:webvh:Qm...:did.update-keys.json"
+  }
+}
+```
+
+With `--handle` / `--description` it updates the metadata sidecar (the DID
+document itself is never rewritten). Passing an empty string clears a field:
 
 ```
 ./di did meta did:key:z6Mkr... --handle demo-issuer --description 'Issuer DID for the demo'

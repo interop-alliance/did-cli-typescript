@@ -7,6 +7,7 @@
  */
 import { type resolveDIDFromLog } from '@interop/did-method-webvh'
 import {
+  didStorageFiles,
   listDids,
   loadDidDocument,
   loadDidMeta,
@@ -255,6 +256,7 @@ export async function runMeta(options: {
   didRef: string
   handle?: string
   description?: string
+  json?: boolean
 }): Promise<number> {
   const { didRef } = options
   let did: string | undefined
@@ -281,6 +283,26 @@ export async function runMeta(options: {
   const hasEdits =
     options.handle !== undefined || options.description !== undefined
   if (!hasEdits) {
+    const files = (await didStorageFiles({ did })).filter(file => file.exists)
+    if (options.json) {
+      // Machine-readable: fold the on-disk locations into the JSON output.
+      console.log(
+        JSON.stringify(
+          { metadata: existing ?? {}, files: fileLocations(files) },
+          null,
+          2
+        )
+      )
+      return 0
+    }
+    // Report where the DID's artifacts live on disk (stderr, so stdout stays
+    // the pure metadata JSON). Skips files that do not exist for this DID.
+    if (files.length > 0) {
+      console.error('Location:')
+      for (const file of files) {
+        console.error(`  ${file.label}: ${file.path}`)
+      }
+    }
     console.log(JSON.stringify(existing ?? {}, null, 2))
     return 0
   }
@@ -292,8 +314,33 @@ export async function runMeta(options: {
   })
   const filePath = await saveDidMeta({ did, meta })
   console.error(`Metadata saved to ${filePath}`)
-  console.log(JSON.stringify(meta, null, 2))
+  if (options.json) {
+    const files = (await didStorageFiles({ did })).filter(file => file.exists)
+    console.log(
+      JSON.stringify({ metadata: meta, files: fileLocations(files) }, null, 2)
+    )
+  } else {
+    console.log(JSON.stringify(meta, null, 2))
+  }
   return 0
+}
+
+/**
+ * Build the `files` map for `did meta --json`: the existing artifacts keyed by
+ * a camelCase label (`update-keys` becomes `updateKeys`).
+ *
+ * @param files {{ label: string, path: string, exists: boolean }[]}
+ * @returns {Record<string, string>}
+ */
+function fileLocations(
+  files: { label: string; path: string; exists: boolean }[]
+): Record<string, string> {
+  const locations: Record<string, string> = {}
+  for (const file of files) {
+    const key = file.label === 'update-keys' ? 'updateKeys' : file.label
+    locations[key] = file.path
+  }
+  return locations
 }
 
 /**

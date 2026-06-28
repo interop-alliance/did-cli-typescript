@@ -1562,6 +1562,34 @@ describe('di did', () => {
       }
     })
 
+    it('--json folds in the on-disk file locations', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', '--save', '--handle', 'issuer'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['meta', did, '--json'], {
+          from: 'user'
+        })
+
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.metadata.handle, 'issuer')
+        // A did:key has a document, keys, and metadata file (no webvh log).
+        assert.ok(parsed.files.document.endsWith(`${did}.json`))
+        assert.ok(parsed.files.keys.endsWith(`${did}.keys.json`))
+        assert.ok(parsed.files.metadata.endsWith(`${did}.meta.json`))
+        assert.equal(parsed.files.log, undefined)
+        assert.equal(parsed.files.updateKeys, undefined)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
     it('sets and clears handle and description', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir

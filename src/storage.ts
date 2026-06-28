@@ -1,4 +1,11 @@
-import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  unlink,
+  writeFile
+} from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -425,6 +432,44 @@ export async function removeDidFiles({
     removed.push(logPath)
   }
   return removed
+}
+
+/**
+ * Report the on-disk file paths a DID's stored artifacts use -- the DID
+ * document, its keys file, its metadata sidecar, and (for did:webvh) the
+ * history log and update-keys sidecar -- whether or not each one currently
+ * exists. Non-destructive; used to surface where things live (e.g. `did meta`).
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @returns {Promise<{ label: string, path: string, exists: boolean }[]>}
+ */
+export async function didStorageFiles({
+  did
+}: {
+  did: string
+}): Promise<{ label: string; path: string; exists: boolean }[]> {
+  const method = methodOf(did)
+  const dir = join(getDidsDir(), method)
+  const candidates: { label: string; path: string }[] = [
+    { label: 'document', path: join(dir, `${did}.json`) },
+    { label: 'keys', path: join(dir, `${did}.keys.json`) },
+    { label: 'metadata', path: join(dir, `${did}.meta.json`) },
+    // did:webvh-only artifacts; omitted from the listing when absent.
+    { label: 'log', path: join(dir, `${did}.jsonl`) },
+    { label: 'update-keys', path: join(dir, `${did}.update-keys.json`) }
+  ]
+  const files: { label: string; path: string; exists: boolean }[] = []
+  for (const candidate of candidates) {
+    let exists = true
+    try {
+      await stat(candidate.path)
+    } catch {
+      exists = false
+    }
+    files.push({ ...candidate, exists })
+  }
+  return files
 }
 
 /**
