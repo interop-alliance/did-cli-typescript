@@ -40,6 +40,11 @@ For `did:webvh` DIDs there are two more, alongside the above:
   staged next key. These are distinct from the document signing keys in
   `<did>.keys.json` and are what `did webvh rotate-keys` advances.
 
+To see these paths at runtime for a specific DID (rather than reconstructing
+them by hand), run `di did meta <did>`: it prints a `Location:` block listing
+each artifact's on-disk path (document, keys, metadata, and for `did:webvh` the
+`.jsonl` log and update-keys sidecar) to stderr, alongside the metadata JSON.
+
 You can override the storage mechanism for each ledger method (to store JSON
 files in a different directory, or to use an in-memory `MockStore` for unit
 testing).

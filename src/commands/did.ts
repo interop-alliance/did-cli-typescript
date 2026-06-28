@@ -308,9 +308,16 @@ export function makeDidCommand(): Command {
       '--description <description>',
       'set the description (an empty string clears it)'
     )
+    .option(
+      '--json',
+      'output a JSON object of the metadata plus the DID’s on-disk file ' +
+        'locations (instead of the bare metadata with a stderr Location block)'
+    )
     .action(
-      (didRef: string, options: { handle?: string; description?: string }) =>
-        runAndExit(runMeta({ didRef, ...options }))
+      (
+        didRef: string,
+        options: { handle?: string; description?: string; json?: boolean }
+      ) => runAndExit(runMeta({ didRef, ...options }))
     )
 
   did

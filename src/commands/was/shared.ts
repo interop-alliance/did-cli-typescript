@@ -4,6 +4,7 @@
  * the run-and-exit wrapper. Commander `Option` instances are bound to the
  * command they are added to, so the options are exposed as factories.
  */
+import { STATUS_CODES } from 'node:http'
 import { Option } from 'commander'
 import {
   WasError,
@@ -125,6 +126,11 @@ export function wasUrl({
  * 1 for operation errors (typed WAS errors from the server exchange), 2 for
  * input errors (bad addresses, unknown handles/DIDs, missing server URL).
  *
+ * For a `WasError` the HTTP status and its reason phrase (e.g.
+ * `HTTP 415 Unsupported Media Type`) plus any server-provided problem details
+ * are appended, so a generic client message like `Request error` still carries
+ * the actionable status instead of hiding it.
+ *
  * @param options {object}
  * @param options.action {string}   What failed, e.g. `create the space`.
  * @param options.err {unknown}
@@ -137,9 +143,22 @@ export function reportError({
   action: string
   err: unknown
 }): number {
+  if (err instanceof WasError) {
+    const detail: string[] = []
+    if (typeof err.status === 'number') {
+      const reason = STATUS_CODES[err.status]
+      detail.push(`HTTP ${err.status}${reason ? ` ${reason}` : ''}`)
+    }
+    if (err.details?.length) {
+      detail.push(...err.details)
+    }
+    const suffix = detail.length > 0 ? ` (${detail.join('; ')})` : ''
+    console.error(`Could not ${action}: ${err.message}${suffix}`)
+    return 1
+  }
   const message = err instanceof Error ? err.message : String(err)
   console.error(`Could not ${action}: ${message}`)
-  return err instanceof WasError ? 1 : 2
+  return 2
 }
 
 /**
