@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { resolveDIDFromLog } from '@interop/did-method-webvh'
 import { makeDidCommand, parseDidLog } from './did.js'
 import { makeKeyCommand } from './key.js'
-import { webvhLogVerifier } from '../documentLoader.js'
 
 /**
  * Resolve a locally-stored did:webvh history log to its accumulated metadata,
@@ -25,7 +24,7 @@ async function resolveStoredWebvhMeta(
 }> {
   const logText = await readFile(join(didsDir, 'webvh', `${did}.jsonl`), 'utf8')
   const log = parseDidLog(logText)
-  const { meta } = await resolveDIDFromLog(log, { verifier: webvhLogVerifier })
+  const { meta } = await resolveDIDFromLog(log)
   return meta
 }
 

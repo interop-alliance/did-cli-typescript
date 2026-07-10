@@ -12,7 +12,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import type { Readable } from 'node:stream'
-import type { Json } from '@interop/was-client'
+import type { Json, JsonArray, JsonObject } from '@interop/was-client'
 
 const OCTET_STREAM = 'application/octet-stream'
 
@@ -21,7 +21,7 @@ const OCTET_STREAM = 'application/octet-stream'
  * binary bytes plus the content type to send them with.
  */
 export interface ResourcePayload {
-  data: Json | Uint8Array
+  data: JsonObject | JsonArray | Uint8Array
   /** The content type of a binary payload (JSON payloads carry none). */
   contentType?: string
 }
@@ -46,9 +46,9 @@ async function readStream(stream: Readable): Promise<Buffer> {
  * not accept as JSON payloads).
  *
  * @param bytes {Buffer}
- * @returns {Json | undefined}
+ * @returns {JsonObject | JsonArray | undefined}
  */
-function parseJsonPayload(bytes: Buffer): Json | undefined {
+function parseJsonPayload(bytes: Buffer): JsonObject | JsonArray | undefined {
   let text: string
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)

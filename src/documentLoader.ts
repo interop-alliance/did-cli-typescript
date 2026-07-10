@@ -16,15 +16,8 @@ import {
   createDefaultDidResolver,
   securityLoader
 } from '@interop/security-document-loader'
-import {
-  createDidWebvhDriver,
-  defaultWebvhLogVerifier
-} from '@interop/did-method-webvh/driver'
+import { createDidWebvhDriver } from '@interop/did-method-webvh/driver'
 import type { DidMethodDriver } from '@interop/did-io'
-
-// The did:webvh history-log verifier, re-exported under the CLI's existing name
-// for the commands that resolve DIDs directly (e.g. `did show`).
-export { defaultWebvhLogVerifier as webvhLogVerifier }
 
 // The shared DID resolver underlying `documentLoader`. Kept module-private: its
 // `@interop/did-io` type is not portably nameable across an export boundary.
