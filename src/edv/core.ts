@@ -1,19 +1,21 @@
 /**
- * EDV Document encryption via `@interop/edv-client`'s `EdvClientCore` (Layer 2,
- * Phase 3). Phases 1-2 hand-rolled the `{ id, sequence, indexed, jwe }` envelope;
- * this routes document encryption and decryption through the reference core
- * instead, so the envelope -- and now the HMAC-blinded `indexed` array -- is
- * correct-by-construction against the implementation an EDV / WAS server expects.
+ * EDV Document encryption via `@interop/edv-client`'s `EdvDocumentCipher`. The
+ * `{ id, sequence, indexed, jwe }` envelope is not assembled here; it is routed
+ * through the reference codec instead, so the envelope -- and the HMAC-blinded
+ * `indexed` array -- is correct-by-construction against the implementation an
+ * EDV / WAS server expects.
  *
- * Only the transport-free helpers are used: `EdvClientCore._encrypt` /
- * `_decrypt` (the envelope + index blinding), `ensureIndex` (declaring indexable
- * attributes), and `generateId` (the document id). The chunked-stream bytes are
- * still produced by the cipher directly (see `./stream.ts`), since the core's
- * stream path requires a server transport; only the stream document's envelope
- * passes through here.
+ * Only the transport-free helpers are used: `EdvDocumentCipher.encrypt` /
+ * `decrypt` (the envelope + index blinding), plus `EdvClientCore.ensureIndex`
+ * (declaring indexable attributes, which registers them on the core's
+ * `indexHelper` -- and so on the `documentCipher` that shares it) and
+ * `generateId` (the document id). The chunked-stream bytes are still produced
+ * by the cipher directly (see `./stream.ts`), since the core's stream path
+ * requires a server transport; only the stream document's envelope passes
+ * through here.
  */
 import { Cipher } from '@interop/minimal-cipher'
-import { EdvClientCore } from '@interop/edv-client'
+import { EdvClientCore, EdvDocumentCipher } from '@interop/edv-client'
 import type {
   IEDVDocument,
   IEncryptedDocument,
@@ -40,7 +42,7 @@ export interface UpdateBase {
 }
 
 /**
- * Encrypt an EDV Document through `EdvClientCore._encrypt`: serialize the
+ * Encrypt an EDV Document through `EdvDocumentCipher.encrypt`: serialize the
  * document's `{ content, meta, stream }` into a single JWE for the recipients,
  * blind any declared indexable attributes with `hmac`, and assemble the
  * `{ id, sequence, indexed, jwe }` envelope (plus `stream` when present).
@@ -82,7 +84,7 @@ export async function encryptDocument({
     core.ensureIndex({ attribute, unique })
   }
   const { recipients, keyResolver } = new Cipher().createRecipients({ keys })
-  return core._encrypt({
+  return core.documentCipher.encrypt({
     doc,
     recipients,
     keyResolver,
@@ -92,9 +94,10 @@ export async function encryptDocument({
 }
 
 /**
- * Decrypt an EDV Document envelope through `EdvClientCore._decrypt`, returning
- * its cleartext payload (`content`, plus `meta`/`stream` when present). A wrong
- * key surfaces as a thrown error (the core rejects a `null` decrypt).
+ * Decrypt an EDV Document envelope through `EdvDocumentCipher.decrypt`,
+ * returning its cleartext payload (`content`, plus `meta`/`stream` when
+ * present). Decryption reads no index, so the codec needs no `indexHelper`. A
+ * wrong key surfaces as a thrown error (the codec rejects a `null` decrypt).
  *
  * @param options {object}
  * @param options.encryptedDoc {IEncryptedDocument}
@@ -108,8 +111,8 @@ export async function decryptDocument({
   encryptedDoc: IEncryptedDocument
   keyAgreementKey: KeyAgreementKey
 }): Promise<DocumentPayload> {
-  const core = new EdvClientCore()
-  const { content, meta, stream } = await core._decrypt({
+  const documentCipher = new EdvDocumentCipher({ cipher: new Cipher() })
+  const { content, meta, stream } = await documentCipher.decrypt({
     encryptedDoc,
     keyAgreementKey
   })

@@ -20,7 +20,6 @@ import {
   type WebvhUpdateKey
 } from '../../storage.js'
 import { resolveDidRef } from '../../meta.js'
-import { webvhLogVerifier } from '../../documentLoader.js'
 import { generateStagedKey } from '../../keys/webvh-update.js'
 import {
   confirmAction,
@@ -335,7 +334,6 @@ async function runWebvhServiceUpdate({
     result = await updateDID({
       log,
       signer,
-      verifier: webvhLogVerifier,
       services,
       ...(updateKeys ? { updateKeys } : {}),
       ...(nextKeyHashes ? { nextKeyHashes } : {})

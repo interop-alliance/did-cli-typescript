@@ -537,7 +537,6 @@ export async function runCreate(options: {
       const result = await createDID({
         address: options.url,
         signer,
-        verifier: signer,
         // A portable DID (the default) can later be moved to a different
         // domain; --no-portable pins it to its origin.
         portable,

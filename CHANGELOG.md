@@ -1,5 +1,34 @@
 # History
 
+## 0.12.0 - TBD
+
+### Changed
+
+- Update to the latest `did-method-webvh`, `edv-client`, `minimal-cipher`, and
+  `was-client`.
+- `edv encrypt` / `edv decrypt` now route the EDV Document envelope through
+  `edv-client`'s public `EdvDocumentCipher` codec, which replaced the private
+  `EdvClientCore._encrypt` / `_decrypt` helpers they previously reached into.
+  The envelope and its HMAC-blinded `indexed` array are unchanged on the wire.
+- The did:webvh commands no longer pass an explicit `verifier` to `createDID`,
+  `updateDID`, and `resolveDIDFromLog`. `did-method-webvh` now defaults it to
+  `defaultWebvhLogVerifier`, which is the same verifier the CLI was handing
+  back to it. `makeWebvhSigner` is correspondingly narrowed to a `Signer` (it
+  no longer implements `Verifier`), and `documentLoader`'s `webvhLogVerifier`
+  re-export, which existed only to feed those call sites, is removed.
+
+### Fixed
+
+- `did create webvh` verified its initial log entry with a verifier bound to a
+  single key pair. `did-method-webvh`'s `Verifier` interface is
+  `verify(signature, message, publicKey)`, but the CLI's implementation took
+  only `(signature, message)` and always checked against the key it was built
+  from, ignoring the public key it was handed. During creation that key is the
+  signing key, so the check happened to agree with the correct answer; as a
+  general verifier it would have accepted a proof from any key. Creation now
+  self-verifies through the library's default log verifier, which recovers each
+  entry's public key from its proof.
+
 ## 0.11.0 - 2026-06-27
 
 ### Changed

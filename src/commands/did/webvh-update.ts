@@ -31,7 +31,6 @@ import {
 } from '../../storage.js'
 import { resolveDidRef } from '../../meta.js'
 import { makeWebvhSigner } from '../../keys/webvh-signer.js'
-import { webvhLogVerifier } from '../../documentLoader.js'
 import {
   exportUpdateKey,
   generateStagedKey,
@@ -114,7 +113,7 @@ export async function resolveWebvhForUpdate({
   const log = parseDidLog(logText)
   let resolved: Awaited<ReturnType<typeof resolveDIDFromLog>>
   try {
-    resolved = await resolveDIDFromLog(log, { verifier: webvhLogVerifier })
+    resolved = await resolveDIDFromLog(log)
   } catch (err) {
     throw new Error(
       `Could not resolve the DID log: ${(err as Error).message}`,
@@ -153,9 +152,7 @@ export async function resolveStoredWebvh(did: string): Promise<
   } catch {
     return undefined
   }
-  const { doc, meta } = await resolveDIDFromLog(parseDidLog(logText), {
-    verifier: webvhLogVerifier
-  })
+  const { doc, meta } = await resolveDIDFromLog(parseDidLog(logText))
   return { doc, meta }
 }
 
@@ -519,7 +516,6 @@ export async function runRotateKeys(options: {
     result = await updateDID({
       log,
       signer,
-      verifier: webvhLogVerifier,
       updateKeys: [newActive.publicKeyMultibase],
       nextKeyHashes
     })
