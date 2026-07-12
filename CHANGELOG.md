@@ -1,5 +1,19 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- `key create --type aes256` generates a symmetric AES-256 key-encryption key
+  (KEK): 32 random bytes carried as a `Multikey` `secretKeyMultibase` (the
+  AES-256 multicodec header `0xa2 0x01` followed by the raw key bytes),
+  identified by a `urn:kek:sha256:` id derived from the SHA-256 digest of the
+  raw key bytes. This is the form Wallet Attached Storage servers accept for
+  their at-rest key-encryption-key configuration. Generation is always fresh and
+  random, so `--with-seed` and `SECRET_KEY_SEED` are not supported for this
+  type. `key show` prints only the safe `id` and `type` for a saved KEK, never
+  the secret material.
+
 ## 0.12.0 - 2026-07-09
 
 ### Changed

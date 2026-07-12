@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { IdDecoder } from '@digitalcredentials/bnid'
 import { makeKeyCommand } from './key.js'
 import { makeDidCommand } from './did.js'
 
@@ -336,6 +338,94 @@ describe('did key', () => {
         const entries = JSON.parse(logs.join('\n'))
         assert.equal(entries.length, 1)
         assert.equal(entries[0].type, 'hmac')
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('generates an aes256 KEK as a symmetric Multikey', async () => {
+      await makeKeyCommand().parseAsync(['create', '--type', 'aes256'], {
+        from: 'user'
+      })
+      const parsed = JSON.parse(logs[0])
+      assert.equal(parsed.type, 'Multikey')
+      // No public half is emitted for a symmetric KEK.
+      assert.equal(parsed.publicKeyMultibase, undefined)
+      // The secretKeyMultibase is a base58btc multibase value that decodes to
+      // the 2-byte AES-256 header (0xa2 0x01) followed by 32 raw key bytes.
+      assert.match(parsed.secretKeyMultibase, /^z/)
+      const decoded = Buffer.from(
+        new IdDecoder({ encoding: 'base58', multibase: true }).decode(
+          parsed.secretKeyMultibase
+        )
+      )
+      assert.equal(decoded.length, 34)
+      assert.deepEqual([...decoded.subarray(0, 2)], [0xa2, 0x01])
+      // The id is urn:kek:sha256:<sha256 hex of the raw 32 key bytes>.
+      const expectedId = `urn:kek:sha256:${createHash('sha256')
+        .update(decoded.subarray(2))
+        .digest('hex')}`
+      assert.equal(parsed.id, expectedId)
+    })
+
+    it('generates a different aes256 KEK on each invocation', async () => {
+      await makeKeyCommand().parseAsync(['create', '--type', 'aes256'], {
+        from: 'user'
+      })
+      const first = JSON.parse(logs[0])
+      logs.length = 0
+      await makeKeyCommand().parseAsync(['create', '--type', 'aes256'], {
+        from: 'user'
+      })
+      const second = JSON.parse(logs[0])
+      assert.notEqual(first.secretKeyMultibase, second.secretKeyMultibase)
+      assert.notEqual(first.id, second.id)
+    })
+
+    it('exits with error for aes256 --with-seed', async () => {
+      await makeKeyCommand().parseAsync(
+        ['create', '--type', 'aes256', '--with-seed'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('--with-seed'))
+    })
+
+    it('saves an aes256 KEK and round-trips list/show without the secret', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await makeKeyCommand().parseAsync(
+          ['create', '--type', 'aes256', '--save', '--handle', 'record-kek'],
+          { from: 'user' }
+        )
+        const created = JSON.parse(logs[0])
+        const filePath = errors[0].slice('Key saved to '.length)
+        const filename = filePath.slice(filePath.lastIndexOf('/') + 1)
+        // filename format: YYYY-MM-DD-aes256-urn_kek_sha256_<hex>.json
+        assert.match(
+          filename,
+          /^\d{4}-\d{2}-\d{2}-aes256-urn_kek_sha256_[0-9a-f]{64}\.json$/
+        )
+
+        // `list --json` reports the saved KEK with its aes256 type.
+        logs.length = 0
+        await makeKeyCommand().parseAsync(['list', '--json'], { from: 'user' })
+        const entries = JSON.parse(logs.join('\n'))
+        assert.equal(entries.length, 1)
+        assert.equal(entries[0].type, 'aes256')
+        assert.equal(entries[0].fingerprint, created.id)
+
+        // `show` finds it by handle and never prints the secret material.
+        logs.length = 0
+        await makeKeyCommand().parseAsync(['show', 'record-kek'], {
+          from: 'user'
+        })
+        const shown = JSON.parse(logs[0])
+        assert.equal(shown.id, created.id)
+        assert.equal(shown.type, 'Multikey')
+        assert.equal(shown.secretKeyMultibase, undefined)
+        assert.ok(!logs[0].includes(created.secretKeyMultibase))
       } finally {
         await rm(walletDir, { recursive: true })
       }

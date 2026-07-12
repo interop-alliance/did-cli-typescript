@@ -13,10 +13,12 @@
  * stub. Keys are referenced by their `publicKeyMultibase` fingerprint or by a
  * metadata handle. Data goes to stdout, diagnostics and errors to stderr.
  */
+import { createHash, randomBytes } from 'node:crypto'
 import { Command } from 'commander'
 import {
   decodeSecretKeySeed,
-  generateSecretKeySeed
+  generateSecretKeySeed,
+  IdEncoder
 } from '@digitalcredentials/bnid'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
@@ -51,6 +53,13 @@ import {
 
 /** The wallet collection name for stored keys. */
 const COLLECTION = 'keys'
+
+/**
+ * The Multikey header for an AES-256 symmetric key (`0xa2 0x01`, the multicodec
+ * varint for `aes-256`), prefixed before the 32 raw key bytes in a KEK's
+ * `secretKeyMultibase`.
+ */
+const AES_256_MULTIKEY_HEADER = Buffer.from([0xa2, 0x01])
 
 /**
  * Build the human-readable key type label shown in list/show output, e.g.
@@ -95,7 +104,8 @@ function didsCell({ dids }: { dids: string[] }): string {
  * wallet, and prints the key (or the seed-wrapped form) to stdout.
  *
  * @param options {object}
- * @param options.type {string}   Key type: ed25519, ecdsa, x25519, or hmac.
+ * @param options.type {string}   Key type: ed25519, ecdsa, x25519, hmac, or
+ *   aes256.
  * @param options.curve {string}   ECDSA curve, for --type ecdsa.
  * @param [options.save] {boolean}   Save the key to wallet storage.
  * @param [options.handle] {string}   Short tag stored in the metadata sidecar.
@@ -276,10 +286,53 @@ export async function runCreate(options: {
       console.log(JSON.stringify(exported, null, 2))
       return 0
     }
+    case 'aes256': {
+      if (options.withSeed) {
+        console.error(
+          '--with-seed is not supported for aes256 keys; an AES-256 KEK is ' +
+            'always generated from fresh random bytes, never derived from a ' +
+            'seed.'
+        )
+        return 1
+      }
+      // 32 random key bytes prefixed with the AES-256 Multikey header, encoded
+      // as base58btc multibase -- a symmetric Multikey `secretKeyMultibase`.
+      const keyBytes = randomBytes(32)
+      const secretKeyMultibase = new IdEncoder({
+        encoding: 'base58',
+        multibase: true
+      }).encode(Buffer.concat([AES_256_MULTIKEY_HEADER, keyBytes]))
+      // The id is derived from the RAW 32 key bytes (header excluded), matching
+      // the KEK id a Wallet Attached Storage server derives from the same value.
+      const id = `urn:kek:sha256:${createHash('sha256')
+        .update(keyBytes)
+        .digest('hex')}`
+      const exported = { id, type: 'Multikey', secretKeyMultibase }
+      if (options.save) {
+        const now = new Date()
+        const date = now.toISOString().slice(0, 10)
+        const storageId = `${date}-aes256-${id}`.replaceAll(':', '_')
+        const filePath = await saveToCollection({
+          collection: 'keys',
+          storageId,
+          data: exported
+        })
+        await writeCreateMeta({
+          collection: COLLECTION,
+          storageId,
+          created: now.toISOString(),
+          handle: options.handle,
+          description: options.description
+        })
+        console.error(`Key saved to ${filePath}`)
+      }
+      console.log(JSON.stringify(exported, null, 2))
+      return 0
+    }
     default:
       console.error(
         `Unknown key type: ${options.type}. ` +
-          'Supported: ed25519, ecdsa, x25519, hmac'
+          'Supported: ed25519, ecdsa, x25519, hmac, aes256'
       )
       return 1
   }
@@ -451,6 +504,14 @@ export async function runShow(options: {
     // never the secret material.
     publicKey = { id: storedKey.id, type: 'Sha256HmacKey2019' }
   } else if (
+    (storedKey as { type?: string }).type === 'Multikey' &&
+    (storedKey as { secretKeyMultibase?: string }).secretKeyMultibase &&
+    !storedKey.publicKeyMultibase
+  ) {
+    // A symmetric AES-256 KEK (a Multikey with a secretKeyMultibase and no
+    // public half); show only its safe fields, never the secret material.
+    publicKey = { id: storedKey.id, type: 'Multikey' }
+  } else if (
     (storedKey as { type?: string }).type === 'X25519KeyAgreementKey2020'
   ) {
     publicKey = await (
@@ -595,7 +656,7 @@ export function makeKeyCommand(): Command {
     .description('Create a new key')
     .option(
       '-t, --type <type>',
-      'key type (supported: ed25519, ecdsa, x25519, hmac)',
+      'key type (supported: ed25519, ecdsa, x25519, hmac, aes256)',
       'ed25519'
     )
     .option(
