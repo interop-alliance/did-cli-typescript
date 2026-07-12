@@ -166,7 +166,7 @@ SECRET_KEY_SEED=z1AXVyT6G1Qk3E9cMPkDYY6wVRpZjVGWAZ3TfrAgFZkX6bv ./di key create
 ```
 
 Specify an explicit key type with `--type` (defaults to `ed25519`; supported:
-`ed25519`, `ecdsa`, `x25519`, `hmac`):
+`ed25519`, `ecdsa`, `x25519`, `hmac`, `aes256`):
 
 ```
 SECRET_KEY_SEED=z1Aaj5A4UCsd... ./di key create --type ed25519
@@ -243,6 +243,32 @@ half), identified by a random `urn:uuid:` id:
 
 HMAC key generation is non-deterministic, so `--with-seed` and `SECRET_KEY_SEED`
 are not supported with `--type hmac`.
+
+Generate a symmetric AES-256 key-encryption key (KEK) -- 32 random bytes carried
+as a Multikey `secretKeyMultibase` -- with `--type aes256`:
+
+```
+./di key create --type aes256
+```
+
+It is serialized as a `Multikey` with the secret carried as a base58btc
+`secretKeyMultibase` (the AES-256 multicodec header `0xa2 0x01` followed by the
+32 raw key bytes, no public half), identified by a `urn:kek:sha256:` id derived
+from the SHA-256 digest of the raw key bytes:
+
+```json
+{
+  "id": "urn:kek:sha256:...",
+  "type": "Multikey",
+  "secretKeyMultibase": "z..."
+}
+```
+
+This is the form Wallet Attached Storage servers accept for their at-rest
+key-encryption-key configuration (`KMS_RECORD_KEK` / `KMS_RECORD_KEKS`), where
+each KEK is identified by the same derived `urn:kek:sha256:` id. Generation is
+always fresh and random, so `--with-seed` and `SECRET_KEY_SEED` are not
+supported with `--type aes256`.
 
 Save the key to local wallet storage (`~/.config/did-cli-wallet/keys/` by
 default, or
