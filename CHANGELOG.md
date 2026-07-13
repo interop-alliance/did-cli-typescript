@@ -1,5 +1,19 @@
 # History
 
+## Unreleased - TBD
+
+### Added
+
+- `was shell` -- an interactive REPL over the `was` command tree. Start it with
+  `di was shell [path]` (`--server`/`--did` seed the session defaults), then run
+  any `was` subcommand without re-typing space handles or re-paying the
+  cold-start cost. A "current directory" (`cd`/`use`, with `..`, `/`, relative
+  paths, and full space URLs) makes every command's path relative to it, and
+  `pwd`, `connect <url>`, `did <ref>`, `help`, and `exit`/`quit` round out the
+  builtins. Tab completion covers builtins, subcommands, and registered space
+  handles. The prompt and diagnostics go to stderr while command data stays on
+  stdout, so `di was shell < script` keeps a pipe-clean stdout.
+
 ## 0.13.0 - 2026-07-12
 
 ### Added

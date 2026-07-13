@@ -17,7 +17,32 @@
  * Handles and bare space ids are not distinguished here -- both land in
  * `spaceRef` and are resolved against the registry by the caller. Resource
  * ids containing `/` are not supported by this syntax.
+ *
+ * The interactive shell installs a relative-path base (its current working
+ * directory) via `setWasAddressBase`, so a bare `did/did.jsonl` typed inside
+ * `space/coll` resolves against the cwd. When the base is empty (every
+ * non-shell invocation) parsing is byte-identical to the address grammar
+ * above.
  */
+
+/**
+ * The relative-path base (the shell's current working directory segments)
+ * prepended to non-absolute addresses. Empty outside the shell.
+ */
+let addressBase: string[] = []
+
+/**
+ * Sets (or clears) the relative-path base used by `parseWasAddress`. Pass the
+ * shell's current working directory segments (`[]`, `[space]`, or
+ * `[space, collection]`); pass `[]` to clear it and restore the plain address
+ * grammar.
+ *
+ * @param segments {string[]}
+ * @returns {void}
+ */
+export function setWasAddressBase(segments: string[]): void {
+  addressBase = segments
+}
 
 /**
  * The normalized form of a WAS address: the server URL when the address was
@@ -40,7 +65,7 @@ export interface WasAddress {
  * @param value {string}
  * @returns {URL | undefined}
  */
-function tryParseHttpUrl(value: string): URL | undefined {
+export function tryParseHttpUrl(value: string): URL | undefined {
   let url: URL
   try {
     url = new URL(value)
@@ -117,9 +142,33 @@ export function parseWasAddress(address: string): WasAddress {
     }
   }
 
-  const [spaceRef, ...tail] = address.split('/')
-  if (spaceRef === '') {
+  const segments = applyAddressBase(address)
+  const [spaceRef, ...tail] = segments
+  if (spaceRef === undefined || spaceRef === '') {
     throw new Error(`Invalid WAS address "${address}": empty space segment.`)
   }
   return { spaceRef, ...parseTailSegments({ segments: tail, address }) }
+}
+
+/**
+ * Resolves a non-URL address against the relative-path base into raw path
+ * segments. With no base set the address is split as-is (byte-identical to the
+ * base-less grammar). With a base set: a leading `/` is an absolute path (the
+ * slash is stripped), a lone `.` is the base itself, and anything else is
+ * joined onto the base.
+ *
+ * @param address {string}
+ * @returns {string[]}
+ */
+function applyAddressBase(address: string): string[] {
+  if (addressBase.length === 0) {
+    return address.split('/')
+  }
+  if (address.startsWith('/')) {
+    return address.slice(1).split('/')
+  }
+  if (address === '.') {
+    return [...addressBase]
+  }
+  return [...addressBase, ...address.split('/')]
 }
