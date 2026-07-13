@@ -1,6 +1,6 @@
-import { describe, it } from 'node:test'
+import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseWasAddress } from './address.js'
+import { parseWasAddress, setWasAddressBase } from './address.js'
 
 describe('parseWasAddress', () => {
   describe('handle / bare id form', () => {
@@ -111,6 +111,69 @@ describe('parseWasAddress', () => {
         () => parseWasAddress('home/credentials/vc-1/extra'),
         /expected at most/
       )
+    })
+  })
+
+  describe('with a relative-path base (shell cwd)', () => {
+    afterEach(() => {
+      setWasAddressBase([])
+    })
+
+    it('joins a relative path onto the base', () => {
+      setWasAddressBase(['demo', 'did'])
+      assert.deepEqual(parseWasAddress('did.jsonl'), {
+        spaceRef: 'demo',
+        collectionId: 'did',
+        resourceId: 'did.jsonl'
+      })
+    })
+
+    it('joins a multi-segment relative path onto a space base', () => {
+      setWasAddressBase(['demo'])
+      assert.deepEqual(parseWasAddress('did/did.jsonl'), {
+        spaceRef: 'demo',
+        collectionId: 'did',
+        resourceId: 'did.jsonl'
+      })
+    })
+
+    it('resolves "." to the base itself', () => {
+      setWasAddressBase(['demo', 'did'])
+      assert.deepEqual(parseWasAddress('.'), {
+        spaceRef: 'demo',
+        collectionId: 'did'
+      })
+    })
+
+    it('treats a leading slash as absolute, ignoring the base', () => {
+      setWasAddressBase(['demo', 'did'])
+      assert.deepEqual(parseWasAddress('/other/coll'), {
+        spaceRef: 'other',
+        collectionId: 'coll'
+      })
+    })
+
+    it('leaves a full space URL untouched by the base', () => {
+      setWasAddressBase(['demo', 'did'])
+      assert.deepEqual(parseWasAddress('https://was.example/space/abc/coll'), {
+        server: 'https://was.example',
+        spaceRef: 'abc',
+        collectionId: 'coll'
+      })
+    })
+
+    it('rejects a relative path that reaches past the resource depth', () => {
+      setWasAddressBase(['demo', 'did'])
+      assert.throws(() => parseWasAddress('a/b'), /expected at most/)
+    })
+
+    it('restores the exact base-less behavior once cleared', () => {
+      setWasAddressBase(['demo', 'did'])
+      setWasAddressBase([])
+      assert.deepEqual(parseWasAddress('home/credentials'), {
+        spaceRef: 'home',
+        collectionId: 'credentials'
+      })
     })
   })
 })

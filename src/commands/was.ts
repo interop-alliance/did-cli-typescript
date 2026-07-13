@@ -72,6 +72,7 @@ import {
 import { runLs, runRm } from './was/tree.js'
 import { runPolicyClear, runPolicySet, runPolicyShow } from './was/policy.js'
 import { runGrant, runPublish, runUnpublish } from './was/publish.js'
+import { makeWasShellCommand } from './was/shell.js'
 
 /**
  * Adds a resource `get [path]` verb to a parent command. Shared by
@@ -844,6 +845,8 @@ export function makeWasCommand(): Command {
         await runAndExit(runGrant({ address, ...options }))
       }
     )
+
+  was.addCommand(makeWasShellCommand())
 
   return was
 }

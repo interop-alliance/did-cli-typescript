@@ -19,14 +19,41 @@ import { resolveWasTarget, type ResolvedWasTarget } from '../../was/client.js'
 import { renderTable, type Column } from '../../table.js'
 
 /**
+ * The active exit reporter, if any. When set (by the interactive shell),
+ * `runAndExit` reports the exit code through it instead of calling
+ * `process.exit`, keeping the tree shell-safe (no `runXxx` ever calls
+ * `process.exit`). Mirrors the `setWasClientFactory` seam convention.
+ */
+let exitReporter: ((code: number) => void) | undefined
+
+/**
+ * Installs (or clears) the exit reporter used by `runAndExit`. With a reporter
+ * set, `runAndExit` never touches `process.exit`; call with no argument to
+ * restore the default process-exiting behavior.
+ *
+ * @param [reporter] {(code: number) => void}
+ * @returns {void}
+ */
+export function setRunAndExitReporter(reporter?: (code: number) => void): void {
+  exitReporter = reporter
+}
+
+/**
  * Awaits a command's run function and exits the process with its code when
- * non-zero -- the shared tail of every `was` command action.
+ * non-zero -- the shared tail of every `was` command action. When an exit
+ * reporter is installed (the interactive shell), the code is handed to the
+ * reporter instead, so a command failure returns control to the REPL loop
+ * rather than exiting the process.
  *
  * @param run {Promise<number>}
  * @returns {Promise<void>}
  */
 export async function runAndExit(run: Promise<number>): Promise<void> {
   const code = await run
+  if (exitReporter) {
+    exitReporter(code)
+    return
+  }
   if (code !== 0) {
     process.exit(code)
   }
