@@ -1,79 +1,72 @@
 # Agent Guidelines
 
-Code-style and contribution conventions for `@interop/did-cli`. This file is an
-inline copy of [CONTRIBUTING.md](CONTRIBUTING.md) for coding agents that read
-`AGENTS.md`; keep the two in sync when either changes. For a map of the codebase
--- entry point, the command-factory pattern, module layout, and the command
-surface -- see [ARCHITECTURE.md](ARCHITECTURE.md).
+Agent-facing guide for `@interop/did-cli`. Code style, contribution, and
+command-test conventions live in @CONTRIBUTING.md -- follow them.
 
-## Refactoring
-- Preserve existing comments and formatting
+For a map of the codebase -- entry point, the command-factory pattern, module
+layout, and the command surface -- see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Code Style
+For the on-disk wallet/DID layout (and `di did meta <did>`, which prints each
+DID artifact's path at runtime), see [STORAGE.md](STORAGE.md).
 
-### Naming
-- Use `camelCase` for variables, functions, and properties; `PascalCase` for classes
-- Avoid single-letter variable names — use descriptive names (e.g. `err` not `e`, `chunk` not `c`)
-- Private class methods and properties are prefixed with underscore (e.g. `_generate`)
+## Roadmap & Task Conventions
 
-### Functions
-- Prefer named `async function` declarations over arrow functions at module level
-- Export functions and classes inline (`export async function ...`, `export class ...`)
+All roadmap tracking lives in [ROADMAP.md](./ROADMAP.md): narrative context
+(section preambles) plus structured work items. Never create a parallel task
+list elsewhere (no `TODO.md`, no task lists in other docs).
 
-### Imports
-- Use `node:` prefix for Node.js built-in imports (e.g. `import fs from 'node:fs'`)
-- Group imports: Node.js built-ins first, then external packages, then local modules
-- Use named imports; avoid default imports where possible
+Each work item follows this schema:
 
-### Parameters
-- Pass related arguments as a single options object and destructure in the signature:
-  ```js
-  export async function exportKey({ publicKey, secretKey }) { ... }
-  ```
+- A heading `### CLI-N: Title`, then a field block, then free prose context.
+- Fields: `status` (`todo` / `in-progress` / `draft` / `done`), `priority`
+  (`high` / `medium` / `low`), `labels` (comma-separated), optional `blocked-by`
+  (other `CLI-N` ids), and an `acceptance:` checklist.
+- `draft` marks items with no actionable done-state yet (blocked or parking
+  records); a draft states _why_ instead of acceptance criteria and must gain
+  acceptance criteria when promoted to `todo`.
 
-## JSDoc
+Rules:
 
-Use multi-line `@param options` style, documenting each property on its own line:
+- Item ids are permanent and never reused. A new item takes the next unused
+  number, regardless of which section it lands in.
+- Every non-draft item needs acceptance criteria before it may be moved to
+  `in-progress`.
+- Statuses are edited in place (change the `status:` field); acceptance
+  checkboxes are ticked as they are met.
+- Completed items are dropped from ROADMAP.md once shipped -- CHANGELOG.md is
+  the permanent record of what landed (existing convention).
+- Work discovered mid-implementation gets its own item immediately, noting
+  `discovered-from: CLI-N` in its prose, plus a `blocked-by` link if it blocks
+  anything.
+- Reference item ids in commit messages and PR descriptions where relevant
+  (e.g. `CLI-1: add edv insert command`).
+- `blocked-by` links only express dependencies implied by the work itself; do
+  not invent orderings.
 
-```js
-/**
- * @param options {object}
- * @param options.methodId {string}
- * @param [options.contentType] {string}   ← square brackets for optional params
- */
+## Recipes
+
+### Host a did:webvh in a WAS space
+
+A `did:webvh` resolver fetches the history log from `<url>/did.jsonl`, where
+`<url>` is the address the DID was created for. WAS only serves a resource at a
+three-segment path (`space/<id>/<collection>/<resource>`), so host the log by
+creating the DID against a **collection** URL, not the bare space URL -- then
+`<url>/did.jsonl` lands on a real resource:
+
+```
+di was space create --name Demo --did alice --save --handle demo   # -> space/<id>
+di was collection create demo --name "DID log" --id did            # -> space/<id>/did
+
+# Mint the DID for the collection URL; its log must then live at
+# space/<id>/did/did.jsonl  (== <url>/did.jsonl).
+di did create webvh --url https://<server>/space/<id>/did --save
+LOG=$(di did meta <the new did> --json | node -p 'JSON.parse(require("fs").readFileSync(0)).files.log')
+
+di was put demo/did/did.jsonl "$LOG"   # upload the log
+di was publish demo/did/did.jsonl      # resolution is an unauthenticated GET
+di did get <the new did>               # resolves the live did:webvh
 ```
 
-Do not use the inline `@param {{ prop: type }}` style.
-Use `@returns {type}` whenever possible.
-
-## Error Handling
-
-- Use `err` (not `e`) as the catch variable name
-
-## Command Tests
-
-Command tests (`src/commands/*.test.ts`) use `node:test` with
-`node:assert/strict` and follow this pattern:
-
-- Capture output by mocking `console.log` / `console.error` into string
-  arrays in `beforeEach` (`mock.method(console, 'log', ...)`), and call
-  `mock.restoreAll()` in `afterEach`.
-- Point storage at temp dirs via env vars: `WALLET_DIR` (wallet collections)
-  and `DIDS_DIR` (DID documents), created with `mkdtemp(join(tmpdir(), ...))`.
-  Clean up in `afterEach` (or a `finally` block): delete the env var (restore
-  the previous value if one was saved) and `rm` the temp dir recursively.
-- Invoke commands through their factory:
-  `makeXCommand().parseAsync([...args], { from: 'user' })`.
-- Assert against the captured log arrays; parse JSON output with
-  `JSON.parse(logs.join('\n'))` when needed.
-- Run a single test file with:
-  `node --test --import tsx --enable-source-maps src/commands/<name>.test.ts`
-
-## Comments
-
-- Use `/** */` JSDoc-style block comments for file, class, and function headers
-  (including the one-paragraph "what this file does" header at the top of a
-  module).
-- Use `//` only for short one- or two-line inline comments.
-- Do not put "See CONTRIBUTING.md ..." cross-references inside code comments;
-  keep pointers to the spec/docs in the README and this file.
+Gotchas: the log resource must be **published** (an unpublished resource returns
+404 to the resolver), and let `was put` auto-detect the content type for the log
+(the reference server rejects an explicit `application/jsonl`).

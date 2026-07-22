@@ -25,7 +25,7 @@ cryptographic key pairs that underpin them.
 It lets you generate and manage these objects locally -- minting DIDs, issuing
 and verifying credentials, delegating capabilities, and encrypting data -- and
 interact with remote
-[Wallet Attached Storage](https://digitalcredentials.github.io/wallet-attached-storage-spec/)
+[Wallet Attached Storage](https://w3c-ccg.github.io/wallet-attached-storage-spec/)
 servers, all from the terminal and backed by a local file-based wallet.
 
 ### Features
@@ -1419,7 +1419,7 @@ valid until it expires (see `--ttl` / `--expires`).
 ### Wallet Attached Storage (WAS)
 
 The `was` command group is a client for
-[Wallet Attached Storage](https://digitalcredentials.github.io/wallet-attached-storage-spec/)
+[Wallet Attached Storage](https://w3c-ccg.github.io/wallet-attached-storage-spec/)
 servers, which organize content as `Space > Collection > Resource` behind
 zcap-authorized HTTP. Every request is signed with a `did:key` DID stored in
 the local wallet (saved with `did create --save`; Ed25519 keys only for now).
