@@ -14,6 +14,10 @@
   handles. The prompt and diagnostics go to stderr while command data stays on
   stdout, so `di was shell < script` keeps a pipe-clean stdout.
 
+### Changed
+
+- Update to latest d-i-core, verifier-core, was-client and didwebvh deps.
+
 ## 0.13.0 - 2026-07-12
 
 ### Added
