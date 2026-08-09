@@ -8,8 +8,9 @@ Planned work for `@interop/did-cli`. Completed work is recorded in
 Each work item is a `### CLI-N: Title` heading followed by a field block and
 free prose context. Ids are permanent and never reused; new items take the next
 unused number regardless of section. Statuses: `todo`, `in-progress`, `draft`
-(no actionable done-state yet -- blocked or a parking record); `done` items are
-dropped from this file once shipped (CHANGELOG.md is the record). Full
+(no actionable done-state yet -- blocked or a parking record); `done` items
+move verbatim to [archived-roadmap.md](archived-roadmap.md) in the same pass
+that marks them done (CHANGELOG.md is the record of what landed). Full
 conventions live in [AGENTS.md](AGENTS.md) under "Roadmap & Task Conventions".
 
 ---

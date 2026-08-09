@@ -517,7 +517,11 @@ export async function runRotateKeys(options: {
       log,
       signer,
       updateKeys: [newActive.publicKeyMultibase],
-      nextKeyHashes
+      nextKeyHashes,
+      // `meta` was just resolved from this same log by
+      // resolveWebvhForUpdate(), so skip updateDID's internal re-resolution
+      // (a full re-verification of every log entry).
+      priorMeta: meta
     })
   } catch (err) {
     console.error(`Key rotation failed: ${(err as Error).message}`)

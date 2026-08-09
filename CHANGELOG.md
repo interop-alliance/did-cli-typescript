@@ -1,6 +1,6 @@
 # History
 
-## Unreleased - TBD
+## 0.14.0 - TBD
 
 ### Added
 
@@ -17,6 +17,9 @@
 ### Changed
 
 - Update to latest d-i-core, verifier-core, was-client and didwebvh deps.
+- `did webvh rotate-keys` and `did service add|remove` now pass the
+  already-resolved log state to `updateDID` as `priorMeta`, so each update
+  verifies the history log once instead of twice.
 
 ## 0.13.0 - 2026-07-12
 

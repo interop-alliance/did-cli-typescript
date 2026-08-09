@@ -33,8 +33,13 @@ Rules:
   `in-progress`.
 - Statuses are edited in place (change the `status:` field); acceptance
   checkboxes are ticked as they are met.
-- Completed items are dropped from ROADMAP.md once shipped -- CHANGELOG.md is
-  the permanent record of what landed (existing convention).
+- **Completing an item includes archiving it**: in the same pass that marks it
+  `done`, move it verbatim (number, title, field block, prose, plus its `done`
+  date) from ROADMAP.md to [archived-roadmap.md](./archived-roadmap.md),
+  append-only at the bottom -- this keeps CLI-N references resolvable. A `done`
+  item left in ROADMAP.md is an unfinished task. CHANGELOG.md remains the
+  permanent record of what landed; do not rewrite or summarize items on the
+  way in, and do not fix old references.
 - Work discovered mid-implementation gets its own item immediately, noting
   `discovered-from: CLI-N` in its prose, plus a `blocked-by` link if it blocks
   anything.
