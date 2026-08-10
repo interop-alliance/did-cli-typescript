@@ -15,11 +15,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { Command } from 'commander'
-import {
-  decodeSecretKeySeed,
-  generateSecretKeySeed,
-  IdEncoder
-} from '@digitalcredentials/bnid'
+import { IdEncoder } from '@digitalcredentials/bnid'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
@@ -41,6 +37,7 @@ import {
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
+import { deriveSeed } from '../keys/seed.js'
 import { runAndExit } from './was/shared.js'
 import {
   applyMetaEdits,
@@ -127,13 +124,9 @@ export async function runCreate(options: {
   }
   switch (options.type) {
     case 'ed25519': {
-      const envSeed = process.env.SECRET_KEY_SEED
-      const secretKeySeed = options.withSeed
-        ? (envSeed ?? (await generateSecretKeySeed()))
-        : envSeed
-      const seedBytes = secretKeySeed
-        ? decodeSecretKeySeed({ secretKeySeed })
-        : undefined
+      const { secretKeySeed, seedBytes } = await deriveSeed({
+        withSeed: options.withSeed
+      })
       const keyPair = await Ed25519VerificationKey.generate({
         seed: seedBytes
       })

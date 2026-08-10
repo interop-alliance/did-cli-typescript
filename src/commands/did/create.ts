@@ -1,14 +1,10 @@
 /**
  * DID creation and key addition: `runCreate` (key, web, webvh) and `runAddKey`
- * (add a verification key to a stored did:web). Both share the seed-derivation,
- * ECDSA-curve, non-deterministic-seed-guard, and output helpers at the top of
- * this module; the webvh signer/sidecar plumbing is reused from
- * `./webvh-update.js`.
+ * (add a verification key to a stored did:web). Both share the ECDSA-curve,
+ * non-deterministic-seed-guard, and output helpers at the top of this module;
+ * seed derivation comes from `../../keys/seed.js` and the webvh signer/sidecar
+ * plumbing is reused from `./webvh-update.js`.
  */
-import {
-  decodeSecretKeySeed,
-  generateSecretKeySeed
-} from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
 import { createDID } from '@interop/did-method-webvh'
@@ -29,6 +25,7 @@ import {
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../../keys/ecdsa.js'
+import { deriveSeed } from '../../keys/seed.js'
 import { exportUpdateKey, generateStagedKey } from '../../keys/webvh-update.js'
 import { requireSaveForMetaFlags } from '../collection-command.js'
 import {
@@ -94,31 +91,6 @@ async function saveDidArtifacts({
     }
   }
   console.error(`DID saved to ${docPath}`)
-}
-
-/**
- * Resolve the secret key seed for a deterministic (Ed25519) key. With
- * `--with-seed`, an existing `SECRET_KEY_SEED` env var is honored or a fresh
- * seed generated; without it, only an explicitly set env seed is used. Returns
- * the encoded seed (echoed back to the user) and its decoded bytes (for key
- * generation).
- *
- * @param options {object}
- * @param [options.withSeed] {boolean}
- * @returns {Promise<{ secretKeySeed?: string, seedBytes?: Uint8Array }>}
- */
-async function deriveSeed({ withSeed }: { withSeed?: boolean }): Promise<{
-  secretKeySeed?: string
-  seedBytes?: Uint8Array
-}> {
-  const envSeed = process.env.SECRET_KEY_SEED
-  const secretKeySeed = withSeed
-    ? (envSeed ?? (await generateSecretKeySeed()))
-    : envSeed
-  const seedBytes = secretKeySeed
-    ? decodeSecretKeySeed({ secretKeySeed })
-    : undefined
-  return { secretKeySeed, seedBytes }
 }
 
 /**

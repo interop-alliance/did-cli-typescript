@@ -17,6 +17,7 @@ import {
 } from './did/create.js'
 import {
   addServiceEntry,
+  buildServiceEndpoint,
   buildServiceEntry,
   dispatchServiceUpdate,
   normalizeServiceId,
@@ -194,6 +195,14 @@ export function makeDidCommand(): Command {
           yes?: boolean
         }
       ) => {
+        try {
+          // Argument-only validation, before the did:webvh path pays for a
+          // full (signature-verifying) log resolution.
+          buildServiceEndpoint(options)
+        } catch (err) {
+          console.error((err as Error).message)
+          return runAndExit(Promise.resolve(1))
+        }
         const transform = (
           current: ServiceEndpoint[],
           resolvedDid: string

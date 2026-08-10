@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { resolveDIDFromLog } from '@interop/did-method-webvh'
+import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { makeDidCommand, parseDidLog } from './did.js'
 import { makeKeyCommand } from './key.js'
 
@@ -979,6 +980,183 @@ describe('di did', () => {
         )
         assert.equal(exitCode, 1)
         assert.ok(errors.some(line => line.includes('mutually exclusive')))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--update-key authorizes every supplied key', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        const activePub = before.active.publicKeyMultibase
+        const external = await Ed25519VerificationKey.generate()
+        const { publicKeyMultibase: externalPub } = (await external.export({
+          publicKey: true
+        })) as { publicKeyMultibase: string }
+
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'rotate-keys',
+            did,
+            '--update-key',
+            activePub,
+            externalPub,
+            '--keep-old-key',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        // Both supplied keys are authorized -- no silent drop of the extras.
+        assert.deepEqual(meta.updateKeys, [activePub, externalPub])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('stage-only --enable-prerotation leaves a multi-key authorized set unchanged', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        const before = await readJson<{
+          active: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        const activePub = before.active.publicKeyMultibase
+        const external = await Ed25519VerificationKey.generate()
+        const { publicKeyMultibase: externalPub } = (await external.export({
+          publicKey: true
+        })) as { publicKeyMultibase: string }
+        // Authorize a second (externally-held) key alongside the local one,
+        // keeping the local secret in `retired` so it can still sign.
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'rotate-keys',
+            did,
+            '--update-key',
+            activePub,
+            externalPub,
+            '--keep-old-key',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--enable-prerotation', '--yes'],
+          { from: 'user' }
+        )
+
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        // Stage only: pre-rotation is armed without revoking the co-authorized
+        // key.
+        assert.equal(meta.prerotation, true)
+        assert.deepEqual(meta.updateKeys, [activePub, externalPub])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses without --yes when stdin is not interactive', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        await makeDidCommand().parseAsync(['webvh', 'rotate-keys', did], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors.some(line => line.includes('pass --yes')))
+        // Nothing was appended.
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '1')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('reports a corrupt update-keys sidecar instead of crashing', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        // Simulate a truncated (interrupted) sidecar write.
+        await writeFile(updateKeysPath, '{ "active": { "publicKeyM', 'utf8')
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.some(line =>
+            line.includes('Could not parse the update-keys sidecar')
+          )
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('recovers when an interrupted rotation left the sidecar ahead of the log', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        const logPath = join(didsDir, 'webvh', `${did}.jsonl`)
+        const beforeLog = await readFile(logPath, 'utf8')
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+        // Simulate the interruption: the sidecar advanced, the log write was
+        // lost.
+        await writeFile(logPath, beforeLog, 'utf8')
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+
+        assert.equal(exitCode, undefined)
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '2')
+        assert.equal(meta.prerotation, true)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--with-seed treats an empty SECRET_KEY_SEED as unset', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        process.env.SECRET_KEY_SEED = ''
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        const parsed = JSON.parse(logs.join('\n'))
+        // A seed was generated rather than the empty env value being used.
+        assert.match(parsed.secretKeySeed, /^z/)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('reports an invalid SECRET_KEY_SEED instead of crashing', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        process.env.SECRET_KEY_SEED = 'not-a-multibase-seed'
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--with-seed', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.some(line => line.includes('Invalid SECRET_KEY_SEED')))
       } finally {
         await rm(didsDir, { recursive: true })
       }

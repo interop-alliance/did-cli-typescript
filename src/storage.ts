@@ -2,12 +2,29 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   stat,
   unlink,
   writeFile
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+
+/**
+ * Write a file atomically (write to a temp sibling, then rename), so an
+ * interrupted write cannot leave a truncated file behind. Stored artifacts
+ * (DID logs, key sidecars, wallet items) are load-bearing; a truncated one
+ * would make every later command on it fail.
+ *
+ * @param filePath {string}
+ * @param data {string}
+ * @returns {Promise<void>}
+ */
+async function writeFileAtomic(filePath: string, data: string): Promise<void> {
+  const tmpPath = `${filePath}.tmp`
+  await writeFile(tmpPath, data, 'utf8')
+  await rename(tmpPath, filePath)
+}
 
 function getWalletDir(): string {
   if (process.env.WALLET_DIR) {
@@ -134,7 +151,7 @@ export async function saveToCollection({
   const dir = join(getWalletDir(), collection)
   await mkdir(dir, { recursive: true })
   const filePath = join(dir, `${storageId}.json`)
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf8')
+  await writeFileAtomic(filePath, JSON.stringify(data, null, 2))
   return filePath
 }
 
@@ -187,7 +204,7 @@ export async function saveMetaToCollection({
   const dir = join(getWalletDir(), collection)
   await mkdir(dir, { recursive: true })
   const filePath = join(dir, `${storageId}.meta.json`)
-  await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf8')
+  await writeFileAtomic(filePath, JSON.stringify(meta, null, 2))
   return filePath
 }
 
@@ -497,7 +514,7 @@ export async function saveDidLog({
   await mkdir(dir, { recursive: true })
   const filePath = join(dir, `${did}.jsonl`)
   const serialized = log.map(entry => JSON.stringify(entry)).join('\n') + '\n'
-  await writeFile(filePath, serialized, 'utf8')
+  await writeFileAtomic(filePath, serialized)
   return filePath
 }
 
@@ -572,7 +589,16 @@ export async function saveDidUpdateKeys({
 export async function loadDidUpdateKeys(did: string): Promise<WebvhUpdateKeys> {
   const method = methodOf(did)
   const filePath = join(getDidsDir(), method, `${did}.update-keys.json`)
-  return JSON.parse(await readFile(filePath, 'utf8')) as WebvhUpdateKeys
+  const text = await readFile(filePath, 'utf8')
+  try {
+    return JSON.parse(text) as WebvhUpdateKeys
+  } catch (err) {
+    throw new Error(
+      `Could not parse the update-keys sidecar ${filePath}: ` +
+        `${(err as Error).message}`,
+      { cause: err }
+    )
+  }
 }
 
 /**
@@ -598,6 +624,6 @@ export async function saveToDids({
   await mkdir(dir, { recursive: true })
   const fileName = suffix ? `${did}.${suffix}.json` : `${did}.json`
   const filePath = join(dir, fileName)
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf8')
+  await writeFileAtomic(filePath, JSON.stringify(data, null, 2))
   return filePath
 }

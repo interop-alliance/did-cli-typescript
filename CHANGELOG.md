@@ -19,7 +19,33 @@
 - Update to latest d-i-core, verifier-core, was-client and didwebvh deps.
 - `did webvh rotate-keys` and `did service add|remove` now pass the
   already-resolved log state to `updateDID` as `priorMeta`, so each update
-  verifies the history log once instead of twice.
+  verifies the history log once instead of twice. The pairing between the log
+  and its resolved metadata is now asserted (O(1)) before signing.
+- `did webvh rotate-keys` edits the authorized `updateKeys` set instead of
+  rebuilding it from the single local key: a stage-only `--enable-prerotation`
+  leaves the set unchanged, and an ordinary rotation replaces only the retired
+  key, so co-authorized update keys are no longer silently revoked.
+- `rotate-keys --update-key` now authorizes every supplied key instead of
+  silently dropping all but the first.
+- did:webvh updates persist crash-safely: the update-keys sidecar (including
+  the superseded secret) is written before the log that authorizes the new
+  key, and the signer loaders can recover from a rotation interrupted between
+  the two writes.
+- Stored artifacts (DID documents, history logs, sidecars, wallet items) are
+  written atomically (temp file + rename), so an interrupted write can no
+  longer leave a truncated file.
+- Confirmation prompts no longer auto-confirm when stdin is not interactive;
+  non-interactive runs must pass `--yes`, and a declined confirmation now
+  exits 1.
+- An empty `SECRET_KEY_SEED` env var is treated as unset, and an invalid one
+  is reported as a one-line error; seed derivation is shared across
+  `key create`, `did create`, and `rotate-keys`.
+- Command errors that escape a runner are reported as one-line messages with
+  exit 1 instead of surfacing as unhandled rejections; a corrupt update-keys
+  sidecar reports its file path.
+- `did add-service` validates `--endpoint`/`--endpoint-json` arguments before
+  resolving (and re-verifying) a did:webvh history log; `rotate-keys` likewise
+  checks flag conflicts before resolution.
 
 ## 0.13.0 - 2026-07-12
 

@@ -693,6 +693,8 @@ Flags:
   new key (a bare `--stop-prerotation` reveal, or rotating to an external
   `--update-key`).
 - `-y`, `--yes` -- skip the confirmation prompt (rotation is hard to undo).
+  Required when stdin is not interactive (scripts, cron), where the prompt
+  cannot be asked.
 
 #### Add or remove a service entry
 

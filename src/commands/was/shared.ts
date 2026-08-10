@@ -45,11 +45,22 @@ export function setRunAndExitReporter(reporter?: (code: number) => void): void {
  * reporter instead, so a command failure returns control to the REPL loop
  * rather than exiting the process.
  *
+ * A run function normally reports its own errors and returns a code; an
+ * error that escapes anyway is caught here and reported as a one-line
+ * message with exit code 1, instead of surfacing as an unhandled rejection
+ * with a raw stack trace (which would also bypass the shell's reporter).
+ *
  * @param run {Promise<number>}
  * @returns {Promise<void>}
  */
 export async function runAndExit(run: Promise<number>): Promise<void> {
-  const code = await run
+  let code: number
+  try {
+    code = await run
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err))
+    code = 1
+  }
   if (exitReporter) {
     exitReporter(code)
     return

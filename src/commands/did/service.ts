@@ -15,18 +15,19 @@ import {
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import {
   loadDidDocument,
-  saveDidLog,
   saveToDids,
-  type WebvhUpdateKey
+  type WebvhUpdateKey,
+  type WebvhUpdateKeys
 } from '../../storage.js'
 import { resolveDidRef } from '../../meta.js'
 import { generateStagedKey } from '../../keys/webvh-update.js'
 import {
+  appendWebvhEntry,
   confirmAction,
   loadActiveSigner,
   loadStoredUpdateKeys,
   makeWebvhEntrySigner,
-  persistUpdateKeysSidecar,
+  persistWebvhUpdate,
   resolveWebvhForUpdate,
   revealStagedSigner
 } from './webvh-update.js'
@@ -59,10 +60,44 @@ export function normalizeServiceId({
 }
 
 /**
- * Build a service-endpoint entry from add-service options. Exactly one of
- * `endpoint` (one or more endpoint values -- a single value stays a string,
- * several become an array) or `endpointJson` (a raw JSON value) supplies the
- * serviceEndpoint; a single `type` likewise stays a string.
+ * Build (and validate) the serviceEndpoint value from add-service options.
+ * Exactly one of `endpoint` (one or more endpoint values -- a single value
+ * stays a string, several become an array) or `endpointJson` (a raw JSON
+ * value) must supply it. Needs no DID, so the CLI layer calls it up front to
+ * reject bad arguments before any (expensive) log resolution.
+ *
+ * @param options {object}
+ * @param [options.endpoint] {string[]}
+ * @param [options.endpointJson] {string}
+ * @returns {ServiceEndpoint['serviceEndpoint']}
+ */
+export function buildServiceEndpoint({
+  endpoint,
+  endpointJson
+}: {
+  endpoint?: string[]
+  endpointJson?: string
+}): ServiceEndpoint['serviceEndpoint'] {
+  const hasEndpoint = Boolean(endpoint?.length)
+  const hasEndpointJson = Boolean(endpointJson)
+  // True when both are supplied or neither is -- i.e. not exactly one.
+  if (hasEndpoint === hasEndpointJson) {
+    throw new Error('Provide exactly one of --endpoint or --endpoint-json.')
+  }
+  if (endpointJson) {
+    try {
+      return JSON.parse(endpointJson)
+    } catch {
+      throw new Error('--endpoint-json must be valid JSON.')
+    }
+  }
+  return endpoint!.length === 1 ? endpoint![0] : endpoint
+}
+
+/**
+ * Build a service-endpoint entry from add-service options (see
+ * `buildServiceEndpoint` for the serviceEndpoint rules); a single `type`
+ * stays a string.
  *
  * @param options {object}
  * @param options.did {string}
@@ -85,26 +120,10 @@ export function buildServiceEntry({
   endpoint?: string[]
   endpointJson?: string
 }): ServiceEndpoint {
-  const hasEndpoint = Boolean(endpoint?.length)
-  const hasEndpointJson = Boolean(endpointJson)
-  // True when both are supplied or neither is -- i.e. not exactly one.
-  if (hasEndpoint === hasEndpointJson) {
-    throw new Error('Provide exactly one of --endpoint or --endpoint-json.')
-  }
-  let serviceEndpoint: ServiceEndpoint['serviceEndpoint']
-  if (endpointJson) {
-    try {
-      serviceEndpoint = JSON.parse(endpointJson)
-    } catch {
-      throw new Error('--endpoint-json must be valid JSON.')
-    }
-  } else {
-    serviceEndpoint = endpoint!.length === 1 ? endpoint![0] : endpoint
-  }
   return {
     id: normalizeServiceId({ did, id }),
     type: type.length === 1 ? type[0] : type,
-    serviceEndpoint
+    serviceEndpoint: buildServiceEndpoint({ endpoint, endpointJson })
   }
 }
 
@@ -280,7 +299,13 @@ async function runWebvhServiceUpdate({
     return 1
   }
 
-  const stored = await loadStoredUpdateKeys(targetDid)
+  let stored: WebvhUpdateKeys | undefined
+  try {
+    stored = await loadStoredUpdateKeys(targetDid)
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
 
   // Choose the signer and key parameters. A sparse update normally omits
   // updateKeys/nextKeyHashes so the keys carry forward untouched; a
@@ -324,47 +349,36 @@ async function runWebvhServiceUpdate({
   })
   if (!confirmed) {
     console.error('Aborted.')
-    return 0
+    return 1
   }
 
   const signer = makeWebvhEntrySigner(signerKeyPair)
 
   let result: Awaited<ReturnType<typeof updateDID>>
   try {
-    result = await updateDID({
+    result = await appendWebvhEntry({
       log,
+      meta,
       signer,
       services,
       ...(updateKeys ? { updateKeys } : {}),
-      ...(nextKeyHashes ? { nextKeyHashes } : {}),
-      // `meta` was just resolved from this same log by
-      // resolveWebvhForUpdate(), so skip updateDID's internal re-resolution
-      // (a full re-verification of every log entry).
-      priorMeta: meta
+      ...(nextKeyHashes ? { nextKeyHashes } : {})
     })
   } catch (err) {
     console.error(`Service update failed: ${(err as Error).message}`)
     return 1
   }
 
-  const logPath = await saveDidLog({ did: result.did, log: result.log })
-  const docPath = await saveToDids({
-    method: 'webvh',
-    did: result.did,
-    data: result.doc
+  // The advanced ratchet is persisted only on the pre-rotation path; an
+  // ordinary service update leaves the update-keys sidecar untouched.
+  const { logPath, docPath, updateKeysPath } = await persistWebvhUpdate({
+    result,
+    sidecar:
+      meta.prerotation && newActive
+        ? { newActive, newStaged, retiredActive, stored, keepOldKey }
+        : undefined
   })
-
-  // Persist the advanced ratchet only on the pre-rotation path; an ordinary
-  // service update leaves the update-keys sidecar untouched.
-  if (meta.prerotation && newActive) {
-    const updateKeysPath = await persistUpdateKeysSidecar({
-      did: result.did,
-      newActive,
-      newStaged,
-      retiredActive,
-      stored,
-      keepOldKey
-    })
+  if (updateKeysPath !== undefined) {
     console.error(`Update keys saved to ${updateKeysPath}`)
     console.error(
       'Pre-rotation: the update key was advanced as part of this change.'
