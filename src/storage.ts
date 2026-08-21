@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   readFile,
   readdir,
@@ -11,10 +12,23 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
+ * Mode for every file this module writes: readable and writable by the owner
+ * only. Keys are stored as plaintext Multikey documents, and DID sidecars carry
+ * webvh update keys, so nothing under wallet or DID storage should be
+ * world-readable.
+ */
+const STORED_FILE_MODE = 0o600
+
+/**
  * Write a file atomically (write to a temp sibling, then rename), so an
  * interrupted write cannot leave a truncated file behind. Stored artifacts
  * (DID logs, key sidecars, wallet items) are load-bearing; a truncated one
  * would make every later command on it fail.
+ *
+ * The temp file is created with `STORED_FILE_MODE` and chmod-ed before the
+ * rename: `writeFile` applies its `mode` only when it creates the file, and the
+ * ambient umask can clear bits from it, so the explicit chmod is what makes the
+ * mode deterministic. `rename` then carries that mode to the destination.
  *
  * @param filePath {string}
  * @param data {string}
@@ -22,7 +36,8 @@ import { join } from 'node:path'
  */
 async function writeFileAtomic(filePath: string, data: string): Promise<void> {
   const tmpPath = `${filePath}.tmp`
-  await writeFile(tmpPath, data, 'utf8')
+  await writeFile(tmpPath, data, { encoding: 'utf8', mode: STORED_FILE_MODE })
+  await chmod(tmpPath, STORED_FILE_MODE)
   await rename(tmpPath, filePath)
 }
 

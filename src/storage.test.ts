@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -114,6 +114,28 @@ describe('storage', () => {
       })
       assert.ok(filePath.startsWith(join(walletDir, 'dids', 'key')))
       assert.deepEqual(await listDids(), [did])
+    })
+  })
+
+  describe('file modes', () => {
+    it('writes a saved key with mode 0600', async () => {
+      const filePath = await saveToCollection({
+        collection: 'keys',
+        storageId: 'key-a',
+        data: { publicKeyMultibase: 'z6MkAaa', secretKeyMultibase: 'z1Aaa' }
+      })
+      assert.equal((await stat(filePath)).mode & 0o777, 0o600)
+    })
+
+    it('keeps mode 0600 when overwriting an existing file', async () => {
+      const did = 'did:key:z6MkExample'
+      await saveToDids({ method: 'key', did, data: { id: did } })
+      const filePath = await saveToDids({
+        method: 'key',
+        did,
+        data: { id: did, updated: true }
+      })
+      assert.equal((await stat(filePath)).mode & 0o777, 0o600)
     })
   })
 

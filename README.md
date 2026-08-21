@@ -126,6 +126,15 @@ the relevant command section below.
 | `WAS_SERVER_URL`           | `was`                      | Default WAS server base URL when `--server` is omitted.                                                                                              |
 | `ZCAP_CONTROLLER_KEY_SEED` | `zcap`                     | Controller signing-key seed for delegating capabilities.                                                                                             |
 
+### File Permissions
+
+Everything written under `WALLET_DIR` and `DIDS_DIR` -- keys, zcaps,
+credentials, space records, DID documents, sidecars, and history logs -- is
+created with mode `0600`, owner read/write only. Secret key material is stored
+as plaintext Multikey documents, so the file mode is what keeps it off other
+local accounts. Files written before this became the default are not migrated;
+run `chmod 600` over an existing wallet directory if you have one.
+
 ### Key Management
 
 #### Create a key pair

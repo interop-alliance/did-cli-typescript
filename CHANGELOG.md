@@ -42,6 +42,9 @@
 - Stored artifacts (DID documents, history logs, sidecars, wallet items) are
   written atomically (temp file + rename), so an interrupted write can no
   longer leave a truncated file.
+- Stored artifacts are now written with mode `0600` (owner read/write only)
+  instead of the ambient umask default, since keys are held as plaintext
+  Multikey documents. Existing files are not migrated.
 - Confirmation prompts no longer auto-confirm when stdin is not interactive;
   non-interactive runs must pass `--yes`, and a declined confirmation now
   exits 1.

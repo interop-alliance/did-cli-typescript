@@ -184,29 +184,6 @@ path and query parameter) is unsigned-off, so `--wallet <url>` has nothing
 to print until it is decided. The interaction URL and the QR are unblocked,
 so only part of this item is parallel with FW-228.
 
-### CLI-8: Write key files with mode 0600
-
-- status: todo
-- priority: high
-- labels: keys, security
-- acceptance:
-  - [ ] `src/storage.ts` writes `keys/<id>.json` (and any file carrying a
-        secret) with mode `0600`; the atomic temp+rename path keeps the mode
-  - [ ] Existing files are not migrated (greenfield stance); a one-line
-        note in README
-  - [ ] A test asserts the mode on a freshly saved key
-
-Today keys are plaintext Multikey docs at the default 0644. Wanted
-regardless of the demo; the demo makes it pressing because an agent's
-saved key sits on the same machine as the agent.
-
-Scope note from FW-227's 2026-08-21 CLI-lens review: this is a change to
-the shared storage layer, not to one command. Nothing in `src/storage.ts`
-sets a file mode today -- every write goes through the one
-`writeFileAtomic` under the ambient umask -- so the change reaches every
-stored DID, key, zcap, and space record. The greenfield stance above is
-what settles the already-on-disk question; state it in the README note.
-
 ### CLI-9: Claude Code skill + demo README
 
 - status: todo
@@ -334,3 +311,38 @@ ergonomics (current shape works).
 Expose `request-grant` / `put` / `publish` as MCP tools over the same
 library the CLI uses; the CLI and skill (CLI-7, CLI-9) stay the primary
 surface.
+
+### CLI-16: Atomic writes assume a single writer
+
+- status: draft (parking record)
+- priority: low
+- labels: someday, storage
+- acceptance: none yet -- revisit if two `di` processes are expected to
+  write the same wallet concurrently
+
+`writeFileAtomic` in `src/storage.ts` writes to a fixed sibling name,
+`${filePath}.tmp`, then renames. The rename is atomic and readers always see
+a complete file, so concurrent *readers* are safe. Concurrent *writers* of
+the same artifact are not: two `di` processes saving the same DID or key
+would open the one temp path, interleave their writes into it, and each
+rename whatever the other left behind. The result can be a file that is
+neither process's content rather than one of the two.
+
+Nothing enforces the assumption today; it is simply that a single user runs
+one command at a time. `di was shell` keeps a single process, and the agent
+demo (CLI-7, CLI-9) is one agent against one wallet, so no current path
+reaches it.
+
+If promoted, the fix is a per-write unique temp name (pid plus a counter, or
+`mkstemp`-style) so writers cannot collide on the same path, plus a decision
+about stale temp files left by crashed runs -- the current fixed name is
+self-cleaning by reuse, and a unique name is not. Last-write-wins between the
+two renames is still the outcome and that is acceptable; the corruption is
+what is not.
+
+Not covered here: durability. Neither the file nor its parent directory is
+`fsync`-ed, so the guarantee holds against a process dying, not against the
+machine losing power. That is a separate question from the writer count.
+
+discovered-from: CLI-8, which changed `writeFileAtomic` to set a file mode
+and put the temp path under review.

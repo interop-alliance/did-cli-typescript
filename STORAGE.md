@@ -11,6 +11,10 @@ The wallet directory can be relocated with the `WALLET_DIR` environment
 variable; the DIDs subtree alone can be overridden with `DIDS_DIR` (its
 default is `$WALLET_DIR/dids`).
 
+Every file written under those directories is created with mode `0600` (owner
+read/write only). Files written before that became the default are not
+migrated.
+
 DIDs are essentially repositories of public keys on various networks / ledgers.
 Any non-trivial operations that involve them, such as registering, updating,
 authenticating and so on, necessarily involve working with corresponding private

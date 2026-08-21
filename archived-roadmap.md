@@ -94,3 +94,29 @@ form instead of refusing flatly.
 Also landed with it: `--resource` joins the shell dispatcher's `VALUE_FLAGS`,
 without which its value was counted as the payload positional and the
 stdin guard let a `put` with no file through to readline.
+
+---
+
+### CLI-8: Write key files with mode 0600
+
+- status: done
+- done: 2026-08-21
+- priority: high
+- labels: keys, security
+- acceptance:
+  - [x] `src/storage.ts` writes `keys/<id>.json` (and any file carrying a
+        secret) with mode `0600`; the atomic temp+rename path keeps the mode
+  - [x] Existing files are not migrated (greenfield stance); a one-line
+        note in README
+  - [x] A test asserts the mode on a freshly saved key
+
+Today keys are plaintext Multikey docs at the default 0644. Wanted
+regardless of the demo; the demo makes it pressing because an agent's
+saved key sits on the same machine as the agent.
+
+Scope note from FW-227's 2026-08-21 CLI-lens review: this is a change to
+the shared storage layer, not to one command. Nothing in `src/storage.ts`
+sets a file mode today -- every write goes through the one
+`writeFileAtomic` under the ambient umask -- so the change reaches every
+stored DID, key, zcap, and space record. The greenfield stance above is
+what settles the already-on-disk question; state it in the README note.
