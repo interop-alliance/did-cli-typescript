@@ -34,6 +34,7 @@ import {
   contentTypeOption,
   didOption,
   disambiguatePayloadArgs,
+  resourceIdOption,
   runAndExit,
   serverOption
 } from './was/shared.js'
@@ -89,6 +90,7 @@ function addGetCommand(parent: Command, description: string): void {
     .description(description)
     .option('--output <file>', 'write the resource content to a file')
     .addOption(capabilityOption())
+    .addOption(resourceIdOption())
     .addOption(serverOption())
     .addOption(didOption())
     .action(
@@ -97,6 +99,7 @@ function addGetCommand(parent: Command, description: string): void {
         options: {
           output?: string
           capability?: string
+          resource?: string
           server?: string
           did?: string
         }
@@ -121,6 +124,7 @@ function addPutCommand(parent: Command, description: string): void {
     .description(description)
     .addOption(contentTypeOption())
     .addOption(capabilityOption())
+    .addOption(resourceIdOption())
     .addOption(serverOption())
     .addOption(didOption())
     .action(
@@ -130,6 +134,7 @@ function addPutCommand(parent: Command, description: string): void {
         options: {
           contentType?: string
           capability?: string
+          resource?: string
           server?: string
           did?: string
         }
@@ -614,12 +619,18 @@ export function makeWasCommand(): Command {
         'custom name/tags'
     )
     .addOption(capabilityOption())
+    .addOption(resourceIdOption())
     .addOption(serverOption())
     .addOption(didOption())
     .action(
       async (
         address: string | undefined,
-        options: { capability?: string; server?: string; did?: string }
+        options: {
+          capability?: string
+          resource?: string
+          server?: string
+          did?: string
+        }
       ) => {
         await runAndExit(runResourceMetaGet({ address, ...options }))
       }
@@ -648,6 +659,7 @@ export function makeWasCommand(): Command {
         '(clears any omitted field)'
     )
     .addOption(capabilityOption())
+    .addOption(resourceIdOption())
     .addOption(serverOption())
     .addOption(didOption())
     .action(
@@ -658,6 +670,7 @@ export function makeWasCommand(): Command {
           tag: string[]
           json?: string
           capability?: string
+          resource?: string
           server?: string
           did?: string
         }
@@ -707,12 +720,18 @@ export function makeWasCommand(): Command {
         'resource'
     )
     .addOption(capabilityOption())
+    .addOption(resourceIdOption())
     .addOption(serverOption())
     .addOption(didOption())
     .action(
       async (
         address: string | undefined,
-        options: { capability?: string; server?: string; did?: string }
+        options: {
+          capability?: string
+          resource?: string
+          server?: string
+          did?: string
+        }
       ) => {
         await runAndExit(runRm({ address, ...options }))
       }

@@ -1713,14 +1713,25 @@ collection, or resource address is given (or needed). The capability itself
 records what it grants access to in its `invocationTarget`, and that is what
 the command operates on:
 
-- a capability granted on a **resource** drives `get` / `put` / `rm`;
+- a capability granted on a **resource** drives `get` / `put` / `rm` and
+  `meta get` / `meta put`;
 - one granted on a **collection** drives `ls`, `resource add`, and `rm`;
 - one granted on a whole **space** drives `ls` and `rm`.
 
-A depth mismatch (e.g. `get` with a collection-scoped capability) is an
-input error. The server URL is taken from the invocation target's origin,
-and the signing DID defaults to the capability's controller (the delegatee)
-when that DID is stored locally -- so usually no flags are needed at all.
+A collection-scoped capability also reaches one resource inside it, named
+with `--resource <id>`: `get`, `put`, `meta get`, `meta put`, and `rm` then
+act on that id beneath the capability's collection (without the flag, `rm`
+deletes the collection itself). This is how a grant issued on a whole
+collection writes at an id you choose (`resource add` also takes a collection
+capability, but the server picks the id, so it cannot produce `index.html`).
+The resource handle inherits the collection's capability, so the request is
+still an invocation of the grant you received.
+
+Any other depth mismatch (e.g. `get` with a space-scoped capability) is an
+input error, as is `--resource` without a capability to anchor it. The
+server URL is taken from the invocation target's origin, and the signing DID
+defaults to the capability's controller (the delegatee) when that DID is
+stored locally -- so usually no flags are needed at all.
 
 In the examples below, `bob-share` is the metadata handle of a *stored zcap*
 (not a space or collection handle): say Alice granted Bob `GET`/`PUT` on the
@@ -1750,6 +1761,16 @@ Bob's machine he can pass the encoded string or a JSON file directly):
 # Had the grant been on the whole collection (home/credentials), ls would
 # list it and `resource add` could post new resources into it:
 ./di was ls --capability zkL8vet8M2mn...
+
+# ...and --resource picks one id inside that collection, so the write lands
+# at a name you choose rather than a server-generated one:
+./di was put ./index.html --capability zkL8vet8M2mn... \
+  --resource index.html --content-type text/html
+./di was get --capability zkL8vet8M2mn... --resource index.html
+
+# ...and the same flag deletes that one resource, rather than the whole
+# collection the capability targets:
+./di was rm --capability zkL8vet8M2mn... --resource index.html
 ```
 
 #### Policies and public sharing

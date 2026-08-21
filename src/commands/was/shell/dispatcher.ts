@@ -33,6 +33,7 @@ const VALUE_FLAGS = new Set([
   '--server',
   '--did',
   '--capability',
+  '--resource',
   '--content-type',
   '--output'
 ])

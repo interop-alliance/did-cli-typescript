@@ -112,13 +112,13 @@ function makeStubClient(responses: StubResponses = {}): {
       const space = this.space(spaceId)
       if (resourceId) {
         return {
-          ...space.collection(collectionId).resource(resourceId),
+          ...space.collection(collectionId, zcap).resource(resourceId),
           spaceId,
           collectionId
         }
       }
       if (collectionId) {
-        return { ...space.collection(collectionId), spaceId }
+        return { ...space.collection(collectionId, zcap), spaceId }
       }
       return space
     },
@@ -163,7 +163,7 @@ function makeStubClient(responses: StubResponses = {}): {
           )
         },
         ...policyMethods('space'),
-        collection(collectionId: string) {
+        collection(collectionId: string, capability?: object) {
           record('collection', collectionId)
           return {
             id: collectionId,
@@ -201,7 +201,14 @@ function makeStubClient(responses: StubResponses = {}): {
               return responses.resourceListing ?? null
             },
             resource(resourceId: string) {
-              record('resource', resourceId)
+              // Mirrors the real client: a resource handle built from a
+              // capability-bound collection inherits that capability, so the
+              // recorded call exposes it for assertion.
+              record(
+                'resource',
+                resourceId,
+                ...(capability ? [capability] : [])
+              )
               return {
                 id: resourceId,
                 ...policyMethods('resource'),
@@ -1498,6 +1505,168 @@ describe('di was', () => {
           id: 'vc-1',
           url: 'https://was.example/space/space-1/docs/vc-1'
         })
+      })
+
+      it('put writes at --resource beneath a collection capability', async () => {
+        const html = '<!doctype html><title>Agent</title>'
+        const { calls, makeZcap } = await setUpCapabilityStub({
+          get: new Blob([html])
+        })
+        const zcap = makeZcap('https://was.example/space/space-1/web')
+        const filePath = join(walletDir, 'index.html')
+        await writeFile(filePath, html)
+        await makeWasCommand().parseAsync(
+          [
+            'put',
+            filePath,
+            '--capability',
+            encodeCapability(zcap),
+            '--resource',
+            'index.html',
+            '--content-type',
+            'text/html'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        // The resource handle hangs off the collection the zcap targets, so
+        // it carries the same bound capability (the stub records the
+        // capability its collection handle was built with).
+        assert.deepEqual(calls.fromCapability[0], [zcap])
+        assert.deepEqual(calls.resource, [['index.html', zcap]])
+        const [payload, putOptions] = calls.put[0]
+        assert.equal(new TextDecoder().decode(payload as Uint8Array), html)
+        assert.deepEqual(putOptions, { contentType: 'text/html' })
+        assert.deepEqual(JSON.parse(logs[0]), {
+          id: 'index.html',
+          url: 'https://was.example/space/space-1/web/index.html'
+        })
+
+        const outPath = join(walletDir, 'fetched.html')
+        await makeWasCommand().parseAsync(
+          [
+            'get',
+            '--capability',
+            encodeCapability(zcap),
+            '--resource',
+            'index.html',
+            '--output',
+            outPath
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.equal(await readFile(outPath, 'utf8'), html)
+      })
+
+      it('meta get reads through a collection capability', async () => {
+        const { calls, makeZcap } = await setUpCapabilityStub({
+          meta: { contentType: 'text/html', size: 35 }
+        })
+        const zcap = makeZcap('https://was.example/space/space-1/web')
+        await makeWasCommand().parseAsync(
+          [
+            'meta',
+            'get',
+            '--capability',
+            encodeCapability(zcap),
+            '--resource',
+            'index.html'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.resource, [['index.html', zcap]])
+        assert.deepEqual(JSON.parse(logs[0]), {
+          contentType: 'text/html',
+          size: 35
+        })
+      })
+
+      it('refuses a collection capability without --resource', async () => {
+        const { makeZcap } = await setUpCapabilityStub()
+        const zcap = makeZcap('https://was.example/space/space-1/web')
+        const filePath = join(walletDir, 'vc.json')
+        await writeFile(filePath, '{"name": "Alice"}')
+        await makeWasCommand().parseAsync(
+          ['put', filePath, '--capability', encodeCapability(zcap)],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(
+          errors[0],
+          /put needs a resource capability, or a collection capability with --resource <id>/
+        )
+      })
+
+      it('rejects --resource with a resource-depth capability', async () => {
+        const { makeZcap } = await setUpCapabilityStub()
+        const zcap = makeZcap('https://was.example/space/space-1/docs/vc-1')
+        await makeWasCommand().parseAsync(
+          ['get', '--capability', encodeCapability(zcap), '--resource', 'vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(
+          errors[0],
+          /capability already targets a resource; drop --resource/
+        )
+      })
+
+      it('rejects --resource without --capability', async () => {
+        await setUpCapabilityStub()
+        await makeWasCommand().parseAsync(
+          ['get', 'home/docs/vc-1', '--resource', 'vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /--resource names a resource beneath a/)
+      })
+
+      it('rejects --resource with neither a path nor a capability', async () => {
+        await setUpCapabilityStub()
+        await makeWasCommand().parseAsync(['get', '--resource', 'vc-1'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 2)
+        assert.match(errors[0], /--resource names a resource beneath a/)
+      })
+
+      it('rm deletes at --resource beneath a collection capability', async () => {
+        const { calls, makeZcap } = await setUpCapabilityStub()
+        const zcap = makeZcap('https://was.example/space/space-1/web')
+        await makeWasCommand().parseAsync(
+          [
+            'rm',
+            '--capability',
+            encodeCapability(zcap),
+            '--resource',
+            'index.html'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(calls.resource, [['index.html', zcap]])
+        assert.equal(calls.deleteResource.length, 1)
+        assert.equal(calls.deleteCollection, undefined)
+        assert.match(
+          errors[0],
+          /Deleted https:\/\/was\.example\/space\/space-1\/web\/index\.html/
+        )
+      })
+
+      it('rm rejects --resource with a resource-depth capability', async () => {
+        const { makeZcap } = await setUpCapabilityStub()
+        const zcap = makeZcap('https://was.example/space/space-1/docs/vc-1')
+        await makeWasCommand().parseAsync(
+          ['rm', '--capability', encodeCapability(zcap), '--resource', 'vc-1'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 2)
+        assert.match(
+          errors[0],
+          /capability already targets a resource; drop --resource/
+        )
       })
 
       it('resource add accepts a collection capability', async () => {

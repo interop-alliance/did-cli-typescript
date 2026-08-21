@@ -194,6 +194,15 @@ describe('runWasShell', () => {
     assert.match(output, /Provide a file argument inside the shell/)
   })
 
+  it('does not count a --resource value as the payload file', async () => {
+    const { output } = await runScript([
+      'use demo',
+      'put --capability bob-share --resource index.html',
+      'exit'
+    ])
+    assert.match(output, /Provide a file argument inside the shell/)
+  })
+
   it('ignores blank lines and # comments', async () => {
     const { calls } = await runScript([
       '   ',

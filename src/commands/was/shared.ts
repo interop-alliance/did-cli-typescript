@@ -15,6 +15,7 @@ import {
   type Space
 } from '@interop/was-client'
 import { parseWasAddress } from '../../was/address.js'
+import type { ResolvedCapabilityTarget } from '../../was/capability.js'
 import { resolveWasTarget, type ResolvedWasTarget } from '../../was/client.js'
 import { renderTable, type Column } from '../../table.js'
 
@@ -100,6 +101,13 @@ export function capabilityOption(): Option {
   )
 }
 
+export function resourceIdOption(): Option {
+  return new Option(
+    '--resource <id>',
+    'the resource id to operate on beneath a collection --capability'
+  )
+}
+
 export function contentTypeOption(): Option {
   return new Option(
     '--content-type <type>',
@@ -109,25 +117,78 @@ export function contentTypeOption(): Option {
 
 /**
  * Guards a run function against receiving both path- and capability-based
- * addressing (or neither).
+ * addressing (or neither). `--resource <id>` is part of capability
+ * addressing -- it names a resource beneath a collection capability -- so it
+ * is rejected first when no capability anchors it, whether or not a path was
+ * also given.
  *
  * @param options {object}
  * @param [options.address] {string}
  * @param [options.capability] {string}
+ * @param [options.resource] {string}   The `--resource` value.
  * @returns {void}
  */
 export function assertOneAddressing({
   address,
-  capability
+  capability,
+  resource
 }: {
   address?: string
   capability?: string
+  resource?: string
 }): void {
+  if (resource !== undefined && !capability) {
+    throw new Error(
+      '--resource names a resource beneath a collection --capability; ' +
+        'a path already names one.'
+    )
+  }
   if (address && capability) {
     throw new Error('Provide either a path or --capability, not both.')
   }
   if (!address && !capability) {
     throw new Error('Provide a path or --capability.')
+  }
+}
+
+/**
+ * Applies `--resource <id>` to a resolved capability target, returning the
+ * target unchanged when no id was given. The id names a resource beneath a
+ * collection capability, and the resource handle hangs off that capability's
+ * collection handle, so it inherits the bound capability and the request
+ * stays an invocation of the received grant.
+ *
+ * @param options {object}
+ * @param options.resolved {ResolvedCapabilityTarget}
+ * @param [options.resourceId] {string}   The `--resource` value.
+ * @returns {ResolvedCapabilityTarget}
+ */
+export function withResourceId({
+  resolved,
+  resourceId
+}: {
+  resolved: ResolvedCapabilityTarget
+  resourceId?: string
+}): ResolvedCapabilityTarget {
+  if (resourceId === undefined) {
+    return resolved
+  }
+  if (resolved.depth === 'resource') {
+    throw new Error(
+      'The capability already targets a resource; drop --resource.'
+    )
+  }
+  if (resolved.depth !== 'collection') {
+    throw new Error(
+      '--resource names a resource beneath a collection capability; ' +
+        `this one targets a ${resolved.depth}.`
+    )
+  }
+  return {
+    ...resolved,
+    depth: 'resource',
+    handle: resolved.handle.resource(resourceId),
+    url: `${resolved.url.replace(/\/$/, '')}/${encodeURIComponent(resourceId)}`
   }
 }
 

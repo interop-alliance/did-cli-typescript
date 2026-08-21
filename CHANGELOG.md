@@ -4,6 +4,14 @@
 
 ### Added
 
+- `--resource <id>` on `was get`, `was put`, `was meta get`, `was meta put`,
+  and `was rm`: names one resource beneath a collection-scoped
+  `--capability`, so a grant issued on a whole collection can read, write,
+  and delete at a caller-chosen id. `resource add` also takes a collection
+  capability, but the server picks the id there. The resource handle inherits
+  the collection's bound capability, so the request stays an invocation of
+  the received grant. `--resource` without a capability, or alongside a
+  capability that already targets a resource, is an input error.
 - `was shell` -- an interactive REPL over the `was` command tree. Start it with
   `di was shell [path]` (`--server`/`--did` seed the session defaults), then run
   any `was` subcommand without re-typing space handles or re-paying the

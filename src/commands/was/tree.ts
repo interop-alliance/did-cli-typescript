@@ -12,7 +12,8 @@ import {
   printResourceListing,
   reportDeleted,
   reportError,
-  reportNotFound
+  reportNotFound,
+  withResourceId
 } from './shared.js'
 import { runCollectionDelete, runCollectionList } from './collection.js'
 import { runResourceDelete, runResourceList } from './resource.js'
@@ -103,13 +104,17 @@ export async function runLs(options: {
 /**
  * The `was rm` shorthand: deletes whatever the path (or a `--capability`'s
  * invocation target) points at -- a space, a collection, or a resource (the
- * client's uniform `delete()` design).
+ * client's uniform `delete()` design). A collection capability deletes one
+ * resource inside it with `--resource <id>`, the counterpart of writing at a
+ * chosen id through the same grant.
  *
  * @param options {object}
  * @param [options.address] {string}   A space, collection, or resource
  *   address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param [options.server] {string}   The server base URL.
  * @param [options.did] {string}   The signing DID or stored-DID handle.
  * @returns {Promise<number>}   The process exit code.
@@ -117,15 +122,19 @@ export async function runLs(options: {
 export async function runRm(options: {
   address?: string
   capability?: string
+  resource?: string
   server?: string
   did?: string
 }): Promise<number> {
   if (options.capability) {
     try {
       assertOneAddressing(options)
-      const resolved = await resolveCapabilityTarget({
-        ref: options.capability,
-        did: options.did
+      const resolved = withResourceId({
+        resolved: await resolveCapabilityTarget({
+          ref: options.capability,
+          did: options.did
+        }),
+        resourceId: options.resource
       })
       await resolved.handle.delete()
       reportDeleted(resolved.url)

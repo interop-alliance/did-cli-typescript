@@ -131,7 +131,7 @@ the inverse.
   - wallet-core -- WC-129 re-homes the requester-side exchange helpers and
     supplies the zcap-only VPR builder this command consumes
   - this repo -- CLI-13 (the resource-depth write the returned grant
-    needs), CLI-14 (the QR dependency), CLI-8 (key file modes)
+    needs; done), CLI-14 (the QR dependency), CLI-8 (key file modes)
 - acceptance:
   - [ ] `di was request-grant` builds a zcap-only VPR (no
         `DIDAuthentication`, no `domain`) with one
@@ -176,9 +176,9 @@ FW-231 once its VPR member is signed off.
 Scope correction from FW-227's 2026-08-21 CLI-lens review: this command is
 larger than "a new command plus the existing `put`". The grant that comes
 back is collection-scoped, and `di was put --capability` refuses anything
-that is not resource depth, so CLI-13 has to land for the demo to complete;
-WC-129 lands before or with this item, since it is what this command
-consumes.
+that is not resource depth. CLI-13 has since landed, so the final write is
+`di was put <file> --capability <zcap> --resource <id>`. WC-129 lands before
+or with this item, since it is what this command consumes.
 The deep-link output is also gated: FW-227 section 8 question 1 (the route
 path and query parameter) is unsigned-off, so `--wallet <url>` has nothing
 to print until it is decided. The interaction URL and the QR are unblocked,
@@ -254,45 +254,6 @@ what settles the already-on-disk question; state it in the README note.
   - [ ] Validates the shape before storing
 
 Split out of CLI-7, whose `--save` covers the demo.
-
-### CLI-13: Write at a resource id through a collection-depth capability
-
-- status: todo
-- priority: high
-- labels: was, zcap, agents
-- touches:
-  - freewallet -- none; the wallet's grant is correct as issued. The
-    mismatch is entirely on this side
-- acceptance:
-  - [ ] `di was put` accepts a collection-depth `--capability` together
-        with a resource id, and writes at that id beneath the capability's
-        collection. Either a positional resource id alongside
-        `--capability`, or a `--resource <id>` flag; the choice is
-        FW-227 section 8 question 9
-  - [ ] `assertOneAddressing` stops treating a path plus a `--capability`
-        as an error for this case, and `disambiguatePayloadArgs` no longer
-        silently reads the single positional as the payload file when a
-        capability is present
-  - [ ] The other resource verbs (`get`, `meta`) get the same treatment or
-        an explicit refusal message naming the supported form
-  - [ ] A test PUTs `index.html` under a collection-scoped delegated zcap
-        and fetches it back
-
-Discovered by FW-227's 2026-08-21 CLI-lens review, which found the agent
-demo's final step unrunnable. A `#public-collection` grant's
-`invocationTarget` is a collection URL, but `resolveResourceHandle` refuses
-a capability whose depth is not `resource` ("the capability targets a
-collection; put needs a resource capability"). `resource add` does accept a
-collection capability, but its id is server-generated, so it cannot produce
-`index.html`.
-
-Asking the wallet for a resource-scoped grant instead is not an option: a
-resource-level target is only expressible as a plain URL under the user's
-own Space, and the CLI does not know the Space URL before consent. A
-descriptor naming a resource would be a new wire convention needing
-sign-off. was-client already supports the right shape --
-`Collection.resource(id)` inherits the bound capability and `Resource.put`
-takes a content type and upserts -- so this is CLI-side only.
 
 ### CLI-14: Terminal QR for `request-grant`
 

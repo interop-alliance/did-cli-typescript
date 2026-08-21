@@ -2,7 +2,9 @@
  * `was resource` run functions: add (server-generated id), put (upsert at a
  * known id), get (JSON or binary), list, delete, and the resource-metadata
  * verbs `meta get` / `meta put`. Each addressing-capable verb accepts either
- * a path or a `--capability` targeting the resource or its collection.
+ * a path or a `--capability` targeting the resource or its collection. A
+ * collection capability names its resource with `--resource <id>`, which is
+ * how a grant scoped to a whole collection is invoked at one resource.
  */
 import { readFile } from 'node:fs/promises'
 import {
@@ -20,18 +22,28 @@ import {
   reportNotFound,
   resolveCollectionTarget,
   resolveResourceTarget,
-  wasUrl
+  wasUrl,
+  withResourceId
 } from './shared.js'
 
 /**
  * Resolves a single resource handle and its URL from either a path address
- * or a `--capability` targeting a resource -- the shared addressing logic of
- * the resource verbs that operate on one resource (`put`, `get`, `meta`).
+ * or a `--capability` -- the shared addressing logic of the resource verbs
+ * that operate on one resource (`put`, `get`, `meta`).
+ *
+ * The capability may target the resource itself, or the collection holding
+ * it together with `--resource <id>`. The second form is what a grant scoped
+ * to a whole collection needs: the id is chosen by the caller (unlike `add`,
+ * where the server picks it), and the resource handle inherits the
+ * collection's bound capability, so the write is still an invocation of the
+ * received grant.
  *
  * @param options {object}
  * @param [options.address] {string}   The resource address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param options.verb {string}   The verb name, for the capability-depth
  *   error message.
  * @param [options.server] {string}   The server base URL.
@@ -41,23 +53,29 @@ import {
 async function resolveResourceHandle({
   address,
   capability,
+  resource: resourceId,
   verb,
   server,
   did
 }: {
   address?: string
   capability?: string
+  resource?: string
   verb: string
   server?: string
   did?: string
 }): Promise<{ resource: Resource; url: string }> {
-  assertOneAddressing({ address, capability })
+  assertOneAddressing({ address, capability, resource: resourceId })
   if (capability) {
-    const resolved = await resolveCapabilityTarget({ ref: capability, did })
+    const resolved = withResourceId({
+      resolved: await resolveCapabilityTarget({ ref: capability, did }),
+      resourceId
+    })
     if (resolved.depth !== 'resource') {
       throw new Error(
         `The capability targets a ${resolved.depth}; ` +
-          `${verb} needs a resource capability.`
+          `${verb} needs a resource capability, or a collection capability ` +
+          'with --resource <id>.'
       )
     }
     return { resource: resolved.handle, url: resolved.url }
@@ -146,13 +164,15 @@ export async function runResourceAdd(options: {
 
 /**
  * Creates or replaces a resource at a known id (upsert) and prints
- * `{ id, url }`. The resource comes from a path or a `--capability`
- * targeting one.
+ * `{ id, url }`. The resource comes from a path, a `--capability`
+ * targeting one, or a collection `--capability` plus `--resource <id>`.
  *
  * @param options {object}
  * @param [options.address] {string}   The resource address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param [options.file] {string}   The payload file; stdin when omitted.
  * @param [options.contentType] {string}   Explicit payload content type.
  * @param [options.server] {string}   The server base URL.
@@ -162,6 +182,7 @@ export async function runResourceAdd(options: {
 export async function runResourcePut(options: {
   address?: string
   capability?: string
+  resource?: string
   file?: string
   contentType?: string
   server?: string
@@ -190,13 +211,15 @@ export async function runResourcePut(options: {
 
 /**
  * Reads a resource: JSON pretty-printed to stdout, binary written raw
- * (`--output` for files). The resource comes from a path or a
- * `--capability` targeting one.
+ * (`--output` for files). The resource comes from a path, a `--capability`
+ * targeting one, or a collection `--capability` plus `--resource <id>`.
  *
  * @param options {object}
  * @param [options.address] {string}   The resource address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param [options.output] {string}   The output file path; stdout when
  *   omitted.
  * @param [options.server] {string}   The server base URL.
@@ -206,6 +229,7 @@ export async function runResourcePut(options: {
 export async function runResourceGet(options: {
   address?: string
   capability?: string
+  resource?: string
   output?: string
   server?: string
   did?: string
@@ -229,12 +253,15 @@ export async function runResourceGet(options: {
 /**
  * Reads a resource's metadata object (server-managed `contentType` / `size` /
  * timestamps plus the user-writable `custom`) and pretty-prints it. The
- * resource comes from a path or a `--capability` targeting one.
+ * resource comes from a path, a `--capability` targeting one, or a
+ * collection `--capability` plus `--resource <id>`.
  *
  * @param options {object}
  * @param [options.address] {string}   The resource address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param [options.server] {string}   The server base URL.
  * @param [options.did] {string}   The signing DID or stored-DID handle.
  * @returns {Promise<number>}   The process exit code.
@@ -242,6 +269,7 @@ export async function runResourceGet(options: {
 export async function runResourceMetaGet(options: {
   address?: string
   capability?: string
+  resource?: string
   server?: string
   did?: string
 }): Promise<number> {
@@ -317,13 +345,16 @@ async function parseCustomJson(input: string): Promise<ResourceMetadataCustom> {
  * Updates a resource's user-writable metadata and prints the resulting
  * metadata. `--name`/`--tag` are read-modify-write sugar that preserve the
  * other field; giving both, or `--json`, is a full `custom` replacement so
- * any omitted property is cleared. The resource comes from a path or a
- * `--capability` targeting one.
+ * any omitted property is cleared. The resource comes from a path, a
+ * `--capability` targeting one, or a collection `--capability` plus
+ * `--resource <id>`.
  *
  * @param options {object}
  * @param [options.address] {string}   The resource address.
  * @param [options.capability] {string}   A capability reference instead of
  *   a path.
+ * @param [options.resource] {string}   The resource id beneath a collection
+ *   capability.
  * @param [options.name] {string}   The resource's display name.
  * @param options.tag {string[]}   Repeatable `key=value` tag pairs.
  * @param [options.json] {string}   Full `custom` JSON (inline or a file
@@ -335,6 +366,7 @@ async function parseCustomJson(input: string): Promise<ResourceMetadataCustom> {
 export async function runResourceMetaPut(options: {
   address?: string
   capability?: string
+  resource?: string
   name?: string
   tag: string[]
   json?: string
