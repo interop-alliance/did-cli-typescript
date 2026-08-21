@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   findStoredKey,
@@ -136,6 +136,35 @@ describe('storage', () => {
         data: { id: did, updated: true }
       })
       assert.equal((await stat(filePath)).mode & 0o777, 0o600)
+    })
+
+    it('keeps mode 0600 when an interrupted run left a wider temp file', async () => {
+      const save = async () =>
+        saveToCollection({
+          collection: 'keys',
+          storageId: 'key-a',
+          data: { publicKeyMultibase: 'z6MkAaa', secretKeyMultibase: 'z1Aaa' }
+        })
+      const filePath = await save()
+      await writeFile(`${filePath}.tmp`, 'stale', { mode: 0o644 })
+      assert.equal(await save(), filePath)
+      assert.equal((await stat(filePath)).mode & 0o777, 0o600)
+    })
+
+    it('creates storage directories with mode 0700', async () => {
+      const keyPath = await saveToCollection({
+        collection: 'keys',
+        storageId: 'key-a',
+        data: { publicKeyMultibase: 'z6MkAaa' }
+      })
+      const did = 'did:key:z6MkExample'
+      const didPath = await saveToDids({
+        method: 'key',
+        did,
+        data: { id: did }
+      })
+      assert.equal((await stat(dirname(keyPath))).mode & 0o777, 0o700)
+      assert.equal((await stat(dirname(didPath))).mode & 0o777, 0o700)
     })
   })
 

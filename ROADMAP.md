@@ -314,9 +314,9 @@ surface.
 
 ### CLI-16: Atomic writes assume a single writer
 
-- status: draft (parking record)
+- status: draft
 - priority: low
-- labels: someday, storage
+- labels: someday, storage, parking-record
 - acceptance: none yet -- revisit if two `di` processes are expected to
   write the same wallet concurrently
 
@@ -324,9 +324,10 @@ surface.
 `${filePath}.tmp`, then renames. The rename is atomic and readers always see
 a complete file, so concurrent *readers* are safe. Concurrent *writers* of
 the same artifact are not: two `di` processes saving the same DID or key
-would open the one temp path, interleave their writes into it, and each
-rename whatever the other left behind. The result can be a file that is
-neither process's content rather than one of the two.
+race for the one temp path. The temp file is now unlinked and reopened with
+`wx`, so the loser of the race fails with `EEXIST` instead of interleaving
+its writes into the winner's file -- a visible error rather than a file that
+is neither process's content, but still not a solution.
 
 Nothing enforces the assumption today; it is simply that a single user runs
 one command at a time. `di was shell` keeps a single process, and the agent

@@ -1,5 +1,4 @@
 import {
-  chmod,
   mkdir,
   readFile,
   readdir,
@@ -20,15 +19,24 @@ import { join } from 'node:path'
 const STORED_FILE_MODE = 0o600
 
 /**
+ * Mode for every directory this module creates: the directory equivalent of
+ * `STORED_FILE_MODE`. File contents are already owner-only, but the file names
+ * themselves are sensitive -- a DID document is named after its DID -- so the
+ * containing directories should not be listable or traversable by others.
+ */
+const STORED_DIR_MODE = 0o700
+
+/**
  * Write a file atomically (write to a temp sibling, then rename), so an
  * interrupted write cannot leave a truncated file behind. Stored artifacts
  * (DID logs, key sidecars, wallet items) are load-bearing; a truncated one
  * would make every later command on it fail.
  *
- * The temp file is created with `STORED_FILE_MODE` and chmod-ed before the
- * rename: `writeFile` applies its `mode` only when it creates the file, and the
- * ambient umask can clear bits from it, so the explicit chmod is what makes the
- * mode deterministic. `rename` then carries that mode to the destination.
+ * `writeFile` applies its `mode` only when it creates the file, so the temp
+ * sibling is removed first and then opened with `wx` (fail if it exists). A
+ * temp file left behind by an interrupted run therefore cannot donate its
+ * wider mode to the secret being written. `rename` carries the mode to the
+ * destination.
  *
  * @param filePath {string}
  * @param data {string}
@@ -36,8 +44,12 @@ const STORED_FILE_MODE = 0o600
  */
 async function writeFileAtomic(filePath: string, data: string): Promise<void> {
   const tmpPath = `${filePath}.tmp`
-  await writeFile(tmpPath, data, { encoding: 'utf8', mode: STORED_FILE_MODE })
-  await chmod(tmpPath, STORED_FILE_MODE)
+  await unlinkIfExists(tmpPath)
+  await writeFile(tmpPath, data, {
+    encoding: 'utf8',
+    mode: STORED_FILE_MODE,
+    flag: 'wx'
+  })
   await rename(tmpPath, filePath)
 }
 
@@ -164,7 +176,7 @@ export async function saveToCollection({
   data: object
 }): Promise<string> {
   const dir = join(getWalletDir(), collection)
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
   const filePath = join(dir, `${storageId}.json`)
   await writeFileAtomic(filePath, JSON.stringify(data, null, 2))
   return filePath
@@ -217,7 +229,7 @@ export async function saveMetaToCollection({
   meta: KeyMetadata
 }): Promise<string> {
   const dir = join(getWalletDir(), collection)
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
   const filePath = join(dir, `${storageId}.meta.json`)
   await writeFileAtomic(filePath, JSON.stringify(meta, null, 2))
   return filePath
@@ -526,7 +538,7 @@ export async function saveDidLog({
 }): Promise<string> {
   const method = methodOf(did)
   const dir = join(getDidsDir(), method)
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
   const filePath = join(dir, `${did}.jsonl`)
   const serialized = log.map(entry => JSON.stringify(entry)).join('\n') + '\n'
   await writeFileAtomic(filePath, serialized)
@@ -636,7 +648,7 @@ export async function saveToDids({
   data: object
 }): Promise<string> {
   const dir = join(getDidsDir(), method)
-  await mkdir(dir, { recursive: true })
+  await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
   const fileName = suffix ? `${did}.${suffix}.json` : `${did}.json`
   const filePath = join(dir, fileName)
   await writeFileAtomic(filePath, JSON.stringify(data, null, 2))

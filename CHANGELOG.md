@@ -44,7 +44,12 @@
   longer leave a truncated file.
 - Stored artifacts are now written with mode `0600` (owner read/write only)
   instead of the ambient umask default, since keys are held as plaintext
-  Multikey documents. Existing files are not migrated.
+  Multikey documents. Wallet and DID directories are created with mode `0700`,
+  since a DID document is named after its DID. Existing files are not
+  migrated.
+- The atomic-write temp file is unlinked and reopened with `wx` rather than
+  chmod-ed after the write, so a temp file left behind by an interrupted run
+  cannot receive a secret at its own wider mode.
 - Confirmation prompts no longer auto-confirm when stdin is not interactive;
   non-interactive runs must pass `--yes`, and a declined confirmation now
   exits 1.

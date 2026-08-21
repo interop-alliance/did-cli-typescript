@@ -130,10 +130,20 @@ the relevant command section below.
 
 Everything written under `WALLET_DIR` and `DIDS_DIR` -- keys, zcaps,
 credentials, space records, DID documents, sidecars, and history logs -- is
-created with mode `0600`, owner read/write only. Secret key material is stored
-as plaintext Multikey documents, so the file mode is what keeps it off other
-local accounts. Files written before this became the default are not migrated;
-run `chmod 600` over an existing wallet directory if you have one.
+created with mode `0600`, owner read/write only. Directories are created with
+mode `0700`, since a DID document is named after its DID and the file names
+alone reveal what you hold. Secret key material is stored as plaintext Multikey
+documents, so the file mode is what keeps it off other local accounts.
+
+Files written before this became the default are not migrated. To tighten an
+existing wallet directory:
+
+```
+chmod -R u=rwX,go= ~/.config/did-cli-wallet
+```
+
+The capital `X` matters -- a plain `chmod -R 600` would clear the traverse bit
+on the directories and leave the wallet unreadable to you as well.
 
 ### Key Management
 
