@@ -109,6 +109,7 @@ di was ls|get|put|rm [path]     depth-dispatching shorthands
 di was policy <show|set|clear>  manage access-control policies
 di was publish|unpublish <path> toggle world-readable access
 di was grant <path>             delegate access via a signed capability
+di was request-grant            ask a wallet for a capability on a collection
 ```
 
 ### Environment Variables
@@ -118,7 +119,7 @@ or secret-key seeds for individual commands. Each is also documented inline in
 the relevant command section below.
 
 | Variable                   | Used by                    | Purpose                                                                                                                                              |
-|----------------------------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WALLET_DIR`               | all                        | Wallet collections directory (`keys/`, `zcaps/`, `credentials/`, `was-spaces/`). Defaults to `~/.config/did-cli-wallet/` (honors `XDG_CONFIG_HOME`). |
 | `DIDS_DIR`                 | `did`                      | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`.                                                                                           |
 | `SECRET_KEY_SEED`          | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa` or `--type x25519`.                                   |
@@ -613,7 +614,7 @@ distinct keys, so the update key can be rotated without ever disturbing the
 document.
 
 By default `did:webvh` arms **key pre-rotation**: the DID commits, in advance,
-to the *hash* of the key allowed to perform the next update. A compromise of the
+to the _hash_ of the key allowed to perform the next update. A compromise of the
 currently active update key cannot be used to seize the DID, because the
 attacker still does not hold the pre-committed next key. So `create` generates
 three keys: the active update key, a staged next update key (whose hash is
@@ -652,8 +653,8 @@ A few more create-time options are recorded in the signed history-log
   be moved to a different domain; `--no-portable` pins it to its origin.
 - `--witness <did...>` -- declare one or more **witness** `did:key` DIDs
   authorized to co-sign the DID's log entries (repeatable). `--witness-threshold
-  <n>` sets how many witness approvals are required (defaults to the number of
-  witnesses; it requires `--witness`). This only *declares* the witnesses;
+<n>` sets how many witness approvals are required (defaults to the number of
+  witnesses; it requires `--witness`). This only _declares_ the witnesses;
   actually generating witness proofs is not yet supported.
 - `--watcher <url...>` -- declare one or more **watcher** URLs that monitor the
   DID's log (repeatable; `https://`, or `http://localhost` for local testing).
@@ -673,7 +674,7 @@ Rotate the update (authorization) key of a locally stored `did:webvh` DID with
 With no flags it advances the pre-rotation ratchet in one step: it reveals and
 activates the previously staged next key (signing the new entry with it), and
 stages a fresh next key for the following rotation. The retired update key's
-secret is deleted by default -- a retired key is only ever needed to *verify*
+secret is deleted by default -- a retired key is only ever needed to _verify_
 historic log entries, which uses the public key from the log, not the secret:
 
 ```
@@ -1067,7 +1068,7 @@ Store an existing Verifiable Credential in local wallet storage with
 `vc import`. The credential is read from a file argument, an http(s) URL, or,
 if neither is given, from stdin. The input must structurally look like a
 credential (its `type` must include `VerifiableCredential`); it is stored
-as-is and is *not* verified on import (run `vc verify` for that). `--handle` /
+as-is and is _not_ verified on import (run `vc verify` for that). `--handle` /
 `--description` tag the saved credential:
 
 ```
@@ -1519,7 +1520,7 @@ the server, or the local registry record with `--meta`:
 
 `was space update` (alias: `configure`) upserts description fields
 (`--name`), also refreshing the registry entry. `was space add` registers an
-*existing* remote space (a full space URL, or a bare id plus `--server`) in
+_existing_ remote space (a full space URL, or a bare id plus `--server`) in
 the local registry, verifying it with a describe first. `was space meta
 <space>` updates only a registered space's local metadata (`--handle` and/or
 `--description`); the server-side space is untouched, and passing an empty
@@ -1716,6 +1717,77 @@ the zcap store (`~/.config/did-cli-wallet/zcaps/`):
 
 Hand the `encoded` string (or the JSON) to the delegatee out-of-band.
 
+#### Request a grant
+
+`was request-grant` is the inverse of `was grant`, for the case where you are
+the one who needs access. It asks a user's wallet to delegate a capability on
+one of its public collections, and is what lets a program publish into someone
+else's storage without ever logging into their wallet.
+
+The grantee key is minted by the command rather than passed in, so a script (or
+an LLM agent) driving the CLI never handles key material: the secret goes
+straight into local DID storage, and stdout carries only the capability. The
+approval link and the progress notes go to stderr; `--json` puts the DID, the
+handle, the link, and the capability into one object on stdout instead.
+
+```
+./di was request-grant --server https://was.example \
+  --reason "Publish a demo page"
+Requesting "web" access for did:key:z6MkAgent...
+
+Open this in your wallet to approve:
+
+  https://was.example/workflows/ephemeral/exchanges/abc-123/protocols?iuv=1
+
+Waiting for approval...
+```
+
+The user opens that link in their wallet and approves. The command then prints
+the capability it received (the same `z...` form `--capability` accepts) and
+files it in the zcap store under `--handle` (default `agent`), together with the
+minted key:
+
+```
+Capability saved to ~/.config/did-cli-wallet/zcaps/urn_uuid_....json
+Granted. Use it with --capability agent, for example:
+  di was put ./index.html --capability agent --did agent --resource index.html --content-type text/html
+zkL8vet8M2mn...
+```
+
+Saving is what makes the grant usable: `--capability` resolves its signing key
+out of the local DID store, so a key held only for the run cannot sign the write
+that follows. `--no-save` prints the capability without keeping either half, for
+inspecting a grant you do not intend to use.
+
+The signing DID is taken from `--did` first, then `WAS_DID`, and only then the
+capability's own `controller`. Naming the minted key explicitly
+(`--did agent`, matching the handle the grant was filed under) is therefore
+worth doing whenever `WAS_DID` is set in the environment, or the write is signed
+by your own DID and the server rejects it.
+
+A run files the minted key and the received capability under the same handle, so
+a handle already taken by a stored DID or capability is refused before anything
+is minted; pass a different `--handle` for a second grant. Nothing is written
+until the grant arrives -- a request that is declined, expires, or times out
+leaves no key behind.
+
+Options are `--collection <name>` (default `web`), `--action <verb...>` (default
+`GET HEAD PUT POST`), `--reason <text>` (shown to the user at the consent step),
+`--timeout <seconds>` (default 600, matching the server's exchange lifetime),
+`--handle` / `--description`, `--no-save`, `--json`, and `--server` (or
+`WAS_SERVER_URL`).
+
+Two things the wallet decides, not this command:
+
+- A public collection is only ever created public. If the named collection
+  already exists and is not world-readable, the wallet cannot satisfy the
+  request, and the approval comes back granting nothing.
+- The actions you ask for are a request, not an instruction. The wallet caps
+  them by what the collection allows, and may grant fewer than you asked for.
+
+The exchange lives on the server for ten minutes. After that the link is dead
+and the command reports it; run it again for a fresh one.
+
 #### Use a received capability
 
 On the receiving side, `ls` / `get` / `put` / `rm` (and `resource
@@ -1727,7 +1799,7 @@ of:
 - the capability id or metadata **handle of a zcap** stored in
   `~/.config/did-cli-wallet/zcaps/`.
 
-Note that a `--capability` reference is *not* a WAS path -- no space,
+Note that a `--capability` reference is _not_ a WAS path -- no space,
 collection, or resource address is given (or needed). The capability itself
 records what it grants access to in its `invocationTarget`, and that is what
 the command operates on:
@@ -1752,7 +1824,7 @@ server URL is taken from the invocation target's origin, and the signing DID
 defaults to the capability's controller (the delegatee) when that DID is
 stored locally -- so usually no flags are needed at all.
 
-In the examples below, `bob-share` is the metadata handle of a *stored zcap*
+In the examples below, `bob-share` is the metadata handle of a _stored zcap_
 (not a space or collection handle): say Alice granted Bob `GET`/`PUT` on the
 single resource `home/credentials/vc-1`, and the capability was saved with
 `--save --handle bob-share` (on Alice's machine via `was grant --save`; on

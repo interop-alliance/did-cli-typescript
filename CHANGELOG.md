@@ -4,6 +4,27 @@
 
 ### Added
 
+- `was request-grant` -- the requesting side of capability delegation, the
+  inverse of `was grant`. It mints an Ed25519 `did:key` for itself, asks a
+  user's wallet for a capability on one of its public collections, prints an
+  approval link for the user to open, waits for their answer, and files the
+  received capability in the zcap store. The grantee key is minted by the
+  command rather than passed in, so a caller driving the CLI never handles key
+  material: stdout carries the capability (or, with `--json`, one object holding
+  the DID, the handle, the link, and the capability), and the approval link and
+  progress notes go to stderr. The key is written only once the grant arrives,
+  and a handle already taken by a stored DID or capability is refused up front,
+  so handle lookups stay unambiguous across runs. Options are
+  `--collection` (default `web`), `--action` (default `GET HEAD PUT POST`),
+  `--reason`, `--timeout` (default 600 seconds, the server's exchange
+  lifetime), `--handle` (default `agent`), `--description`, `--no-save`,
+  `--json`, and `--server`. Persistence is on by default because
+  `--capability` resolves its signer out of the local DID store, so a key held
+  only for the run cannot sign the write that follows; `--no-save` prints the
+  capability without keeping either half. The request carries a single
+  `AuthorizationCapabilityQuery` naming a public-collection descriptor, with no
+  `DIDAuthentication` query and no `domain`.
+
 - `--resource <id>` on `was get`, `was put`, `was meta get`, `was meta put`,
   and `was rm`: names one resource beneath a collection-scoped
   `--capability`, so a grant issued on a whole collection can read, write,
@@ -25,6 +46,8 @@
 ### Changed
 
 - Update to latest d-i-core, verifier-core, was-client and didwebvh deps.
+- Added `@interop/wallet-core` as a dependency, for the ephemeral-exchange
+  create and poll helpers `was request-grant` transports over.
 - `did webvh rotate-keys` and `did service add|remove` now pass the
   already-resolved log state to `updateDID` as `priorMeta`, so each update
   verifies the history log once instead of twice. The pairing between the log
@@ -145,7 +168,7 @@
 - `vc issue --did` now accepts a metadata handle (not just a full DID id),
   resolving it via the same lookup used by the other DID-referencing commands.
   Previously passing a handle failed with a confusing `The "path" argument must
-  be of type string. Received undefined` error.
+be of type string. Received undefined` error.
 
 ### Changed
 
@@ -184,7 +207,7 @@
   field); `loadFromCollection` / `saveToCollection` take an options object like
   the rest of the storage helpers; `vc/issue` and `vc/verify` replace their
   `as never` casts with typed ones; `edv/recipients` replaces `Record<string,
-  any>` with a named `VerificationMethodNode` type; `edv`'s encrypt functions
+any>` with a named `VerificationMethodNode` type; `edv`'s encrypt functions
   share an `EnvelopeOptions` type and a `resolveEncryptContextOrReport` wrapper;
   and the `z6Mk` / `z6LS` multibase prefixes are named constants. Added the
   file-level JSDoc header to `key.ts` and moved the `zcap revoke` stub message to
@@ -520,7 +543,7 @@
     `--handle` / `--description` tag it (exit `1` without `--save`).
   - Add `vc list` (`--json` / `--plain`) to render a metadata table of the
     stored credentials (`HANDLE | TYPE | ISSUER | CREATED | ID |
-    DESCRIPTION`), `vc show <id>` (aliases: `view`, `cat`; `--meta` for the
+DESCRIPTION`), `vc show <id>` (aliases: `view`, `cat`; `--meta` for the
     metadata, `--meta --json` for it as JSON), `vc meta <id>` to edit the
     metadata sidecar, and `vc remove <id>` (aliases: `delete`, `rm`). All
     accept a credential id, a storage id (for id-less credentials), or a
@@ -557,7 +580,7 @@
   `did create --save` and `did add-key`).
 - Add metadata support for locally stored keys and DIDs, persisted as
   `.meta.json` sidecar files next to the stored item (`~/.wallet/keys/
-  <storageId>.meta.json` and `~/.dids/<method>/<did>.meta.json`, following the
+<storageId>.meta.json` and `~/.dids/<method>/<did>.meta.json`, following the
   existing `.keys.json` sidecar pattern). Metadata fields: `created` (ISO 8601
   timestamp written at `--save` time), `handle` (a short user-defined tag),
   `description` (longer free text), and -- for keys -- `dids`, a cache of the
@@ -597,8 +620,8 @@
   the new `--plain` flag for the previous one-item-per-line output.
 - **BREAKING**: `key list --json` and `did list --json` now output an array of
   objects with metadata (`{fingerprint, storageId, type, curve?, created?,
-  handle?, description?, dids}` for keys; `{did, method, created?, handle?,
-  description?}` for DIDs) instead of an array of plain strings.
+handle?, description?, dids}` for keys; `{did, method, created?, handle?,
+description?}` for DIDs) instead of an array of plain strings.
 
 ## 0.4.0 - 2026-06-09
 

@@ -73,6 +73,7 @@ import {
 import { runLs, runRm } from './was/tree.js'
 import { runPolicyClear, runPolicySet, runPolicyShow } from './was/policy.js'
 import { runGrant, runPublish, runUnpublish } from './was/publish.js'
+import { runRequestGrant } from './was/request-grant.js'
 import { makeWasShellCommand } from './was/shell.js'
 
 /**
@@ -862,6 +863,57 @@ export function makeWasCommand(): Command {
         }
       ) => {
         await runAndExit(runGrant({ address, ...options }))
+      }
+    )
+
+  was
+    .command('request-grant')
+    .description(
+      'Ask a wallet for a capability on one of its public collections ' +
+        '(the inverse of grant: mints a key, prints a link for the user to ' +
+        'approve, and stores what comes back)'
+    )
+    .option(
+      '--collection <name>',
+      'the public collection to request access to (default web)'
+    )
+    .option(
+      '--action <verb...>',
+      'requested action(s): GET, HEAD, PUT, POST, DELETE (lowercase accepted)'
+    )
+    .option('--reason <text>', 'why access is wanted, shown to the user')
+    .option(
+      '--no-save',
+      'do not store the minted key or the received capabilities (they cannot ' +
+        'then be invoked by a later command)'
+    )
+    .option(
+      '--handle <handle>',
+      'short tag for the minted key and received capabilities (default agent)'
+    )
+    .option(
+      '--description <description>',
+      'longer description for the saved items (requires --save)'
+    )
+    .option(
+      '--timeout <seconds>',
+      'how long to wait for approval (default 600, the server exchange TTL)'
+    )
+    .option('--json', 'print the DID, handle, and capabilities as JSON')
+    .addOption(serverOption())
+    .action(
+      async (options: {
+        collection?: string
+        action?: string[]
+        reason?: string
+        save?: boolean
+        handle?: string
+        description?: string
+        timeout?: string
+        json?: boolean
+        server?: string
+      }) => {
+        await runAndExit(runRequestGrant(options))
       }
     )
 

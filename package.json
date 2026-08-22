@@ -42,6 +42,7 @@
     "@interop/security-document-loader": "^10.0.4",
     "@interop/vc": "^11.0.7",
     "@interop/verifier-core": "^3.5.5",
+    "@interop/wallet-core": "^0.49.0",
     "@interop/was-client": "^0.41.0",
     "@interop/x25519-key-agreement-key": "^5.2.2",
     "@interop/zcap": "^11.1.0",

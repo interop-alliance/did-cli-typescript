@@ -117,7 +117,7 @@ the inverse.
 
 ### CLI-7: `di was request-grant`
 
-- status: todo
+- status: in-progress
 - priority: high
 - labels: was, zcap, agents
 - touches:
@@ -131,47 +131,73 @@ the inverse.
   - wallet-core -- WC-129 re-homes the requester-side exchange helpers and
     supplies the zcap-only VPR builder this command consumes
   - this repo -- CLI-13 (the resource-depth write the returned grant
-    needs; done), CLI-14 (the QR dependency), CLI-8 (key file modes)
+    needs; done), CLI-8 (key file modes)
 - acceptance:
-  - [ ] `di was request-grant` builds a zcap-only VPR (no
+  - [x] `di was request-grant` builds a zcap-only VPR (no
         `DIDAuthentication`, no `domain`) with one
         `AuthorizationCapabilityQuery` entry: a
         `https://w3id.org/byoe#public-collection` descriptor named by
         `--collection` (default `web`), `--action` (default `GET HEAD PUT
-        POST`), `--reason`, and `controller` set to the agent's did:key
-  - [ ] The key is minted inside the command, not passed in. `--save
+        POST`), `--reason`, and `controller` set to the agent's did:key.
+        `referenceId` is omitted: it is optional in
+        `ICapabilityQueryDetail`, and no consumer reads it back (grants
+        correlate positionally by `invocationTarget`)
+  - [x] The key is minted inside the command, not passed in. `--save
         --handle <name>` persists the key and the received zcaps under one
         handle, and is required for the demo path: `di was put
         --capability` resolves its signer out of the local key store, so a
         key held only for the run cannot sign the write that follows.
-        Either default `--save` on, or perform the first write in-process.
-        The agent's context never sees key bytes; stdout carries the
-        handle, the interaction URL, the deep link, and the result
-  - [ ] POSTs the VPR to the server's exchange facet (`--server`, or
-        derived from `--wallet`'s configured server), prints the
-        interaction URL, a wallet deep link when `--wallet <url>` is given,
-        and a half-block terminal QR (CLI-14); polls until complete or the
-        exchange expires, with a clear timeout message
-  - [ ] Parses the response VP (unsigned, zcap-only) and stores or prints
+        `--save` defaults on (with `--no-save` to decline), rather than
+        performing the first write in-process. The agent's context never
+        sees key bytes; stdout carries the handle, the interaction URL,
+        and the result
+  - [x] POSTs the VPR to the server's exchange facet (`--server`), prints
+        the interaction URL, and polls until complete or the exchange
+        expires, with a clear timeout message
+  - [ ] Prints a wallet deep link when `--wallet <url>` is given.
+        Blocked: FW-227 section 8 question 1 (the route path and query
+        parameter) is unsigned-off, so `--wallet` has nothing to print,
+        and the flag is therefore not declared yet
+  - [x] Parses the response VP (unsigned, zcap-only) and stores or prints
         the zcaps in the `z...` base58btc form `--capability` already
         accepts. The zcaps sit at
         `body.response.verifiablePresentation.zcap`
-  - [ ] Uses was-client handles, nothing re-derived locally. The ecosystem
+  - [x] Uses was-client handles, nothing re-derived locally. The ecosystem
         rule applies: WAS calls go through was-client handles, not raw
         ezcap `read()`/`write()` (those send `action: read/write`, which
-        WAS rejects)
-  - [ ] The exchange create and poll helpers come from wallet-core rather
+        WAS rejects). Satisfied trivially here: this command makes no WAS
+        calls of its own, only unauthenticated exchange-facet requests
+  - [x] The exchange create and poll helpers come from wallet-core rather
         than being hand-rolled, which means adding `@interop/wallet-core`
-        as a dependency of this package and consuming the re-homed helpers
-        from WC-129. There is no generic zcap-only VPR builder upstream
-        today, so either WC-129 supplies one or this command owns it
-  - [ ] Command tests with a stubbed exchange; docs in README and
+        as a dependency of this package. WC-129 has not landed, so the
+        helpers are consumed under their pre-move names from the
+        `enrollment` subpath (`createOnboardingExchange` /
+        `pollOnboardingExchange`); CLI-17 tracks the switch. The poll's
+        existing `signal` option supplies the deadline WC-129 would add.
+        There is no generic zcap-only VPR builder upstream, so this
+        command owns one
+  - [x] Command tests with a stubbed exchange; docs in README and
         ARCHITECTURE's command list
 
 Relationship to App Connect: this is the standalone capability-query path,
 not App Connect (which needs a CHAPI-attested origin a CLI does not have).
 An optional `--name` (the self-declared agent name) lands with freewallet
 FW-231 once its VPR member is signed off.
+
+Landed so far: the VPR builder, the exchange create/poll, the key minting,
+the response parsing, and the zcap store write, with command tests over a
+stubbed exchange. What remains is the deep link, which is gated, so the item
+stays open.
+
+`--collection` is passed through unvalidated, deliberately. There is no
+WAS-wide collection-id naming rule to check against: the spec requires only
+that an id be URL-safe and not collide with a reserved segment, and leaves
+format to the implementer. The narrower `/^[a-z0-9][a-z0-9-]{0,63}$/` in
+freewallet is that wallet's own grant-time policy for which descriptor names
+it will honor, and wallet-core mints `gen-<base64url>` collection ids that
+fail it. Checking it here would reject names other wallets grant, so the
+wallet stays the authority and an unsatisfiable request comes back granting
+nothing, which the command reports.
 
 Scope correction from FW-227's 2026-08-21 CLI-lens review: this command is
 larger than "a new command plus the existing `put`". The grant that comes
@@ -181,8 +207,9 @@ that is not resource depth. CLI-13 has since landed, so the final write is
 or with this item, since it is what this command consumes.
 The deep-link output is also gated: FW-227 section 8 question 1 (the route
 path and query parameter) is unsigned-off, so `--wallet <url>` has nothing
-to print until it is decided. The interaction URL and the QR are unblocked,
-so only part of this item is parallel with FW-228.
+to print until it is decided. The interaction URL is unblocked, so only part
+of this item is parallel with FW-228. The terminal QR is not part of this
+item at all -- it is optional, and CLI-14 carries it on its own schedule.
 
 ### CLI-9: Claude Code skill + demo README
 
@@ -235,8 +262,8 @@ Split out of CLI-7, whose `--save` covers the demo.
 ### CLI-14: Terminal QR for `request-grant`
 
 - status: todo
-- priority: medium
-- labels: agents, ux
+- priority: low
+- labels: agents, ux, optional
 - acceptance:
   - [ ] A QR dependency is chosen and added (this package has none today)
   - [ ] The rendered code fits a default 80x24 terminal, or the command
@@ -250,6 +277,11 @@ Split out of CLI-7, whose `--save` covers the demo.
 Split out of CLI-7 by FW-227's 2026-08-21 CLI-lens review: the QR was
 described as costing nothing, but it needs a dependency and a sizing
 decision.
+
+Optional, and not a blocker for CLI-7 or the demo: `request-grant` prints the
+interaction URL, which is the whole payload a QR would encode. The QR only
+saves the user a copy-paste onto a phone, so this lands if and when that
+matters.
 
 ### CLI-15: Keep the server base path when resolving a capability
 
@@ -273,6 +305,32 @@ before was-client strips that same base path to classify the target. Paired
 with freewallet's FW-244; both must land for the agent demo to claim
 sub-path deployments, and FW-227 section 8 question 10 is where the "or
 state bare-origin only" alternative is decided.
+
+### CLI-17: Switch `request-grant` to the re-homed exchange helpers
+
+- status: todo
+- priority: low
+- labels: was, agents, cross-repo
+- blocked-by: CLI-7
+- touches:
+  - wallet-core -- WC-129 is the move this item consumes
+- acceptance:
+  - [ ] `src/was/request-grant.ts` imports the exchange create and poll
+        helpers from wallet-core's `request` subpath under their post-move
+        names, instead of `createOnboardingExchange` /
+        `pollOnboardingExchange` from `enrollment`
+  - [ ] If WC-129's poll ships its own deadline option, the local
+        `AbortSignal.timeout` wrapper gives way to it
+  - [ ] If WC-129 lands a zcap-only VPR builder, `buildCapabilityRequest`
+        gives way to it, keeping only the collection-name check and the
+        action normalization this CLI needs
+
+discovered-from: CLI-7. WC-129 had not landed when `request-grant` was
+written, so it consumes the helpers under their pre-move names. They are
+reachable today (the `enrollment` subpath is in wallet-core's export map) and
+the poll already takes an `AbortSignal`, so nothing was hand-rolled and
+nothing is blocked -- the names are simply wrong for a caller that is not
+onboarding a wallet. This is a rename to follow, not a rewrite.
 
 ## Someday / Maybe
 

@@ -59,7 +59,7 @@ export const DEFAULT_VERIFICATION_PURPOSES = [
  * @param [options.description] {string}
  * @returns {Promise<void>}
  */
-async function saveDidArtifacts({
+export async function saveDidArtifacts({
   method,
   didDocument,
   exportedKeys,
