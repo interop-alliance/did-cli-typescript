@@ -47,7 +47,8 @@
 
 - Update to latest d-i-core, verifier-core, was-client and didwebvh deps.
 - Added `@interop/wallet-core` as a dependency, for the ephemeral-exchange
-  create and poll helpers `was request-grant` transports over.
+  create and poll helpers `was request-grant` transports over, and for the
+  zcap-only presentation-request composer it sends.
 - `did webvh rotate-keys` and `did service add|remove` now pass the
   already-resolved log state to `updateDID` as `priorMeta`, so each update
   verifies the history log once instead of twice. The pairing between the log

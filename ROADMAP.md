@@ -306,32 +306,6 @@ with freewallet's FW-244; both must land for the agent demo to claim
 sub-path deployments, and FW-227 section 8 question 10 is where the "or
 state bare-origin only" alternative is decided.
 
-### CLI-17: Switch `request-grant` to the re-homed exchange helpers
-
-- status: todo
-- priority: low
-- labels: was, agents, cross-repo
-- blocked-by: CLI-7
-- touches:
-  - wallet-core -- WC-129 is the move this item consumes
-- acceptance:
-  - [ ] `src/was/request-grant.ts` imports the exchange create and poll
-        helpers from wallet-core's `request` subpath under their post-move
-        names, instead of `createOnboardingExchange` /
-        `pollOnboardingExchange` from `enrollment`
-  - [ ] If WC-129's poll ships its own deadline option, the local
-        `AbortSignal.timeout` wrapper gives way to it
-  - [ ] If WC-129 lands a zcap-only VPR builder, `buildCapabilityRequest`
-        gives way to it, keeping only the collection-name check and the
-        action normalization this CLI needs
-
-discovered-from: CLI-7. WC-129 had not landed when `request-grant` was
-written, so it consumes the helpers under their pre-move names. They are
-reachable today (the `enrollment` subpath is in wallet-core's export map) and
-the poll already takes an `AbortSignal`, so nothing was hand-rolled and
-nothing is blocked -- the names are simply wrong for a caller that is not
-onboarding a wallet. This is a rename to follow, not a rewrite.
-
 ## Someday / Maybe
 
 Items with no current trigger; parked here so the active sections stay

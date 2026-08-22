@@ -8,14 +8,17 @@
  *
  * Nothing here is signed. The exchange routes are unauthenticated by design --
  * the exchange URL is itself the secret, and it travels point-to-point to the
- * user (today as a printed interaction URL). The exchange transport comes from
- * `@interop/wallet-core/enrollment`; only the VPR assembly and the response
- * parsing are owned here, because there is no zcap-only VPR builder upstream.
+ * user (today as a printed interaction URL). Both the exchange transport and
+ * the zcap-only VPR composition come from `@interop/wallet-core/request`; what
+ * is owned here is the CLI's own request shape (the public-collection
+ * descriptor and the action normalization) and the response parsing.
  */
 import {
-  createOnboardingExchange,
-  pollOnboardingExchange
-} from '@interop/wallet-core/enrollment'
+  composeCapabilityRequest,
+  createEphemeralExchange,
+  pollEphemeralExchange,
+  EPHEMERAL_EXCHANGE_TTL_MS
+} from '@interop/wallet-core/request'
 import type {
   ICapabilityQueryDetail,
   IVPRDetails
@@ -44,16 +47,16 @@ export const DEFAULT_ACTIONS = ['GET', 'HEAD', 'PUT', 'POST']
 const REQUESTABLE_ACTIONS = ['GET', 'HEAD', 'PUT', 'POST', 'DELETE'] as const
 
 /**
- * How long to wait for the user to approve before giving up, matching the
- * server's ten-minute exchange TTL: past it the exchange is gone and no
- * approval can arrive.
+ * How long to wait for the user to approve before giving up: the server's
+ * exchange TTL, since past it the exchange is gone and no approval can arrive.
  */
-export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
+export const DEFAULT_TIMEOUT_MS = EPHEMERAL_EXCHANGE_TTL_MS
 
 /**
- * The largest wait `AbortSignal.timeout` accepts (its delay is validated as an
- * unsigned 32-bit value). Anything past this is rejected as bad input rather
- * than left to fail deep inside the poll.
+ * The largest wait the poll's deadline accepts (a `setTimeout` delay, which is
+ * truncated to a signed 32-bit value and would otherwise fire at once).
+ * Anything past this is rejected as bad input rather than left to fail deep
+ * inside the poll.
  */
 export const MAX_TIMEOUT_MS = 2_147_483_647
 
@@ -106,13 +109,13 @@ function normalizeRequestedActions(actions: string[]): string[] {
 }
 
 /**
- * Builds the zcap-only VPR this command sends: a single
- * `AuthorizationCapabilityQuery` naming the agent as the capability
- * `controller` and a public-collection descriptor as the target. There is
- * deliberately no `DIDAuthentication` query and no `domain` -- the agent is
- * asking for authority, not proving who it is to a verifier, and a CLI has no
- * attested origin for a wallet to check a domain against (one sent anyway is
- * enforced, and fails).
+ * Builds the zcap-only VPR this command sends: one capability query naming the
+ * agent as the capability `controller` and a public-collection descriptor as
+ * the target, composed by wallet-core. There is deliberately no
+ * `DIDAuthentication` query and no `domain` -- the agent is asking for
+ * authority, not proving who it is to a verifier, and a CLI has no attested
+ * origin for a wallet to check a domain against (one sent anyway is enforced,
+ * and fails).
  *
  * @param options {object}
  * @param options.controller {string}   The agent's did:key (the grantee).
@@ -141,14 +144,7 @@ export function buildCapabilityRequest({
       name: collection
     }
   }
-  return {
-    query: [
-      {
-        type: 'AuthorizationCapabilityQuery',
-        capabilityQuery: [capabilityQuery]
-      }
-    ]
-  }
+  return composeCapabilityRequest({ capabilityQueries: [capabilityQuery] })
 }
 
 /**
@@ -167,7 +163,7 @@ export async function openGrantExchange({
   server: string
   request: IVPRDetails
 }): Promise<{ exchangeUrl: string; interactionUrl: string }> {
-  return createOnboardingExchange({
+  return createEphemeralExchange({
     serverUrl: server,
     request,
     ...(exchangeFetch && { fetch: exchangeFetch })
@@ -234,23 +230,23 @@ export async function awaitGrantedCapabilities({
 }): Promise<IZcap[]> {
   let response: unknown
   try {
-    response = await pollOnboardingExchange({
+    response = await pollEphemeralExchange({
       exchangeUrl,
-      signal: AbortSignal.timeout(timeoutMs),
+      timeoutMs,
       ...(intervalMs !== undefined && { intervalMs }),
       ...(exchangeFetch && { fetch: exchangeFetch })
     })
   } catch (err) {
     // The transport is injected and may resolve to a different copy of
     // wallet-core, so the error name is the stable contract here.
-    if ((err as Error).name === 'OnboardingExchangeGoneError') {
+    if ((err as Error).name === 'EphemeralExchangeGoneError') {
       throw new GrantRequestError(
         'The request expired before it was approved (the server keeps an ' +
           'exchange for ten minutes). Run the command again for a fresh link.',
         { cause: err }
       )
     }
-    if ((err as Error).name === 'TimeoutError') {
+    if ((err as Error).name === 'EphemeralExchangeTimeoutError') {
       throw new GrantRequestError(
         `Gave up waiting for approval after ${Math.round(timeoutMs / 1000)}s. ` +
           'The request may still be approvable; raise --timeout, or run the ' +

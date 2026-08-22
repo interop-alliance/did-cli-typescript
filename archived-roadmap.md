@@ -120,3 +120,39 @@ sets a file mode today -- every write goes through the one
 `writeFileAtomic` under the ambient umask -- so the change reaches every
 stored DID, key, zcap, and space record. The greenfield stance above is
 what settles the already-on-disk question; state it in the README note.
+
+### CLI-17: Switch `request-grant` to the re-homed exchange helpers
+
+- status: done
+- done: 2026-08-21
+- priority: low
+- labels: was, agents, cross-repo
+- blocked-by: CLI-7
+- touches:
+  - wallet-core -- WC-129 is the move this item consumes
+- acceptance:
+  - [x] `src/was/request-grant.ts` imports the exchange create and poll
+        helpers from wallet-core's `request` subpath under their post-move
+        names, instead of `createOnboardingExchange` /
+        `pollOnboardingExchange` from `enrollment`
+  - [x] If WC-129's poll ships its own deadline option, the local
+        `AbortSignal.timeout` wrapper gives way to it
+  - [x] If WC-129 lands a zcap-only VPR builder, `buildCapabilityRequest`
+        gives way to it, keeping only the collection-name check and the
+        action normalization this CLI needs
+
+discovered-from: CLI-7. WC-129 had not landed when `request-grant` was
+written, so it consumes the helpers under their pre-move names. They are
+reachable today (the `enrollment` subpath is in wallet-core's export map) and
+the poll already takes an `AbortSignal`, so nothing was hand-rolled and
+nothing is blocked -- the names are simply wrong for a caller that is not
+onboarding a wallet. This is a rename to follow, not a rewrite.
+
+Landed against wallet-core 0.50.0: `createEphemeralExchange` /
+`pollEphemeralExchange` and `composeCapabilityRequest` from the `request`
+subpath, with the poll's own `timeoutMs` replacing the local
+`AbortSignal.timeout` and the gone/timeout dispatch moving to
+`EphemeralExchangeGoneError` / `EphemeralExchangeTimeoutError`.
+`DEFAULT_TIMEOUT_MS` is now `EPHEMERAL_EXCHANGE_TTL_MS`. The
+public-collection descriptor and the action normalization stay local, since
+upstream composes queries but does not define this CLI's request shape.
