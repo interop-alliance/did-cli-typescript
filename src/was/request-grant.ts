@@ -111,7 +111,8 @@ function normalizeRequestedActions(actions: string[]): string[] {
 /**
  * Builds the zcap-only VPR this command sends: one capability query naming the
  * agent as the capability `controller` and a public-collection descriptor as
- * the target, composed by wallet-core. There is deliberately no
+ * the target, plus an optional root `agent` member naming what the agent
+ * calls itself, composed by wallet-core. There is deliberately no
  * `DIDAuthentication` query and no `domain` -- the agent is asking for
  * authority, not proving who it is to a verifier, and a CLI has no attested
  * origin for a wallet to check a domain against (one sent anyway is enforced,
@@ -122,18 +123,22 @@ function normalizeRequestedActions(actions: string[]): string[] {
  * @param [options.collection] {string}   The collection name to request.
  * @param [options.actions] {string[]}   The actions to request.
  * @param [options.reason] {string}   Human-readable text shown at consent.
+ * @param [options.name] {string}   The agent's self-declared display name,
+ *   shown at consent as what it calls itself.
  * @returns {IVPRDetails}
  */
 export function buildCapabilityRequest({
   controller,
   collection = DEFAULT_COLLECTION,
   actions = DEFAULT_ACTIONS,
-  reason
+  reason,
+  name
 }: {
   controller: string
   collection?: string
   actions?: string[]
   reason?: string
+  name?: string
 }): IVPRDetails {
   const capabilityQuery: ICapabilityQueryDetail = {
     ...(reason !== undefined && { reason }),
@@ -144,7 +149,10 @@ export function buildCapabilityRequest({
       name: collection
     }
   }
-  return composeCapabilityRequest({ capabilityQueries: [capabilityQuery] })
+  return composeCapabilityRequest({
+    capabilityQueries: [capabilityQuery],
+    ...(name !== undefined && { agent: { name } })
+  })
 }
 
 /**

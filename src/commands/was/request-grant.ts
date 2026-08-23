@@ -172,6 +172,8 @@ async function saveCapabilities({
  *   `web`).
  * @param [options.action] {string[]}   The actions to request.
  * @param [options.reason] {string}   Why access is wanted, shown at consent.
+ * @param [options.name] {string}   The agent's self-declared display name,
+ *   shown at consent as what it calls itself.
  * @param [options.server] {string}   The WAS server base URL.
  * @param [options.save] {boolean}   Persist the key and capabilities
  *   (default true).
@@ -185,6 +187,7 @@ export async function runRequestGrant(options: {
   collection?: string
   action?: string[]
   reason?: string
+  name?: string
   server?: string
   save?: boolean
   handle?: string
@@ -240,7 +243,8 @@ export async function runRequestGrant(options: {
       controller,
       collection,
       ...(options.action !== undefined && { actions: options.action }),
-      ...(options.reason !== undefined && { reason: options.reason })
+      ...(options.reason !== undefined && { reason: options.reason }),
+      ...(options.name !== undefined && { name: options.name })
     })
     const { exchangeUrl, interactionUrl } = await openGrantExchange({
       server,

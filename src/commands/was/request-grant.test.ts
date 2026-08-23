@@ -143,6 +143,25 @@ describe('buildCapabilityRequest', () => {
     )
   })
 
+  it('carries the agent name as the VPR root agent member when given', () => {
+    const request = buildCapabilityRequest({
+      controller: 'did:key:z6MkAgent',
+      name: 'research-bot'
+    })
+    assert.deepEqual(
+      (request as unknown as { agent?: { name: string } }).agent,
+      { name: 'research-bot' }
+    )
+  })
+
+  it('omits the agent member when no name is given', () => {
+    const request = buildCapabilityRequest({ controller: 'did:key:z6MkAgent' })
+    assert.equal(
+      (request as unknown as { agent?: { name: string } }).agent,
+      undefined
+    )
+  })
+
   it('passes the collection name through without imposing a naming rule', () => {
     const request = buildCapabilityRequest({
       controller: 'did:key:z6MkAgent',
@@ -337,6 +356,42 @@ describe('was request-grant', () => {
     const [detail] = query!.capabilityQuery
     assert.equal(detail!.invocationTarget.name, 'site')
     assert.deepEqual(detail!.allowedAction, ['GET', 'HEAD'])
+  })
+
+  it('sends the agent name as the VPR root agent member with --name', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--server', SERVER, '--name', 'research-bot'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    const { verifiablePresentationRequest } = (
+      requests[0]!.body as {
+        request: {
+          verifiablePresentationRequest: { agent?: { name: string } }
+        }
+      }
+    ).request
+    assert.deepEqual(verifiablePresentationRequest.agent, {
+      name: 'research-bot'
+    })
+  })
+
+  it('rejects an invalid --name before opening any exchange', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--server', SERVER, '--name', 'a'.repeat(65)],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.equal(
+      requests.filter(request => request.method === 'POST').length,
+      0
+    )
   })
 
   it('files the grant under an explicit --handle', async () => {

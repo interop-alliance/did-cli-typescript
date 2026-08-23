@@ -883,6 +883,11 @@ export function makeWasCommand(): Command {
     )
     .option('--reason <text>', 'why access is wanted, shown to the user')
     .option(
+      '--name <name>',
+      'what the agent calls itself, shown to the user beside its key ' +
+        '(self-declared; at most 64 characters)'
+    )
+    .option(
       '--no-save',
       'do not store the minted key or the received capabilities (they cannot ' +
         'then be invoked by a later command)'
@@ -906,6 +911,7 @@ export function makeWasCommand(): Command {
         collection?: string
         action?: string[]
         reason?: string
+        name?: string
         save?: boolean
         handle?: string
         description?: string

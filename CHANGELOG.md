@@ -25,6 +25,11 @@
   `AuthorizationCapabilityQuery` naming a public-collection descriptor, with no
   `DIDAuthentication` query and no `domain`.
 
+- `was request-grant --name <name>` sends the agent's self-declared display
+  name (the VPR's root `agent: { name }` member, wallet-core 0.53.0), shown on
+  the wallet consent screen as what the agent calls itself; at most 64
+  characters, no control characters.
+
 - `--resource <id>` on `was get`, `was put`, `was meta get`, `was meta put`,
   and `was rm`: names one resource beneath a collection-scoped
   `--capability`, so a grant issued on a whole collection can read, write,

@@ -1732,7 +1732,7 @@ handle, the link, and the capability into one object on stdout instead.
 
 ```
 ./di was request-grant --server https://was.example \
-  --reason "Publish a demo page"
+  --reason "Publish a demo page" --name "demo-publisher"
 Requesting "web" access for did:key:z6MkAgent...
 
 Open this in your wallet to approve:
@@ -1773,9 +1773,15 @@ leaves no key behind.
 
 Options are `--collection <name>` (default `web`), `--action <verb...>` (default
 `GET HEAD PUT POST`), `--reason <text>` (shown to the user at the consent step),
-`--timeout <seconds>` (default 600, matching the server's exchange lifetime),
-`--handle` / `--description`, `--no-save`, `--json`, and `--server` (or
-`WAS_SERVER_URL`).
+`--name <name>` (what the agent calls itself, shown to the user beside its
+key), `--timeout <seconds>` (default 600, matching the server's exchange
+lifetime), `--handle` / `--description`, `--no-save`, `--json`, and `--server`
+(or `WAS_SERVER_URL`).
+
+`--name` is self-declared, not verified: the wallet shows it as what the agent
+calls itself, next to the grantee key, so the user should still compare the
+key rather than trust the name alone. It is at most 64 characters and cannot
+contain control characters.
 
 Two things the wallet decides, not this command:
 
