@@ -1742,6 +1742,20 @@ Open this in your wallet to approve:
 Waiting for approval...
 ```
 
+If you know which wallet the user runs, `--wallet <url>` also prints a link
+that opens it straight onto the approval page for this request:
+
+```
+./di was request-grant --server https://was.example --wallet https://wallet.example
+...
+Or open your wallet directly:
+
+  https://wallet.example/external/request?url=https%3A%2F%2Fwas.example%2F...
+```
+
+The interaction URL is still printed beside it, since that is what a wallet on
+another device can be pointed at.
+
 The user opens that link in their wallet and approves. The command then prints
 the capability it received (the same `z...` form `--capability` accepts) and
 files it in the zcap store under `--handle` (default `agent`), together with the
@@ -1774,7 +1788,8 @@ leaves no key behind.
 Options are `--collection <name>` (default `web`), `--action <verb...>` (default
 `GET HEAD PUT POST`), `--reason <text>` (shown to the user at the consent step),
 `--name <name>` (what the agent calls itself, shown to the user beside its
-key), `--timeout <seconds>` (default 600, matching the server's exchange
+key), `--wallet <url>` (a wallet base URL to print an approval deep link for),
+`--timeout <seconds>` (default 600, matching the server's exchange
 lifetime), `--handle` / `--description`, `--no-save`, `--json`, and `--server`
 (or `WAS_SERVER_URL`).
 

@@ -888,6 +888,11 @@ export function makeWasCommand(): Command {
         '(self-declared; at most 64 characters)'
     )
     .option(
+      '--wallet <url>',
+      "the user's wallet base URL, to also print a link that opens it " +
+        'straight onto the approval page'
+    )
+    .option(
       '--no-save',
       'do not store the minted key or the received capabilities (they cannot ' +
         'then be invoked by a later command)'
@@ -912,6 +917,7 @@ export function makeWasCommand(): Command {
         action?: string[]
         reason?: string
         name?: string
+        wallet?: string
         save?: boolean
         handle?: string
         description?: string

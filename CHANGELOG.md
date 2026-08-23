@@ -30,6 +30,12 @@
   the wallet consent screen as what the agent calls itself; at most 64
   characters, no control characters.
 
+- `was request-grant --wallet <url>` also prints a link that opens the given
+  wallet straight onto its approval page for the exchange
+  (`<wallet>/external/request?url=<interaction url>`). The interaction URL is
+  still printed, for a wallet on another device. The wallet URL must be
+  absolute http(s), and a bad one is refused before any exchange is opened.
+
 - `--resource <id>` on `was get`, `was put`, `was meta get`, `was meta put`,
   and `was rm`: names one resource beneath a collection-scoped
   `--capability`, so a grant issued on a whole collection can read, write,

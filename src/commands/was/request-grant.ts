@@ -20,7 +20,9 @@ import { encodeCapability } from '../../zcap/encoding.js'
 import {
   awaitGrantedCapabilities,
   buildCapabilityRequest,
+  buildWalletDeepLink,
   openGrantExchange,
+  walletRequestRoute,
   GrantRequestError,
   DEFAULT_COLLECTION,
   DEFAULT_TIMEOUT_MS,
@@ -175,6 +177,8 @@ async function saveCapabilities({
  * @param [options.name] {string}   The agent's self-declared display name,
  *   shown at consent as what it calls itself.
  * @param [options.server] {string}   The WAS server base URL.
+ * @param [options.wallet] {string}   A wallet base URL to print an approval
+ *   deep link for, beside the interaction URL.
  * @param [options.save] {boolean}   Persist the key and capabilities
  *   (default true).
  * @param [options.handle] {string}   Handle to file them under.
@@ -189,6 +193,7 @@ export async function runRequestGrant(options: {
   reason?: string
   name?: string
   server?: string
+  wallet?: string
   save?: boolean
   handle?: string
   description?: string
@@ -238,6 +243,10 @@ export async function runRequestGrant(options: {
       )
       return 2
     }
+    const walletRoute =
+      options.wallet === undefined
+        ? undefined
+        : walletRequestRoute({ wallet: options.wallet })
     const { did: controller, keyPair, didDocument } = await mintAgentKey()
     const request = buildCapabilityRequest({
       controller,
@@ -251,9 +260,17 @@ export async function runRequestGrant(options: {
       request
     })
 
+    const walletUrl =
+      walletRoute === undefined
+        ? undefined
+        : buildWalletDeepLink({ route: walletRoute, interactionUrl })
+
     console.error(
       `Requesting "${collection}" access for ${controller}.\n` +
         `Open this in your wallet to approve:\n\n  ${interactionUrl}\n\n` +
+        (walletUrl === undefined
+          ? ''
+          : `Or open your wallet directly:\n\n  ${walletUrl}\n\n`) +
         'Waiting for approval...'
     )
 
@@ -285,6 +302,7 @@ export async function runRequestGrant(options: {
             controller,
             ...(save && { handle }),
             interactionUrl,
+            ...(walletUrl !== undefined && { walletUrl }),
             capabilities: zcaps,
             encoded
           },

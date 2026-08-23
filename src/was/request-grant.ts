@@ -156,6 +156,68 @@ export function buildCapabilityRequest({
 }
 
 /**
+ * The wallet route an outside request is handed to. Requests arriving from
+ * outside the app land under `/external/`; `/wallet/*` stays CHAPI-handler
+ * only.
+ */
+const WALLET_REQUEST_PATH = 'external/request'
+
+/**
+ * Resolves a wallet base URL to its external-request route, rejecting anything
+ * that is not an absolute http(s) URL. Kept separate from the link itself so a
+ * bad `--wallet` is caught before an exchange is opened for it.
+ *
+ * @param options {object}
+ * @param options.wallet {string}   The wallet's base URL.
+ * @returns {URL}
+ */
+export function walletRequestRoute({ wallet }: { wallet: string }): URL {
+  let base: URL
+  try {
+    base = new URL(wallet)
+  } catch (err) {
+    throw new Error(
+      `Invalid wallet URL "${wallet}": expected an absolute http(s) URL.`,
+      { cause: err }
+    )
+  }
+  if (base.protocol !== 'https:' && base.protocol !== 'http:') {
+    throw new Error(
+      `Invalid wallet URL "${wallet}": expected an http(s) URL, got ` +
+        `"${base.protocol}".`
+    )
+  }
+  // Resolve the route against the base path rather than the origin, so a
+  // wallet deployed under a sub-path keeps its prefix.
+  const path = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`
+  return new URL(`${path}${WALLET_REQUEST_PATH}`, base)
+}
+
+/**
+ * Builds the link that opens a wallet straight onto the approval page for an
+ * exchange, for the case where the user is already at a browser: the wallet's
+ * external-request route carrying the interaction URL as a percent-encoded
+ * `url` parameter. The interaction URL alone stays the fallback, since it is
+ * what a wallet on another device can be pointed at.
+ *
+ * @param options {object}
+ * @param options.route {URL}   The wallet's external-request route.
+ * @param options.interactionUrl {string}   The exchange's interaction URL.
+ * @returns {string}
+ */
+export function buildWalletDeepLink({
+  route,
+  interactionUrl
+}: {
+  route: URL
+  interactionUrl: string
+}): string {
+  const link = new URL(route)
+  link.searchParams.set('url', interactionUrl)
+  return link.toString()
+}
+
+/**
  * Opens an ephemeral exchange on the WAS server carrying the request, and
  * returns both the URL to poll and the interaction URL to hand the user.
  *

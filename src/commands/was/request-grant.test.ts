@@ -7,8 +7,10 @@ import { makeWasCommand } from '../was.js'
 import {
   awaitGrantedCapabilities,
   buildCapabilityRequest,
+  buildWalletDeepLink,
   extractCapabilities,
   setExchangeFetch,
+  walletRequestRoute,
   PUBLIC_COLLECTION_TYPE
 } from '../../was/request-grant.js'
 import { listCollection, loadFromCollection, listDids } from '../../storage.js'
@@ -214,6 +216,39 @@ describe('extractCapabilities', () => {
   })
 })
 
+describe('buildWalletDeepLink', () => {
+  it('carries the interaction URL on the external-request route', () => {
+    const link = buildWalletDeepLink({
+      route: walletRequestRoute({ wallet: 'https://wallet.example' }),
+      interactionUrl: `${EXCHANGE_URL}/protocols?iuv=1`
+    })
+    assert.equal(
+      link,
+      'https://wallet.example/external/request?url=' +
+        encodeURIComponent(`${EXCHANGE_URL}/protocols?iuv=1`)
+    )
+  })
+
+  it('keeps a wallet deployed under a sub-path', () => {
+    const link = buildWalletDeepLink({
+      route: walletRequestRoute({ wallet: 'https://example.test/wallet' }),
+      interactionUrl: 'https://was.example/exchange'
+    })
+    assert.match(link, /^https:\/\/example\.test\/wallet\/external\/request\?/)
+  })
+
+  it('refuses a wallet URL that is not absolute http(s)', () => {
+    assert.throws(
+      () => walletRequestRoute({ wallet: 'wallet.example' }),
+      /expected an absolute http\(s\) URL/
+    )
+    assert.throws(
+      () => walletRequestRoute({ wallet: 'javascript:alert(1)' }),
+      /expected an http\(s\) URL/
+    )
+  })
+})
+
 describe('awaitGrantedCapabilities', () => {
   afterEach(() => {
     setExchangeFetch()
@@ -385,6 +420,49 @@ describe('was request-grant', () => {
     })
     await makeWasCommand().parseAsync(
       ['request-grant', '--server', SERVER, '--name', 'a'.repeat(65)],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.equal(
+      requests.filter(request => request.method === 'POST').length,
+      0
+    )
+  })
+
+  it('prints a wallet deep link with --wallet', async () => {
+    setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      [
+        'request-grant',
+        '--server',
+        SERVER,
+        '--wallet',
+        'https://wallet.example',
+        '--json'
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    const { interactionUrl, walletUrl } = JSON.parse(logs.join('\n')) as {
+      interactionUrl: string
+      walletUrl: string
+    }
+    assert.equal(
+      walletUrl,
+      'https://wallet.example/external/request?url=' +
+        encodeURIComponent(interactionUrl)
+    )
+    assert.match(errors.join('\n'), /Or open your wallet directly/)
+  })
+
+  it('rejects an invalid --wallet before opening any exchange', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--server', SERVER, '--wallet', 'wallet.example'],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)
