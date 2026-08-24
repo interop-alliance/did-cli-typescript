@@ -44,6 +44,15 @@
   the collection's bound capability, so the request stays an invocation of
   the received grant. `--resource` without a capability, or alongside a
   capability that already targets a resource, is an input error.
+- A `publish-page` Claude Code skill (`.claude/skills/publish-page/`) and the
+  agent storage demo it scripts (`demo/agent-storage/README.md`): an LLM agent
+  drafts an `index.html`, asks the user's wallet for a grant on a public
+  collection with `was request-grant`, and publishes the page through the
+  delegated capability. The skill is model-invoked, states that `--save` is
+  required (a key held only for the run cannot sign the write that follows),
+  keeps the agent away from key material, and sends a user with no wallet
+  account to `<wallet>/signup` before resuming.
+
 - `was shell` -- an interactive REPL over the `was` command tree. Start it with
   `di was shell [path]` (`--server`/`--did` seed the session defaults), then run
   any `was` subcommand without re-typing space handles or re-paying the

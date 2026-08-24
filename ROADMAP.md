@@ -115,27 +115,6 @@ The agent is a zcap grantee with its own did:key; it never logs into the
 wallet. The delegating side (`di was grant`) already exists; these items add
 the inverse.
 
-### CLI-9: Claude Code skill + demo README
-
-- status: todo
-- priority: high
-- labels: agents, docs
-- touches:
-  - freewallet -- FW-227 umbrella; the skill's wording of the consent step
-    matches the FW-228 page
-- acceptance:
-  - [ ] A skill in this repo that walks an agent through the demo: draft
-        `index.html`, `di was request-grant --wallet <url> --save --handle
-        agent`, tell the user to approve in the wallet, `di was put
-        <space>/web/index.html --capability agent --content-type text/html`,
-        print the public URL
-  - [ ] The skill states the persistence choice (`--save` or not) and never
-        asks the agent to print or read key material
-  - [ ] T2 guidance: when the user has no account, the skill points at the
-        wallet's signup and resumes afterwards
-  - [ ] A demo README with the script and the prerequisites (a Freewallet
-        deployment, a teaching server with the exchange facet)
-
 ### CLI-10: Integration test for `request-grant` against the exchange facet
 
 - status: todo

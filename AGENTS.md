@@ -75,3 +75,10 @@ di did get <the new did>               # resolves the live did:webvh
 Gotchas: the log resource must be **published** (an unpublished resource returns
 404 to the resolver), and let `was put` auto-detect the content type for the log
 (the reference server rejects an explicit `application/jsonl`).
+
+### Publish a page into a user's Space as a grantee
+
+The agent storage demo -- request a scoped grant from the user's wallet, then
+write `index.html` through it. The script and its prerequisites are in
+[demo/agent-storage](demo/agent-storage/README.md); the agent-facing version is
+the `publish-page` skill under `.claude/skills/`.

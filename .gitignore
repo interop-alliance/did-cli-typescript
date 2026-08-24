@@ -1,6 +1,9 @@
 node_modules/
 dist/
 
+# Per-checkout agent settings (the skills beside them are checked in)
+.claude/settings.local.json
+
 # Editor files
 *~
 *.sw[nop]

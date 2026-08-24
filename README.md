@@ -1793,6 +1793,11 @@ key), `--wallet <url>` (a wallet base URL to print an approval deep link for),
 lifetime), `--handle` / `--description`, `--no-save`, `--json`, and `--server`
 (or `WAS_SERVER_URL`).
 
+The end-to-end flow this command exists for -- an LLM agent drafting a page and
+publishing it to the user's own storage -- is scripted in
+[demo/agent-storage](demo/agent-storage/README.md), with the agent-facing
+version in the `publish-page` skill under `.claude/skills/`.
+
 `--name` is self-declared, not verified: the wallet shows it as what the agent
 calls itself, next to the grantee key, so the user should still compare the
 key rather than trust the name alone. It is at most 64 characters and cannot

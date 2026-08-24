@@ -254,3 +254,41 @@ path and query parameter), decided 2026-08-22 as
 `/external/request?url=<interaction url>` and implemented here on
 2026-08-23. The terminal QR is not part of this item at all -- it is
 optional, and CLI-14 carries it on its own schedule.
+
+### CLI-9: Claude Code skill + demo README
+
+- status: done
+- done: 2026-08-23
+- priority: high
+- labels: agents, docs
+- touches:
+  - freewallet -- FW-227 umbrella; the skill's wording of the consent step
+    matches the FW-228 page
+- acceptance:
+  - [x] A skill in this repo that walks an agent through the demo: draft
+        `index.html`, `di was request-grant --wallet <url> --save --handle
+        agent`, tell the user to approve in the wallet, `di was put
+        <space>/web/index.html --capability agent --content-type text/html`,
+        print the public URL
+  - [x] The skill states the persistence choice (`--save` or not) and never
+        asks the agent to print or read key material
+  - [x] T2 guidance: when the user has no account, the skill points at the
+        wallet's signup and resumes afterwards
+  - [x] A demo README with the script and the prerequisites (a Freewallet
+        deployment, a teaching server with the exchange facet)
+
+Landed as `.claude/skills/publish-page/SKILL.md` (model-invoked, so the
+agent reaches it when the user asks to publish a page) and
+`demo/agent-storage/README.md`.
+
+Two corrections to the acceptance text, both from what CLI-13 and CLI-7
+actually shipped. The final write is
+`di was put ./index.html --capability agent --did agent --resource
+index.html --content-type text/html`: a path and a `--capability` cannot be
+combined, so the resource id travels in `--resource`, and `--did` names the
+minted key so a `WAS_DID` in the environment cannot sign the write instead.
+And the no-account tier is FW-227's T1, not T2 (T2 was the bearer-URL
+on-ramp, dropped); the skill sends the user to `<wallet>/signup` and resumes.
+
+Persistence is stated as required rather than optional, since
+`--capability` resolves its signer out of the local DID store.
