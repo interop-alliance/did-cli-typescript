@@ -6,10 +6,13 @@
  *
  * `sign({ document, proof })` returns a base58btc multibase `proofValue`.
  * `prepareDataForSigning` produces the bytes to sign (the `eddsa-jcs-2022`
- * cryptosuite hash); the key pair's own `signer()` does the cryptography.
- * Verification is left to the library's default log verifier, which recovers
- * each entry's public key from its proof rather than being bound to one key.
+ * cryptosuite hash); the key pair's own `didKeySigner()` does the cryptography
+ * and names the verification method id, so the caller does not need to assign
+ * `keyPair.id` first. Verification is left to the library's default log
+ * verifier, which recovers each entry's public key from its proof rather than
+ * being bound to one key.
  */
+import type { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import {
   MultibaseEncoding,
   multibaseEncode,
@@ -20,33 +23,27 @@ import type { Signer } from '@interop/did-method-webvh'
 /**
  * Build a did:webvh `Signer` backed by an Ed25519 key pair.
  *
- * `keyPair.signer()` requires `keyPair.id` to be set, so the caller must assign
- * an id before signing; this helper derives the verification method id from the
- * key's `publicKeyMultibase` (the did:key form the library validates against).
- *
  * @param options {object}
- * @param options.keyPair {object} an `@interop/ed25519-verification-key` pair.
+ * @param options.keyPair {Ed25519VerificationKey} an
+ *   `@interop/ed25519-verification-key` pair.
  * @returns {Signer}
  */
 export function makeWebvhSigner({
   keyPair
 }: {
-  keyPair: {
-    publicKeyMultibase: string
-    signer(): { sign(options: { data: Uint8Array }): Promise<Uint8Array> }
-  }
+  keyPair: Ed25519VerificationKey
 }): Signer {
-  const verificationMethodId = `did:key:${keyPair.publicKeyMultibase}#${keyPair.publicKeyMultibase}`
+  const keySigner = keyPair.didKeySigner()
   return {
     async sign({ document, proof }) {
       const data = await prepareDataForSigning(document, proof)
-      const signature = await keyPair.signer().sign({ data })
+      const signature = await keySigner.sign({ data })
       return {
         proofValue: multibaseEncode(signature, MultibaseEncoding.BASE58_BTC)
       }
     },
     getVerificationMethodId() {
-      return verificationMethodId
+      return keySigner.id
     }
   }
 }

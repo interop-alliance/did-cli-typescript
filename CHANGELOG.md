@@ -106,6 +106,9 @@
 - `did add-service` validates `--endpoint`/`--endpoint-json` arguments before
   resolving (and re-verifying) a did:webvh history log; `rotate-keys` likewise
   checks flag conflicts before resolution.
+- Bumped `@interop/ed25519-verification-key` to `^8.2.0` and switched the
+  did:webvh entry signer to its new `didKeySigner()` method, so the caller no
+  longer mutates `keyPair.id` before signing.
 
 ## 0.13.0 - 2026-07-12
 

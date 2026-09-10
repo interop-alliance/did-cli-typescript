@@ -308,14 +308,11 @@ export async function loadActiveSigner({
 /**
  * Build the entry signer for a did:webvh update from an update key pair.
  *
- * @param keyPair {Ed25519VerificationKey} mutated: its `id` is set in place.
+ * @param keyPair {Ed25519VerificationKey}
  * @returns the signer to pass to `updateDID`.
  */
 export function makeWebvhEntrySigner(keyPair: Ed25519VerificationKey) {
-  const signer = makeWebvhSigner({ keyPair })
-  // `keyPair.signer()` requires an id to be set before signing.
-  keyPair.id = signer.getVerificationMethodId()
-  return signer
+  return makeWebvhSigner({ keyPair })
 }
 
 /**
