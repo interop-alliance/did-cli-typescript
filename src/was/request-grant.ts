@@ -9,7 +9,7 @@
  * Nothing here is signed. The exchange routes are unauthenticated by design --
  * the exchange URL is itself the secret, and it travels point-to-point to the
  * user (today as a printed interaction URL). Both the exchange transport and
- * the zcap-only VPR composition come from `@interop/wallet-core/request`; what
+ * the zcap-only VPR composition come from `@interop/wallet-request`; what
  * is owned here is the CLI's own request shape (the public-collection
  * descriptor and the action normalization) and the response parsing.
  */
@@ -18,7 +18,7 @@ import {
   createEphemeralExchange,
   pollEphemeralExchange,
   EPHEMERAL_EXCHANGE_TTL_MS
-} from '@interop/wallet-core/request'
+} from '@interop/wallet-request'
 import type {
   ICapabilityQueryDetail,
   IVPRDetails
