@@ -158,9 +158,10 @@ export function buildCapabilityRequest({
 /**
  * The wallet route an outside request is handed to. Requests arriving from
  * outside the app land under `/external/`; `/wallet/*` stays CHAPI-handler
- * only.
+ * only. The wallet routes on the URL fragment, so the route (and the query it
+ * carries) lives after `#`.
  */
-const WALLET_REQUEST_PATH = 'external/request'
+const WALLET_REQUEST_ROUTE = '/external/request'
 
 /**
  * Resolves a wallet base URL to its external-request route, rejecting anything
@@ -169,7 +170,7 @@ const WALLET_REQUEST_PATH = 'external/request'
  *
  * @param options {object}
  * @param options.wallet {string}   The wallet's base URL.
- * @returns {URL}
+ * @returns {URL}   The base URL with the route as its fragment.
  */
 export function walletRequestRoute({ wallet }: { wallet: string }): URL {
   let base: URL
@@ -187,18 +188,22 @@ export function walletRequestRoute({ wallet }: { wallet: string }): URL {
         `"${base.protocol}".`
     )
   }
-  // Resolve the route against the base path rather than the origin, so a
-  // wallet deployed under a sub-path keeps its prefix.
+  // Keep the base path (a wallet deployed under a sub-path keeps its prefix)
+  // and hang the route off it as the fragment.
   const path = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`
-  return new URL(`${path}${WALLET_REQUEST_PATH}`, base)
+  const route = new URL(path, base)
+  route.hash = WALLET_REQUEST_ROUTE
+  return route
 }
 
 /**
  * Builds the link that opens a wallet straight onto the approval page for an
  * exchange, for the case where the user is already at a browser: the wallet's
  * external-request route carrying the interaction URL as a percent-encoded
- * `url` parameter. The interaction URL alone stays the fallback, since it is
- * what a wallet on another device can be pointed at.
+ * `url` parameter. The parameter goes inside the fragment, after the route,
+ * because that is the only part of the URL a fragment-routed wallet reads.
+ * The interaction URL alone stays the fallback, since it is what a wallet on
+ * another device can be pointed at.
  *
  * @param options {object}
  * @param options.route {URL}   The wallet's external-request route.
@@ -213,7 +218,8 @@ export function buildWalletDeepLink({
   interactionUrl: string
 }): string {
   const link = new URL(route)
-  link.searchParams.set('url', interactionUrl)
+  const params = new URLSearchParams({ url: interactionUrl })
+  link.hash = `${route.hash.slice(1)}?${params.toString()}`
   return link.toString()
 }
 
@@ -222,19 +228,20 @@ export function buildWalletDeepLink({
  * returns both the URL to poll and the interaction URL to hand the user.
  *
  * @param options {object}
- * @param options.server {string}   The WAS server base URL.
+ * @param options.exchange {string}   Base URL of the WAS server hosting the
+ *   exchange.
  * @param options.request {IVPRDetails}   The VPR to store on the exchange.
  * @returns {Promise<{exchangeUrl: string, interactionUrl: string}>}
  */
 export async function openGrantExchange({
-  server,
+  exchange,
   request
 }: {
-  server: string
+  exchange: string
   request: IVPRDetails
 }): Promise<{ exchangeUrl: string; interactionUrl: string }> {
   return createEphemeralExchange({
-    serverUrl: server,
+    serverUrl: exchange,
     request,
     ...(exchangeFetch && { fetch: exchangeFetch })
   })

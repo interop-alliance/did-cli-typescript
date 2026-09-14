@@ -115,27 +115,13 @@ The agent is a zcap grantee with its own did:key; it never logs into the
 wallet. The delegating side (`di was grant`) already exists; these items add
 the inverse.
 
-### CLI-10: Integration test for `request-grant` against the exchange facet
-
-- status: todo
-- priority: medium
-- labels: was, testing, agents
-- acceptance:
-  - [ ] A node integration test runs `request-grant` against a local
-        teaching server, with a scripted "wallet" that begins the exchange,
-        delegates a public-collection zcap from a root key, and posts the
-        VP back; the test then PUTs `index.html` with the stored handle and
-        fetches it anonymously as `text/html`
-  - [ ] Runs in the existing integration tier (server spun up the same way
-        as the other `was` integration tests)
-
 ### CLI-11: `di zcap import`
 
 - status: todo
 - priority: low
 - labels: zcap
 - acceptance:
-  - [ ] Stores a received zcap (JSON file or `z...` string) under a handle,
+  - [ ] Stores a received zcap (JSON file or `u...` string) under a handle,
         so a capability obtained outside `request-grant` can be named by
         `--capability <handle>`
   - [ ] Validates the shape before storing

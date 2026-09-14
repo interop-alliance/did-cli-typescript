@@ -217,14 +217,14 @@ describe('extractCapabilities', () => {
 })
 
 describe('buildWalletDeepLink', () => {
-  it('carries the interaction URL on the external-request route', () => {
+  it('carries the interaction URL on the fragment-routed external-request route', () => {
     const link = buildWalletDeepLink({
       route: walletRequestRoute({ wallet: 'https://wallet.example' }),
       interactionUrl: `${EXCHANGE_URL}/protocols?iuv=1`
     })
     assert.equal(
       link,
-      'https://wallet.example/external/request?url=' +
+      'https://wallet.example/#/external/request?url=' +
         encodeURIComponent(`${EXCHANGE_URL}/protocols?iuv=1`)
     )
   })
@@ -234,7 +234,10 @@ describe('buildWalletDeepLink', () => {
       route: walletRequestRoute({ wallet: 'https://example.test/wallet' }),
       interactionUrl: 'https://was.example/exchange'
     })
-    assert.match(link, /^https:\/\/example\.test\/wallet\/external\/request\?/)
+    assert.match(
+      link,
+      /^https:\/\/example\.test\/wallet\/#\/external\/request\?/
+    )
   })
 
   it('refuses a wallet URL that is not absolute http(s)', () => {
@@ -306,7 +309,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--reason', 'Publish a page'],
+      ['request-grant', '--exchange', SERVER, '--reason', 'Publish a page'],
       { from: 'user' }
     )
     assert.equal(exitCode, undefined)
@@ -352,7 +355,7 @@ describe('was request-grant', () => {
 
     // stdout carries the encoded capability, never key material.
     assert.equal(logs.length, 1)
-    assert.match(logs[0]!, /^z/)
+    assert.match(logs[0]!, /^u/)
     assert.doesNotMatch(logs.join('\n'), /secretKeyMultibase/)
   })
 
@@ -363,7 +366,7 @@ describe('was request-grant', () => {
     await makeWasCommand().parseAsync(
       [
         'request-grant',
-        '--server',
+        '--exchange',
         SERVER,
         '--collection',
         'site',
@@ -398,7 +401,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--name', 'research-bot'],
+      ['request-grant', '--exchange', SERVER, '--name', 'research-bot'],
       { from: 'user' }
     )
     assert.equal(exitCode, undefined)
@@ -419,7 +422,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--name', 'a'.repeat(65)],
+      ['request-grant', '--exchange', SERVER, '--name', 'a'.repeat(65)],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)
@@ -436,7 +439,7 @@ describe('was request-grant', () => {
     await makeWasCommand().parseAsync(
       [
         'request-grant',
-        '--server',
+        '--exchange',
         SERVER,
         '--wallet',
         'https://wallet.example',
@@ -451,7 +454,7 @@ describe('was request-grant', () => {
     }
     assert.equal(
       walletUrl,
-      'https://wallet.example/external/request?url=' +
+      'https://wallet.example/#/external/request?url=' +
         encodeURIComponent(interactionUrl)
     )
     assert.match(errors.join('\n'), /Or open your wallet directly/)
@@ -462,7 +465,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--wallet', 'wallet.example'],
+      ['request-grant', '--exchange', SERVER, '--wallet', 'wallet.example'],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)
@@ -477,11 +480,24 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--handle', 'publisher'],
+      ['request-grant', '--exchange', SERVER, '--handle', 'publisher'],
       { from: 'user' }
     )
     assert.equal(exitCode, undefined)
     assert.match(errors.join('\n'), /--capability publisher/)
+  })
+
+  it('accepts an explicit --save, the documented invocation', async () => {
+    setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--save', '--handle', 'agent'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    assert.match(errors.join('\n'), /--capability agent/)
+    assert.equal((await listCollection('zcaps')).length, 1)
   })
 
   it('stores nothing with --no-save, and says the grant is unusable', async () => {
@@ -489,7 +505,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--no-save'],
+      ['request-grant', '--exchange', SERVER, '--no-save'],
       { from: 'user' }
     )
     assert.equal(exitCode, undefined)
@@ -497,7 +513,7 @@ describe('was request-grant', () => {
     assert.deepEqual(await listDids(), [])
     assert.match(errors.join('\n'), /cannot be invoked by a later command/)
     // The capability is still printed, so it can be inspected.
-    assert.match(logs[0]!, /^z/)
+    assert.match(logs[0]!, /^u/)
   })
 
   it('rejects --handle without --save', async () => {
@@ -505,7 +521,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--no-save', '--handle', 'x'],
+      ['request-grant', '--exchange', SERVER, '--no-save', '--handle', 'x'],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)
@@ -517,7 +533,7 @@ describe('was request-grant', () => {
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--json'],
+      ['request-grant', '--exchange', SERVER, '--json'],
       { from: 'user' }
     )
     assert.equal(exitCode, undefined)
@@ -530,13 +546,13 @@ describe('was request-grant', () => {
     assert.match(output.controller, /^did:key:z6Mk/)
     assert.equal(output.handle, 'agent')
     assert.equal(output.capabilities[0]?.id, 'urn:uuid:granted-1')
-    assert.match(output.encoded[0]!, /^z/)
+    assert.match(output.encoded[0]!, /^u/)
   })
 
   it('requires a server URL', async () => {
     await makeWasCommand().parseAsync(['request-grant'], { from: 'user' })
     assert.equal(exitCode, 2)
-    assert.match(errors[0]!, /No WAS server URL/)
+    assert.match(errors[0]!, /No exchange server URL/)
   })
 
   it('falls back to WAS_SERVER_URL', async () => {
@@ -551,7 +567,7 @@ describe('was request-grant', () => {
 
   it('reports an approval that granted nothing as an operation error', async () => {
     setUpExchangeStub({ response: { verifiablePresentation: { zcap: [] } } })
-    await makeWasCommand().parseAsync(['request-grant', '--server', SERVER], {
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
       from: 'user'
     })
     assert.equal(exitCode, 1)
@@ -568,7 +584,7 @@ describe('was request-grant', () => {
       }
       return new Response(null, { status: 404 })
     })
-    await makeWasCommand().parseAsync(['request-grant', '--server', SERVER], {
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
       from: 'user'
     })
     assert.equal(exitCode, 1)
@@ -578,7 +594,7 @@ describe('was request-grant', () => {
   it('gives up with a clear message at --timeout', async () => {
     setUpExchangeStub({ pendingPolls: Number.MAX_SAFE_INTEGER })
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--timeout', '0.05'],
+      ['request-grant', '--exchange', SERVER, '--timeout', '0.05'],
       { from: 'user' }
     )
     assert.equal(exitCode, 1)
@@ -587,7 +603,7 @@ describe('was request-grant', () => {
 
   it('keeps no DID when the exchange produced no grant', async () => {
     setUpExchangeStub({ response: { verifiablePresentation: { zcap: [] } } })
-    await makeWasCommand().parseAsync(['request-grant', '--server', SERVER], {
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
       from: 'user'
     })
     assert.equal(exitCode, 1)
@@ -600,11 +616,11 @@ describe('was request-grant', () => {
     setUpExchangeStub({
       response: { verifiablePresentation: { zcap: [makeZcap()] } }
     })
-    await makeWasCommand().parseAsync(['request-grant', '--server', SERVER], {
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
       from: 'user'
     })
     assert.equal(exitCode, undefined)
-    await makeWasCommand().parseAsync(['request-grant', '--server', SERVER], {
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
       from: 'user'
     })
     assert.equal(exitCode, 2)
@@ -614,7 +630,7 @@ describe('was request-grant', () => {
 
   it('rejects a --timeout past what the wait supports', async () => {
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--timeout', '5000000'],
+      ['request-grant', '--exchange', SERVER, '--timeout', '5000000'],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)
@@ -623,7 +639,7 @@ describe('was request-grant', () => {
 
   it('rejects a non-numeric --timeout', async () => {
     await makeWasCommand().parseAsync(
-      ['request-grant', '--server', SERVER, '--timeout', 'soon'],
+      ['request-grant', '--exchange', SERVER, '--timeout', 'soon'],
       { from: 'user' }
     )
     assert.equal(exitCode, 2)

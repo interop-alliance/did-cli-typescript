@@ -1274,7 +1274,7 @@ describe('di was', () => {
           output.delegatedCapability.id,
           'urn:zcap:delegated:zGranted'
         )
-        assert.ok(output.encoded.startsWith('z'))
+        assert.ok(output.encoded.startsWith('u'))
       })
 
       it('targets the space or resource URL by path depth', async () => {

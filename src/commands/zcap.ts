@@ -5,7 +5,7 @@
  * `zcap delegate` signs a delegated capability: a first-level delegation from
  * the root capability for a `--url`, or a further (attenuated) delegation of an
  * existing `--capability`. Both print `{ rootCapability|delegatedCapability,
- * encoded }` to stdout (the `encoded` field is the multibase base58btc form);
+ * encoded }` to stdout (the `encoded` field is the multibase base64url form);
  * diagnostics and errors go to stderr. `--save` writes the capability to local
  * wallet storage (`~/.config/did-cli-wallet/zcaps/`) along with a `.meta.json` metadata
  * sidecar (creation timestamp plus `--handle` / `--description` when given).
@@ -259,7 +259,7 @@ export function makeZcapCommand(): Command {
     )
     .option(
       '--capability <value>',
-      'parent capability to delegate: a multibase (z...) string, a JSON ' +
+      'parent capability to delegate: a multibase (u...) string, a JSON ' +
         'file path, or a stored zcap id/handle'
     )
     .option(

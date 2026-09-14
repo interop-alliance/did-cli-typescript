@@ -113,7 +113,7 @@ describe('did zcap', () => {
       )
       assert.equal(rootCapability.controller, 'did:key:z6MkController')
       assert.equal(rootCapability.invocationTarget, 'https://example.com/api')
-      assert.ok(encoded.startsWith('z'))
+      assert.ok(encoded.startsWith('u'))
       assert.deepEqual(decodeCapability(encoded), rootCapability)
     })
 

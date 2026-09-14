@@ -6,7 +6,13 @@ import { tmpdir } from 'node:os'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { saveDidMeta, saveToDids } from '../storage.js'
-import { buildWasClient, loadWasSigner, resolveWasTarget } from './client.js'
+import { WasClient } from '@interop/was-client'
+import {
+  buildWasClient,
+  loadWasSigner,
+  resolveWasTarget,
+  setWasClientFactory
+} from './client.js'
 import { saveSpaceRecord } from './registry.js'
 
 /**
@@ -37,6 +43,11 @@ describe('was client factory', () => {
   let walletDir: string
 
   beforeEach(async () => {
+    // Build the real client without service discovery, which would
+    // otherwise send a HEAD to the (unreachable) example server.
+    setWasClientFactory(({ serverUrl, signer }) =>
+      WasClient.fromSigner({ serverUrl, signer })
+    )
     walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-wallet-'))
     process.env.WALLET_DIR = walletDir
     delete process.env.WAS_SERVER_URL
@@ -44,6 +55,7 @@ describe('was client factory', () => {
   })
 
   afterEach(async () => {
+    setWasClientFactory()
     delete process.env.WALLET_DIR
     delete process.env.WAS_SERVER_URL
     delete process.env.WAS_DID

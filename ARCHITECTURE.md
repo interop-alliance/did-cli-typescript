@@ -69,6 +69,12 @@ per-command defaults/seeds are controlled by environment variables --
 `ZCAP_CONTROLLER_KEY_SEED` -- documented in the
 [Environment Variables](README.md#environment-variables) table in the README.
 
+The `encoded` form of a capability (printed by `zcap create`, `zcap delegate`,
+`was grant`, and `was request-grant`, and accepted by `--capability`) is the
+capability JSON as UTF-8, base64url without padding, with the `u` multibase
+prefix. base64url rather than base58btc because a delegated capability embeds
+its chain and base58 refuses inputs past 2048 bytes.
+
 ## Build, test, lint
 
 ```bash

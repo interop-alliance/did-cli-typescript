@@ -69,7 +69,7 @@ Open this in your wallet to approve:
 
 Or open your wallet directly:
 
-  https://wallet.example/external/request?url=http%3A%2F%2Flocalhost%3A3002%2F...
+  https://wallet.example/#/external/request?url=http%3A%2F%2Flocalhost%3A3002%2F...
 
 Waiting for approval...
 ```
@@ -82,7 +82,7 @@ minted key and the received capability under the handle `agent`:
 Capability saved to ~/.config/did-cli-wallet/zcaps/urn_uuid_....json
 Granted. Use it with --capability agent, for example:
   di was put ./index.html --capability agent --did agent --resource index.html --content-type text/html
-zkL8vet8M2mn...
+ueyJAY29udGV4dCI6...
 ```
 
 Saving is what makes the grant usable -- `--capability` resolves its signing

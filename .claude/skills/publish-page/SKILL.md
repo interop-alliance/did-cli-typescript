@@ -15,8 +15,9 @@ passphrase.
 Two URLs are needed. Ask for whichever the user has not already given:
 
 - their wallet's base URL (a Freewallet deployment, e.g. `https://wallet.example`)
-- the WAS server's base URL (e.g. `https://was.example`), or `WAS_SERVER_URL`
-  already exported in the environment
+- the base URL of the WAS server that hosts the request exchange (e.g.
+  `https://was.example`), or `WAS_SERVER_URL` already exported in the
+  environment
 
 Check the CLI is reachable: `di --version`. If `di` is not on PATH, use
 `npx -y @interop/did-cli` in place of `di` throughout.
@@ -43,7 +44,7 @@ so this is the cheap place to revise.
 ## 2. Ask the wallet for a grant
 
 ```
-di was request-grant --server <was url> --wallet <wallet url> \
+di was request-grant --exchange <was url> --wallet <wallet url> \
   --name "<what you call yourself>" --reason "Publish <what the page is>" \
   --save --handle agent
 ```
@@ -55,7 +56,7 @@ than relying on the default, so the handle you use later is the handle the run
 filed. (`--no-save` exists for inspecting a grant you do not intend to use; it
 is the wrong choice here.)
 
-Drop `--server` when `WAS_SERVER_URL` is already set. `--reason` and `--name`
+Drop `--exchange` when `WAS_SERVER_URL` is already set. `--reason` and `--name`
 are shown to the user at the consent step, so write them for that reader.
 
 If the command refuses because the handle is taken, a previous run already owns

@@ -90,9 +90,12 @@ export async function resolveCapabilityTarget({
       'No signing DID for the capability: provide --did or WAS_DID.'
     )
   }
+  // Discover the service from the target itself rather than the origin: a
+  // deployment may serve a static page at its origin with no service link.
   const { client, did: resolvedDid } = await buildWasClient({
     server,
-    did: didRef
+    did: didRef,
+    discoverFrom: url
   })
   const handle = client.fromCapability(zcap)
   const base = { client, zcap, server, did: resolvedDid, url }

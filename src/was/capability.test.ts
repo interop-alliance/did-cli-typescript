@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import type { IZcap } from '@interop/was-client'
+import { WasClient, type IZcap } from '@interop/was-client'
 import { encodeCapability } from '../zcap/encoding.js'
 import { saveToDids } from '../storage.js'
 import { resolveCapabilityTarget } from './capability.js'
+import { setWasClientFactory } from './client.js'
 
 /**
  * Generates a did:key DID with an Ed25519 key and saves its document and
@@ -56,12 +57,18 @@ describe('was capability resolution', () => {
   let walletDir: string
 
   beforeEach(async () => {
+    // Build the real client without service discovery, which would
+    // otherwise send a HEAD to the (unreachable) example server.
+    setWasClientFactory(({ serverUrl, signer }) =>
+      WasClient.fromSigner({ serverUrl, signer })
+    )
     walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-wallet-'))
     process.env.WALLET_DIR = walletDir
     delete process.env.WAS_DID
   })
 
   afterEach(async () => {
+    setWasClientFactory()
     delete process.env.WALLET_DIR
     delete process.env.WAS_DID
     await rm(walletDir, { recursive: true, force: true })

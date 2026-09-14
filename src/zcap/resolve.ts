@@ -7,7 +7,7 @@
 import { access, readFile } from 'node:fs/promises'
 import type { IZcap } from '@interop/data-integrity-core/zcap'
 import { resolveZcapRef } from '../meta.js'
-import { decodeCapability } from './encoding.js'
+import { decodeCapability, isEncodedCapability } from './encoding.js'
 
 /**
  * Returns true when the path exists on disk.
@@ -25,10 +25,11 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Resolves a `--capability` reference to a capability object. A value
- * beginning with `z` is decoded as a multibase capability string; a path to
- * an existing file is parsed as capability JSON; anything else is looked up
- * in the local zcap store by capability id or metadata handle.
+ * Resolves a `--capability` reference to a capability object. A value that
+ * `isEncodedCapability` recognizes is decoded as a multibase capability
+ * string; a path to an existing file is parsed as capability JSON; anything
+ * else is looked up in the local zcap store by capability id or metadata
+ * handle.
  *
  * @param options {object}
  * @param options.ref {string}
@@ -39,7 +40,7 @@ export async function resolveCapabilityInput({
 }: {
   ref: string
 }): Promise<IZcap> {
-  if (ref.startsWith('z')) {
+  if (isEncodedCapability(ref)) {
     return decodeCapability(ref)
   }
   if (await fileExists(ref)) {

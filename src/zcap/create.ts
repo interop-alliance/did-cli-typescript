@@ -19,7 +19,7 @@ import { encodeCapability } from './encoding.js'
  * @param options.url {string}   The resource URI the capability targets (the
  *   `invocationTarget`).
  * @returns {{rootCapability: IRootZcap, encoded: string}}   The root capability
- *   and its multibase (base58btc) encoding.
+ *   and its multibase (base64url) encoding.
  */
 export function createCapability({
   controller,

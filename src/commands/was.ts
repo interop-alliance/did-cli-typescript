@@ -893,6 +893,11 @@ export function makeWasCommand(): Command {
         'straight onto the approval page'
     )
     .option(
+      '--save',
+      'store the minted key and the received capabilities (the default; ' +
+        'accepted so scripts can say it explicitly)'
+    )
+    .option(
       '--no-save',
       'do not store the minted key or the received capabilities (they cannot ' +
         'then be invoked by a later command)'
@@ -910,7 +915,11 @@ export function makeWasCommand(): Command {
       'how long to wait for approval (default 600, the server exchange TTL)'
     )
     .option('--json', 'print the DID, handle, and capabilities as JSON')
-    .addOption(serverOption())
+    .option(
+      '--exchange <url>',
+      'base URL of the WAS server that hosts the ephemeral exchange (or ' +
+        'WAS_SERVER_URL)'
+    )
     .action(
       async (options: {
         collection?: string
@@ -923,7 +932,7 @@ export function makeWasCommand(): Command {
         description?: string
         timeout?: string
         json?: boolean
-        server?: string
+        exchange?: string
       }) => {
         await runAndExit(runRequestGrant(options))
       }

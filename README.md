@@ -124,7 +124,7 @@ the relevant command section below.
 | `DIDS_DIR`                 | `did`                      | DID-documents directory. Defaults to `<WALLET_DIR>/dids/`.                                                                                           |
 | `SECRET_KEY_SEED`          | `key create`, `did create` | Multibase-encoded seed for deterministic key/DID generation. Not supported with `--type ecdsa` or `--type x25519`.                                   |
 | `WAS_DID`                  | `was`                      | Default signing DID (or stored-DID handle) when `--did` is omitted.                                                                                  |
-| `WAS_SERVER_URL`           | `was`                      | Default WAS server base URL when `--server` is omitted.                                                                                              |
+| `WAS_SERVER_URL`           | `was`                      | Default WAS server base URL when `--server` (or `--exchange` for `request-grant`) is omitted.                                                        |
 | `ZCAP_CONTROLLER_KEY_SEED` | `zcap`                     | Controller signing-key seed for delegating capabilities.                                                                                             |
 
 ### File Permissions
@@ -1200,7 +1200,7 @@ handed down a chain of signed _delegated_ capabilities, each one optionally
 narrowing the allowed actions or the target.
 
 Both commands print the capability as JSON together with an `encoded` field --
-the capability serialized and `base58btc`-encoded with a multibase `z` prefix --
+the capability serialized and base64url-encoded with a multibase `u` prefix --
 which is the compact form you pass to `zcap delegate --capability` to delegate
 it
 further. Pass `--save` to also write the capability to local wallet storage
@@ -1229,7 +1229,7 @@ Root capabilities are unsigned, so no key is needed:
     "controller": "did:key:z6Mkfeco2NSEPeFV3DkjNSabaCza1EoS3CmqLb1eJ5BriiaR",
     "invocationTarget": "https://example.com/api"
   },
-  "encoded": "z3g9TJBrQTdKemE9BC43N9WsT8snKvQzwCpCWs8o..."
+  "encoded": "ueyJAY29udGV4dCI6Imh0dHBzOi8vdzNpZC5vcmcvemNhcC92MSIsImlkIjoi..."
 }
 ```
 
@@ -1239,7 +1239,7 @@ and a root capability grants all actions (it has no `allowedAction`).
 
 #### Note about the `encoded` field
 
-The multibase- (that's the `z` prefix) and base58btc-encoded JSON of the zcap
+The multibase- (that's the `u` prefix) and base64url-encoded JSON of the zcap
 is returned, for convenience, in the `encoded` field.
 
 This is done for easier "double-click to copy" and pasting into other tools,
@@ -1287,7 +1287,7 @@ To delegate from the root capability for a target, pass `--url` (the same
       "proofValue": "z5tuwwdJE6VXLhf1v8SNAquBmMcJCD7zJ4bXDi6rh1Fk..."
     }
   },
-  "encoded": "zkL8vet8M2mn7akSpHEVvgFUCTVq4VSGs1s8Zsq9bYba..."
+  "encoded": "ueyJAY29udGV4dCI6WyJodHRwczovL3czaWQub3JnL3pjYXAvdjEi..."
 }
 ```
 
@@ -1312,7 +1312,7 @@ metadata handle of a zcap saved in local wallet storage. Use
 ./di zcap delegate \
   --did did:key:z6MknBxr... \
   --delegatee did:key:z6Mks... \
-  --capability zkL8vet8M2mn7akSpHEVvgFUCTVq4VSGs1s8Zsq9bYba... \
+  --capability ueyJAY29udGV4dCI6WyJodHRwczovL3czaWQub3JnL3pjYXAvdjEi... \
   --invocation-target https://example.com/documents/reports \
   --allow read
 ```
@@ -1711,7 +1711,7 @@ the zcap store (`~/.config/did-cli-wallet/zcaps/`):
     "expires": "2027-06-11T17:30:00Z",
     "proof": { ... }
   },
-  "encoded": "zkL8vet8M2mn..."
+  "encoded": "ueyJAY29udGV4dCI6..."
 }
 ```
 
@@ -1731,13 +1731,13 @@ approval link and the progress notes go to stderr; `--json` puts the DID, the
 handle, the link, and the capability into one object on stdout instead.
 
 ```
-./di was request-grant --server https://was.example \
+./di was request-grant --exchange https://freewallet.cloud/spaces/ \
   --reason "Publish a demo page" --name "demo-publisher"
 Requesting "web" access for did:key:z6MkAgent...
 
 Open this in your wallet to approve:
 
-  https://was.example/workflows/ephemeral/exchanges/abc-123/protocols?iuv=1
+  https://freewallet.cloud/workflows/ephemeral/exchanges/abc-123/protocols?iuv=1
 
 Waiting for approval...
 ```
@@ -1746,18 +1746,18 @@ If you know which wallet the user runs, `--wallet <url>` also prints a link
 that opens it straight onto the approval page for this request:
 
 ```
-./di was request-grant --server https://was.example --wallet https://wallet.example
+./di was request-grant --exchange https://freewallet.cloud/spaces/ --wallet https://freewallet.me
 ...
 Or open your wallet directly:
 
-  https://wallet.example/external/request?url=https%3A%2F%2Fwas.example%2F...
+  https://freewallet.me/#/external/request?url=https%3A%2F%2Ffreewallet.cloud%2F...
 ```
 
 The interaction URL is still printed beside it, since that is what a wallet on
 another device can be pointed at.
 
 The user opens that link in their wallet and approves. The command then prints
-the capability it received (the same `z...` form `--capability` accepts) and
+the capability it received (the same `u...` form `--capability` accepts) and
 files it in the zcap store under `--handle` (default `agent`), together with the
 minted key:
 
@@ -1765,7 +1765,7 @@ minted key:
 Capability saved to ~/.config/did-cli-wallet/zcaps/urn_uuid_....json
 Granted. Use it with --capability agent, for example:
   di was put ./index.html --capability agent --did agent --resource index.html --content-type text/html
-zkL8vet8M2mn...
+ueyJAY29udGV4dCI6...
 ```
 
 Saving is what makes the grant usable: `--capability` resolves its signing key
@@ -1790,8 +1790,13 @@ Options are `--collection <name>` (default `web`), `--action <verb...>` (default
 `--name <name>` (what the agent calls itself, shown to the user beside its
 key), `--wallet <url>` (a wallet base URL to print an approval deep link for),
 `--timeout <seconds>` (default 600, matching the server's exchange
-lifetime), `--handle` / `--description`, `--no-save`, `--json`, and `--server`
-(or `WAS_SERVER_URL`).
+lifetime), `--handle` / `--description`, `--no-save`, `--json`, and
+`--exchange <url>` (or `WAS_SERVER_URL`).
+
+`--exchange` names the WAS server that hosts the ephemeral exchange carrying
+the request. It is only the meeting point between this command and the wallet.
+The grant itself names its own target, whichever space the user's wallet picks,
+so the two servers need not be the same.
 
 The end-to-end flow this command exists for -- an LLM agent drafting a page and
 publishing it to the user's own storage -- is scripted in
@@ -1863,7 +1868,7 @@ Bob's machine he can pass the encoded string or a JSON file directly):
 
 # Bob, with the encoded string he received out-of-band -- this reads the
 # resource the capability targets (home/credentials/vc-1):
-./di was get --capability zkL8vet8M2mn...
+./di was get --capability ueyJAY29udGV4dCI6...
 {
   "name": "Alice"
 }
@@ -1877,17 +1882,17 @@ Bob's machine he can pass the encoded string or a JSON file directly):
 
 # Had the grant been on the whole collection (home/credentials), ls would
 # list it and `resource add` could post new resources into it:
-./di was ls --capability zkL8vet8M2mn...
+./di was ls --capability ueyJAY29udGV4dCI6...
 
 # ...and --resource picks one id inside that collection, so the write lands
 # at a name you choose rather than a server-generated one:
-./di was put ./index.html --capability zkL8vet8M2mn... \
+./di was put ./index.html --capability ueyJAY29udGV4dCI6... \
   --resource index.html --content-type text/html
-./di was get --capability zkL8vet8M2mn... --resource index.html
+./di was get --capability ueyJAY29udGV4dCI6... --resource index.html
 
 # ...and the same flag deletes that one resource, rather than the whole
 # collection the capability targets:
-./di was rm --capability zkL8vet8M2mn... --resource index.html
+./di was rm --capability ueyJAY29udGV4dCI6... --resource index.html
 ```
 
 #### Policies and public sharing

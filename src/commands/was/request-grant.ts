@@ -176,7 +176,9 @@ async function saveCapabilities({
  * @param [options.reason] {string}   Why access is wanted, shown at consent.
  * @param [options.name] {string}   The agent's self-declared display name,
  *   shown at consent as what it calls itself.
- * @param [options.server] {string}   The WAS server base URL.
+ * @param [options.exchange] {string}   Base URL of the WAS server that hosts
+ *   the ephemeral exchange carrying the request (the grant itself may land on
+ *   any space the wallet picks).
  * @param [options.wallet] {string}   A wallet base URL to print an approval
  *   deep link for, beside the interaction URL.
  * @param [options.save] {boolean}   Persist the key and capabilities
@@ -192,7 +194,7 @@ export async function runRequestGrant(options: {
   action?: string[]
   reason?: string
   name?: string
-  server?: string
+  exchange?: string
   wallet?: string
   save?: boolean
   handle?: string
@@ -213,10 +215,10 @@ export async function runRequestGrant(options: {
     ) {
       return 2
     }
-    const server = options.server ?? process.env.WAS_SERVER_URL
-    if (!server) {
+    const exchange = options.exchange ?? process.env.WAS_SERVER_URL
+    if (!exchange) {
       throw new Error(
-        'No WAS server URL: provide --server or set WAS_SERVER_URL.'
+        'No exchange server URL: provide --exchange or set WAS_SERVER_URL.'
       )
     }
     const timeoutMs =
@@ -256,7 +258,7 @@ export async function runRequestGrant(options: {
       ...(options.name !== undefined && { name: options.name })
     })
     const { exchangeUrl, interactionUrl } = await openGrantExchange({
-      server,
+      exchange,
       request
     })
 

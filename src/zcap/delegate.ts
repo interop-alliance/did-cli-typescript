@@ -48,7 +48,7 @@ import { loadDelegationSigner } from './signer.js'
  * @param [options.expires] {string}   Explicit ISO 8601 expiration (overrides
  *   `ttl`).
  * @returns {Promise<{delegatedCapability: IDelegatedZcap, encoded: string}>}
- *   The signed delegated capability and its multibase (base58btc) encoding.
+ *   The signed delegated capability and its multibase (base64url) encoding.
  */
 export async function delegateCapability({
   did,

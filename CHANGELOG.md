@@ -1,5 +1,48 @@
 # History
 
+## 0.15.0 - TBD
+
+### Added
+
+- `was request-grant` accepts an explicit `--save` (the default), so the
+  documented `--save --handle agent` invocation no longer fails with
+  "unknown option".
+- An integration test for `was request-grant` against the WAS server's
+  ephemeral-exchange facet, with a scripted wallet that opens the interaction
+  URL, delegates the public collection from the space controller's key, and
+  posts the response presentation back. It then publishes `index.html`
+  through the stored handle and fetches it anonymously as `text/html`.
+
+### Fixed
+
+- The `--wallet` deep link now carries the route and the `url` parameter in
+  the URL fragment (`<wallet>/#/external/request?url=<interaction url>`).
+  Freewallet routes on the fragment, so the earlier path form opened the
+  landing page instead of the approval page.
+
+### Changed
+
+- BREAKING: `was request-grant` takes the exchange host as `--exchange <url>`
+  instead of `--server <url>`. The flag only names the WAS server that hosts
+  the ephemeral exchange; the granted capability targets whichever space the
+  wallet picks. `WAS_SERVER_URL` remains the fallback.
+- BREAKING: the `encoded` form of a capability (printed by `zcap create`,
+  `zcap delegate`, `was grant`, and `was request-grant`) is now multibase
+  base64url (`u...`) instead of base58btc (`z...`); the `z` form is no longer
+  accepted by `--capability`. base58 is quadratic in the input size and
+  `@scure/base` refuses it past 2048 bytes, which a wallet-delegated
+  capability exceeds once it embeds its chain; `was request-grant` failed
+  after saving such a grant.
+- The `was` commands run was-client's service discovery against a space-owned
+  URL (the capability's invocation target, or the addressed space) instead of
+  the server origin, so a deployment whose origin serves a static page with
+  no service link (such as freewallet.cloud) still resolves.
+- Bumped `@interop/was-client` to `^0.64.0`. The Space root capability id is
+  now the canonical trailing-slash container URL and signed requests run
+  service discovery first, which was-teaching-server 0.33 and later require;
+  against those servers the previous client's delegated invocations were
+  refused as 404.
+
 ## 0.14.0 - 2026-09-14
 
 ### Added

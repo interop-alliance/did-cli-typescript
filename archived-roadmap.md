@@ -292,3 +292,50 @@ on-ramp, dropped); the skill sends the user to `<wallet>/signup` and resumes.
 
 Persistence is stated as required rather than optional, since
 `--capability` resolves its signer out of the local DID store.
+
+### CLI-10: Integration test for `request-grant` against the exchange facet
+
+- status: done (2026-09-14)
+- priority: medium
+- labels: was, testing, agents
+- acceptance:
+  - [x] A node integration test runs `request-grant` against a local
+        teaching server, with a scripted "wallet" that begins the exchange,
+        delegates a public-collection zcap from a root key, and posts the
+        VP back; the test then PUTs `index.html` with the stored handle and
+        fetches it anonymously as `text/html`
+  - [x] Runs in the existing integration tier (server spun up the same way
+        as the other `was` integration tests)
+
+Landed as a second case in `src/commands/was.integration.test.ts`. The
+scripted wallet uses the same `@interop/wallet-request` helpers freewallet
+does (`openInteractionRequest`, `composeVp`, `deliverPresentation`) and
+delegates from the space controller's key through the was-client `grant`
+primitive. Running it surfaced CLI-18: the delegated write was refused until
+the was-client dependency caught up with the server's v0.5 conventions.
+
+Trying the same flow against freewallet.me and freewallet.cloud the same day
+turned up three more defects, all fixed in the same pass: the `--wallet` deep
+link used the path form where the wallet routes on the fragment, the printed
+`encoded` form failed on a wallet-delegated chain (base58 is limited to 2048
+bytes, so it is now base64url), and service discovery ran against an origin
+that serves a static page (it now runs against the invocation target).
+
+### CLI-18: Consume was-client 0.64 (server v0.5 conventions)
+
+- status: done (2026-09-14)
+- priority: high
+- labels: was, deps
+- acceptance:
+  - [x] `@interop/was-client` is at `^0.64.0`, so the root capability id the
+        CLI mints for a Space uses the canonical trailing-slash container URL
+        and signed requests run service discovery first
+  - [x] Both `was` integration tests pass against was-teaching-server 0.35
+
+discovered-from: CLI-10. With was-client 0.60 every delegated invocation
+(and the owner's `was rm` of a space) came back as a masked 404 from
+was-teaching-server 0.35, because the client still rooted capabilities at
+the slash-less `/space/{s}` id that server no longer recognizes. The public
+freewallet.cloud deployment runs the same server version, so the bump is
+what makes a grant from freewallet.me invocable. The bump itself needed no
+source changes.
