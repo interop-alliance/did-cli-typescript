@@ -339,3 +339,16 @@ the slash-less `/space/{s}` id that server no longer recognizes. The public
 freewallet.cloud deployment runs the same server version, so the bump is
 what makes a grant from freewallet.me invocable. The bump itself needed no
 source changes.
+
+### CLI-11: `di zcap import`
+
+- status: done (2026-09-14)
+- priority: low
+- labels: zcap
+- acceptance:
+  - [x] Stores a received zcap (JSON file or `u...` string) under a handle,
+        so a capability obtained outside `request-grant` can be named by
+        `--capability <handle>`
+  - [x] Validates the shape before storing
+
+Split out of CLI-7, whose `--save` covers the demo.

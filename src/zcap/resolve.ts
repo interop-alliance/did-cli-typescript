@@ -25,21 +25,20 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Resolves a `--capability` reference to a capability object. A value that
- * `isEncodedCapability` recognizes is decoded as a multibase capability
- * string; a path to an existing file is parsed as capability JSON; anything
- * else is looked up in the local zcap store by capability id or metadata
- * handle.
+ * Reads a capability given directly rather than by stored reference: a value
+ * that `isEncodedCapability` recognizes is decoded as a multibase capability
+ * string, and a path to an existing file is parsed as capability JSON. Returns
+ * undefined when the value is neither.
  *
  * @param options {object}
  * @param options.ref {string}
- * @returns {Promise<IZcap>}
+ * @returns {Promise<IZcap | undefined>}
  */
-export async function resolveCapabilityInput({
+export async function readCapabilityInput({
   ref
 }: {
   ref: string
-}): Promise<IZcap> {
+}): Promise<IZcap | undefined> {
   if (isEncodedCapability(ref)) {
     return decodeCapability(ref)
   }
@@ -53,6 +52,28 @@ export async function resolveCapabilityInput({
         { cause: err }
       )
     }
+  }
+  return undefined
+}
+
+/**
+ * Resolves a `--capability` reference to a capability object. An encoded
+ * capability string or a capability JSON file is read by
+ * `readCapabilityInput`; anything else is looked up in the local zcap store by
+ * capability id or metadata handle.
+ *
+ * @param options {object}
+ * @param options.ref {string}
+ * @returns {Promise<IZcap>}
+ */
+export async function resolveCapabilityInput({
+  ref
+}: {
+  ref: string
+}): Promise<IZcap> {
+  const direct = await readCapabilityInput({ ref })
+  if (direct) {
+    return direct
   }
   const stored = await resolveZcapRef({ ref })
   if (!stored) {

@@ -12,6 +12,10 @@
   URL, delegates the public collection from the space controller's key, and
   posts the response presentation back. It then publishes `index.html`
   through the stored handle and fetches it anonymously as `text/html`.
+- `zcap import <capability>` validates a capability received outside the CLI
+  (a multibase `u...` string or a JSON file) and stores it, with optional
+  `--handle` / `--description`, so `--capability <handle>` can name it. It
+  refuses a capability whose id is already stored or a handle already in use.
 
 ### Fixed
 
@@ -22,6 +26,8 @@
 
 ### Changed
 
+- `@interop/zcap` is at `^11.3.0`, which exports the `checkCapability`
+  validator used by `zcap import`.
 - BREAKING: `was request-grant` takes the exchange host as `--exchange <url>`
   instead of `--server <url>`. The flag only names the WAS server that hosts
   the ephemeral exchange; the granted capability targets whichever space the

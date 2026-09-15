@@ -11,7 +11,9 @@
  * sidecar (creation timestamp plus `--handle` / `--description` when given).
  * `list` renders a metadata table of the saved zcaps, `show` prints one back
  * (`--meta` for its metadata), `meta` edits the metadata sidecar, and `remove`
- * deletes a stored zcap; `revoke` remains a stub.
+ * deletes a stored zcap. `import` validates and stores a capability obtained
+ * elsewhere (a multibase string or JSON file), so a later `--capability` can
+ * name it by handle. `revoke` remains a stub.
  *
  * The delegation signing key is sourced from a stored DID (`--did`) or, as a
  * fallback, the `ZCAP_CONTROLLER_KEY_SEED` env var together with `--controller`.
@@ -19,9 +21,10 @@
  * Exit codes: 0 on success, 1 on a creation/delegation or input error.
  */
 import { Command } from 'commander'
+import { checkCapability } from '@interop/zcap'
 import { createCapability } from '../zcap/create.js'
 import { delegateCapability } from '../zcap/delegate.js'
-import { resolveCapabilityInput } from '../zcap/resolve.js'
+import { readCapabilityInput, resolveCapabilityInput } from '../zcap/resolve.js'
 import {
   saveToCollection,
   sanitizeStorageId,
@@ -198,6 +201,74 @@ export async function runDelegate(options: {
   }
 }
 
+/**
+ * Validates a capability received outside the CLI and files it in the local
+ * zcap store. Refuses a capability whose id is already stored, and a handle
+ * already filed against another zcap, so later lookups stay unambiguous.
+ *
+ * @param options {object}
+ * @param options.capability {string}   A multibase (`u...`) capability string
+ *   or a path to a capability JSON file.
+ * @param [options.handle] {string}   Short tag stored in the metadata sidecar.
+ * @param [options.description] {string}   Longer description stored in the
+ *   metadata sidecar.
+ * @returns {Promise<number>}   The process exit code.
+ */
+export async function runImport(options: {
+  capability: string
+  handle?: string
+  description?: string
+}): Promise<number> {
+  try {
+    const zcap = await readCapabilityInput({ ref: options.capability })
+    if (!zcap) {
+      console.error(
+        `Could not import capability: "${options.capability}" is neither ` +
+          'an encoded (u...) capability string nor a file.'
+      )
+      return 1
+    }
+    checkCapability({
+      capability: zcap,
+      expectRoot: !('parentCapability' in zcap && zcap.parentCapability)
+    })
+    if (await resolveZcapRef({ ref: zcap.id })) {
+      console.error(
+        `Could not import capability: ${zcap.id} is already stored.`
+      )
+      return 1
+    }
+    if (options.handle && (await resolveZcapRef({ ref: options.handle }))) {
+      console.error(
+        `Could not import capability: handle "${options.handle}" is ` +
+          'already filed against another zcap.'
+      )
+      return 1
+    }
+    const storageId = storageIdFor(zcap.id)
+    const filePath = await saveToCollection({
+      collection: COLLECTION,
+      storageId,
+      data: zcap
+    })
+    await writeCreateMeta({
+      collection: COLLECTION,
+      storageId,
+      created: new Date().toISOString(),
+      handle: options.handle,
+      description: options.description
+    })
+    console.error(`Capability saved to ${filePath}`)
+    console.log(JSON.stringify(zcap, null, 2))
+    return 0
+  } catch (err) {
+    console.error(
+      `Could not import capability: ${err instanceof Error ? err.message : String(err)}`
+    )
+    return 1
+  }
+}
+
 export function makeZcapCommand(): Command {
   const zcap = new Command('zcap').description(
     'Manage authorization capabilities'
@@ -300,6 +371,32 @@ export function makeZcapCommand(): Command {
         description?: string
       }) => {
         const code = await runDelegate(options)
+        if (code !== 0) {
+          process.exit(code)
+        }
+      }
+    )
+
+  zcap
+    .command('import <capability>')
+    .description(
+      'Validate and store a zcap received elsewhere: a multibase (u...) ' +
+        'string or a JSON file path'
+    )
+    .option(
+      '--handle <handle>',
+      'short tag for the stored zcap, usable as --capability <handle>'
+    )
+    .option(
+      '--description <description>',
+      'longer description of the stored zcap'
+    )
+    .action(
+      async (
+        capability: string,
+        options: { handle?: string; description?: string }
+      ) => {
+        const code = await runImport({ capability, ...options })
         if (code !== 0) {
           process.exit(code)
         }

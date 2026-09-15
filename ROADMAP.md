@@ -115,19 +115,6 @@ The agent is a zcap grantee with its own did:key; it never logs into the
 wallet. The delegating side (`di was grant`) already exists; these items add
 the inverse.
 
-### CLI-11: `di zcap import`
-
-- status: todo
-- priority: low
-- labels: zcap
-- acceptance:
-  - [ ] Stores a received zcap (JSON file or `u...` string) under a handle,
-        so a capability obtained outside `request-grant` can be named by
-        `--capability <handle>`
-  - [ ] Validates the shape before storing
-
-Split out of CLI-7, whose `--save` covers the demo.
-
 ### CLI-14: Terminal QR for `request-grant`
 
 - status: todo

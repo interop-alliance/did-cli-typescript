@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { makeDidCommand } from './did.js'
@@ -392,6 +392,178 @@ describe('did zcap', () => {
         assert.deepEqual(delegatedCapability.allowedAction, ['read'])
       } finally {
         await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
+      }
+    })
+  })
+
+  describe('import', () => {
+    /**
+     * Delegates a capability from a fresh stored DID and returns the printed
+     * `{ delegatedCapability, encoded }`, leaving the log arrays empty.
+     */
+    async function delegateForImport(
+      didsDir: string
+    ): Promise<{ delegatedCapability: { id: string }; encoded: string }> {
+      const { did } = await createStoredDid(didsDir)
+      await makeZcapCommand().parseAsync(
+        [
+          'delegate',
+          '--did',
+          did,
+          '--delegatee',
+          'did:key:z6MkDelegatee',
+          '--url',
+          'https://example.com/documents'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined, errors.join('\n'))
+      const printed = JSON.parse(logs.join('\n'))
+      logs.length = 0
+      errors.length = 0
+      return printed
+    }
+
+    it('stores an encoded delegated capability under a handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      process.env.WALLET_DIR = walletDir
+      try {
+        const { delegatedCapability, encoded } =
+          await delegateForImport(didsDir)
+
+        await makeZcapCommand().parseAsync(
+          ['import', encoded, '--handle', 'shared', '--description', 'docs'],
+          { from: 'user' }
+        )
+
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.ok(errors[0].startsWith('Capability saved to '))
+        assert.deepEqual(JSON.parse(logs.join('\n')), delegatedCapability)
+
+        logs.length = 0
+        await makeZcapCommand().parseAsync(
+          ['show', 'shared', '--meta', '--json'],
+          {
+            from: 'user'
+          }
+        )
+        const meta = JSON.parse(logs.join('\n'))
+        assert.equal(meta.id, delegatedCapability.id)
+        assert.equal(meta.type, 'delegated')
+        assert.equal(meta.handle, 'shared')
+        assert.equal(meta.description, 'docs')
+      } finally {
+        await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('stores a capability JSON file', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      process.env.WALLET_DIR = walletDir
+      try {
+        const { delegatedCapability } = await delegateForImport(didsDir)
+        const filePath = join(didsDir, 'received.json')
+        await writeFile(filePath, JSON.stringify(delegatedCapability))
+
+        await makeZcapCommand().parseAsync(['import', filePath], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        logs.length = 0
+        await makeZcapCommand().parseAsync(['list', '--plain'], {
+          from: 'user'
+        })
+        assert.deepEqual(logs, [delegatedCapability.id])
+      } finally {
+        await rm(didsDir, { recursive: true })
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('rejects a malformed capability without storing it', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        const filePath = join(walletDir, 'bad.json')
+        await writeFile(
+          filePath,
+          JSON.stringify({
+            '@context': ['https://w3id.org/zcap/v1'],
+            id: 'urn:zcap:delegated:zBad',
+            parentCapability: 'urn:zcap:root:https%3A%2F%2Fexample.com',
+            invocationTarget: 'https://example.com'
+          })
+        )
+
+        await makeZcapCommand().parseAsync(['import', filePath], {
+          from: 'user'
+        })
+
+        assert.equal(exitCode, 1)
+        assert.match(errors.join('\n'), /must have a "proof"/)
+        await makeZcapCommand().parseAsync(['list', '--plain'], {
+          from: 'user'
+        })
+        assert.equal(logs.length, 0)
+      } finally {
+        await rm(walletDir, { recursive: true })
+      }
+    })
+
+    it('rejects a value that is neither encoded nor a file', async () => {
+      await makeZcapCommand().parseAsync(['import', 'no-such-file.json'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 1)
+      assert.match(errors[0], /neither an encoded/)
+    })
+
+    it('refuses an already stored id or a taken handle', async () => {
+      const walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.WALLET_DIR = walletDir
+      try {
+        await createSavedRootZcap({
+          url: 'https://example.com/api',
+          handle: 'api-root'
+        })
+        const encoded = JSON.parse(logs.join('\n')).encoded
+        errors.length = 0
+
+        await makeZcapCommand().parseAsync(['import', encoded], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.match(errors[0], /is already stored/)
+
+        exitCode = undefined
+        logs.length = 0
+        errors.length = 0
+        await makeZcapCommand().parseAsync(
+          [
+            'create',
+            '--controller',
+            'did:key:z6MkController',
+            '--url',
+            'https://example.com/other'
+          ],
+          { from: 'user' }
+        )
+        const other = JSON.parse(logs.join('\n'))
+
+        await makeZcapCommand().parseAsync(
+          ['import', other.encoded, '--handle', 'api-root'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.match(errors[0], /handle "api-root" is already filed/)
+      } finally {
         await rm(walletDir, { recursive: true })
       }
     })

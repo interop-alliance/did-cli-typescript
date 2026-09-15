@@ -91,6 +91,7 @@ di vc remove|delete|rm <id>     remove a stored credential
 
 di zcap create                  create a root capability
 di zcap delegate                delegate (attenuate) a capability
+di zcap import <capability>     validate and store a received capability
 di zcap list                    list stored capabilities
 di zcap show|view|cat <id>      show a stored capability
 di zcap meta <id>               show/edit a capability's local metadata
