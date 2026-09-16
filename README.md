@@ -1538,8 +1538,8 @@ limit, and any restricted actions). Both render a table by default and take
 
 ```
 ./di was space backends home
-ID       NAME        MANAGED BY  STORAGE MODE     PERSISTENCE
-default  Filesystem  server      document, blob   durable
+ID       NAME        MANAGED BY  PERSISTENCE
+default  Filesystem  server      durable
 
 ./di was space quotas home
 BACKEND             STATE  USAGE (B)  LIMIT (B)  RESTRICTED
@@ -1585,7 +1585,6 @@ FIELD         VALUE
 ID            default
 Name          Filesystem
 Managed By    server
-Storage Mode  document, blob
 Persistence   durable
 
 ./di was collection quota home/credentials

@@ -252,7 +252,6 @@ export async function runCollectionBackend(options: {
       ['ID', backend.id],
       ['Name', backend.name ?? ''],
       ['Managed By', backend.managedBy ?? ''],
-      ['Storage Mode', backend.storageMode?.join(', ') ?? ''],
       ['Persistence', backend.persistence ?? '']
     ])
     return 0

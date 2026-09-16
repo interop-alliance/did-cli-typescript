@@ -491,7 +491,6 @@ export async function runSpaceBackends(options: {
       backend.id,
       backend.name ?? '',
       backend.managedBy ?? '',
-      backend.storageMode?.join(', ') ?? '',
       backend.persistence ?? ''
     ])
     console.log(
@@ -500,7 +499,6 @@ export async function runSpaceBackends(options: {
           { header: 'ID', maxWidth: 24 },
           { header: 'NAME', maxWidth: 20 },
           { header: 'MANAGED BY' },
-          { header: 'STORAGE MODE' },
           { header: 'PERSISTENCE' }
         ],
         rows

@@ -691,7 +691,6 @@ describe('di was', () => {
             id: 'default',
             name: 'Filesystem',
             managedBy: 'server',
-            storageMode: ['document', 'blob'],
             persistence: 'durable'
           }
         })
@@ -704,7 +703,7 @@ describe('di was', () => {
         const table = logs.join('\n')
         assert.match(table, /default/)
         assert.match(table, /Filesystem/)
-        assert.match(table, /document, blob/)
+        assert.match(table, /durable/)
       })
 
       it('outputs raw JSON with --json', async () => {
@@ -1859,7 +1858,6 @@ describe('di was', () => {
               id: 'default',
               name: 'Filesystem',
               managedBy: 'server',
-              storageMode: ['document', 'blob'],
               persistence: 'durable'
             }
           ]
@@ -1872,7 +1870,7 @@ describe('di was', () => {
         const table = logs.join('\n')
         assert.match(table, /default/)
         assert.match(table, /Filesystem/)
-        assert.match(table, /document, blob/)
+        assert.match(table, /durable/)
       })
 
       it('outputs raw JSON with --json', async () => {

@@ -1,5 +1,12 @@
 # History
 
+## 0.16.0 - TBD
+
+### Removed
+
+- The Storage Mode column of `was space backends` and the Storage Mode row of
+  `was collection backend`; the spec dropped the `storageMode` property.
+
 ## 0.15.0 - 2026-09-14
 
 ### Added
