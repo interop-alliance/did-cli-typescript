@@ -210,7 +210,7 @@ surface.
 
 `writeFileAtomic` in `src/storage.ts` writes to a fixed sibling name,
 `${filePath}.tmp`, then renames. The rename is atomic and readers always see
-a complete file, so concurrent *readers* are safe. Concurrent *writers* of
+a complete file, so concurrent _readers_ are safe. Concurrent _writers_ of
 the same artifact are not: two `di` processes saving the same DID or key
 race for the one temp path. The temp file is now unlinked and reopened with
 `wx`, so the loser of the race fails with `EEXIST` instead of interleaving

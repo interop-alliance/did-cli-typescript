@@ -14,6 +14,7 @@ import {
   PUBLIC_COLLECTION_TYPE
 } from '../../was/request-grant.js'
 import { listCollection, loadFromCollection, listDids } from '../../storage.js'
+import { resolveZcapRef } from '../../meta.js'
 
 const SERVER = 'https://was.example'
 const EXCHANGE_URL = `${SERVER}/workflows/ephemeral/exchanges/abc-123`
@@ -626,6 +627,188 @@ describe('was request-grant', () => {
     assert.equal(exitCode, 2)
     assert.match(errors.join('\n'), /handle "agent" is already taken/)
     assert.equal((await listDids()).length, 1)
+  })
+
+  /**
+   * Runs a first grant that mints and saves the agent key under `agent`, then
+   * installs a fresh stub for the next run. Returns that stub's request log.
+   */
+  async function grantOnceThenStub(): Promise<
+    { url: string; method: string; body?: unknown }[]
+  > {
+    setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(['request-grant', '--exchange', SERVER], {
+      from: 'user'
+    })
+    assert.equal(exitCode, undefined)
+    errors.length = 0
+    logs.length = 0
+    return setUpExchangeStub({
+      response: {
+        verifiablePresentation: {
+          zcap: [makeZcap({ id: 'urn:uuid:granted-2' })]
+        }
+      }
+    })
+  }
+
+  /**
+   * Reads the capability query's controller out of a recorded create POST.
+   */
+  function requestedController(request: { body?: unknown }): string {
+    const [query] = (
+      request.body as {
+        request: {
+          verifiablePresentationRequest: {
+            query: { capabilityQuery: { controller: string }[] }[]
+          }
+        }
+      }
+    ).request.verifiablePresentationRequest.query
+    return query!.capabilityQuery[0]!.controller
+  }
+
+  it('reuses a stored key with --did, filing the grant at the next suffix', async () => {
+    const requests = await grantOnceThenStub()
+    const [did] = await listDids()
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', 'agent'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+
+    // The wallet sees the same controller, and no second key is minted.
+    assert.equal(requestedController(requests[0]!), did)
+    assert.deepEqual(await listDids(), [did])
+
+    // Both grants are kept, each under its own unambiguous handle.
+    assert.equal((await listCollection('zcaps')).length, 2)
+    assert.equal(
+      (await resolveZcapRef({ ref: 'agent' }))?.zcap.id,
+      'urn:uuid:granted-1'
+    )
+    assert.equal(
+      (await resolveZcapRef({ ref: 'agent-2' }))?.zcap.id,
+      'urn:uuid:granted-2'
+    )
+    assert.match(errors.join('\n'), /--capability agent-2 --did agent /)
+  })
+
+  it('keeps the handle of a capability the wallet returns again', async () => {
+    await grantOnceThenStub()
+    setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', 'agent'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    assert.equal((await listCollection('zcaps')).length, 1)
+    assert.equal(
+      (await resolveZcapRef({ ref: 'agent' }))?.zcap.id,
+      'urn:uuid:granted-1'
+    )
+    assert.equal(await resolveZcapRef({ ref: 'agent-2' }), undefined)
+    assert.match(errors.join('\n'), /--capability agent --did agent /)
+  })
+
+  it('reports the capability handle in --json when reusing a key', async () => {
+    await grantOnceThenStub()
+    const [did] = await listDids()
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', did!, '--json'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    const output = JSON.parse(logs.join('\n')) as {
+      controller: string
+      handle: string
+    }
+    assert.equal(output.controller, did)
+    assert.equal(output.handle, 'agent-2')
+  })
+
+  it("files a reused key's grant under an explicit free --handle", async () => {
+    await grantOnceThenStub()
+    await makeWasCommand().parseAsync(
+      [
+        'request-grant',
+        '--exchange',
+        SERVER,
+        '--did',
+        'agent',
+        '--handle',
+        'site'
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    assert.equal(
+      (await resolveZcapRef({ ref: 'site' }))?.zcap.id,
+      'urn:uuid:granted-2'
+    )
+    assert.match(errors.join('\n'), /--capability site --did agent /)
+  })
+
+  it('refuses a taken --handle with --did before opening any exchange', async () => {
+    const requests = await grantOnceThenStub()
+    await makeWasCommand().parseAsync(
+      [
+        'request-grant',
+        '--exchange',
+        SERVER,
+        '--did',
+        'agent',
+        '--handle',
+        'agent'
+      ],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.match(errors.join('\n'), /handle "agent" is already taken/)
+    assert.equal(requests.length, 0)
+  })
+
+  it('refuses a --did that names no stored key before opening any exchange', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', 'nope'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.match(errors.join('\n'), /No locally stored DID found for "nope"/)
+    assert.equal(requests.length, 0)
+    assert.deepEqual(await listDids(), [])
+  })
+
+  it('refuses a --did that is not a did:key before opening any exchange', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', 'did:web:example.com'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.match(errors.join('\n'), /supports only did:key/)
+    assert.equal(requests.length, 0)
+  })
+
+  it('keeps the reused key with --did --no-save', async () => {
+    await grantOnceThenStub()
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--did', 'agent', '--no-save'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, undefined)
+    assert.equal((await listDids()).length, 1)
+    assert.equal((await listCollection('zcaps')).length, 1)
+    assert.match(errors.join('\n'), /capabilities were not stored/)
   })
 
   it('rejects a --timeout past what the wait supports', async () => {

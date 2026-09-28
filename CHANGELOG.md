@@ -2,6 +2,21 @@
 
 ## 0.16.0 - TBD
 
+### Added
+
+- `was request-grant --did <did>` requests the grant for a stored did:key
+  instead of minting one, so the wallet recognizes the returning agent by
+  its grant `controller`. The new capability is filed under the next free
+  handle suffix of the key's handle (`agent-2`, ...), or under `--handle`.
+  A missing key, or one that is not a did:key with an Ed25519 key, is
+  refused before any exchange is opened.
+
+### Changed
+
+- `was request-grant` files extra capabilities from one approval under the
+  next handles no stored capability uses, rather than a fixed `-N` suffix
+  that could collide.
+
 ### Removed
 
 - The Storage Mode column of `was space backends` and the Storage Mode row of

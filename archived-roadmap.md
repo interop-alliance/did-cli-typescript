@@ -4,7 +4,7 @@ Completed items from [ROADMAP.md](ROADMAP.md), moved here verbatim when they
 are marked done so that item-number references (CLI-N) in the active roadmap,
 commit messages, and design docs keep resolving. Append-only: newest at the
 bottom; do not rewrite or summarize items on the way in. Ids remain permanent
-and are never reused. CHANGELOG.md stays the record of *what* landed; this
+and are never reused. CHANGELOG.md stays the record of _what_ landed; this
 file preserves each item's acceptance criteria and context.
 
 ---
@@ -181,14 +181,14 @@ upstream composes queries but does not define this CLI's request shape.
         `AuthorizationCapabilityQuery` entry: a
         `https://w3id.org/byoe#public-collection` descriptor named by
         `--collection` (default `web`), `--action` (default `GET HEAD PUT
-        POST`), `--reason`, and `controller` set to the agent's did:key.
+    POST`), `--reason`, and `controller` set to the agent's did:key.
         `referenceId` is omitted: it is optional in
         `ICapabilityQueryDetail`, and no consumer reads it back (grants
         correlate positionally by `invocationTarget`)
   - [x] The key is minted inside the command, not passed in. `--save
-        --handle <name>` persists the key and the received zcaps under one
+    --handle <name>` persists the key and the received zcaps under one
         handle, and is required for the demo path: `di was put
-        --capability` resolves its signer out of the local key store, so a
+    --capability` resolves its signer out of the local key store, so a
         key held only for the run cannot sign the write that follows.
         `--save` defaults on (with `--no-save` to decline), rather than
         performing the first write in-process. The agent's context never
@@ -267,8 +267,8 @@ optional, and CLI-14 carries it on its own schedule.
 - acceptance:
   - [x] A skill in this repo that walks an agent through the demo: draft
         `index.html`, `di was request-grant --wallet <url> --save --handle
-        agent`, tell the user to approve in the wallet, `di was put
-        <space>/web/index.html --capability agent --content-type text/html`,
+    agent`, tell the user to approve in the wallet, `di was put
+    <space>/web/index.html --capability agent --content-type text/html`,
         print the public URL
   - [x] The skill states the persistence choice (`--save` or not) and never
         asks the agent to print or read key material
@@ -352,3 +352,49 @@ source changes.
   - [x] Validates the shape before storing
 
 Split out of CLI-7, whose `--save` covers the demo.
+
+### CLI-19: Re-request a grant under a saved agent key
+
+- status: done (2026-09-27)
+- priority: medium
+- labels: agents, was, zcap
+- touches:
+  - freewallet -- decision 0030 is the contract this implements; no
+    freewallet change
+- acceptance:
+  - [x] `di was request-grant` can sign a new request with a stored did:key
+        instead of minting one, so the wallet sees the same `controller` and
+        lists the grants on the agent's existing Applications row
+  - [x] The flag shape is decided and documented (see below), and a run
+        that names no stored key still mints as today
+  - [x] The returned zcaps are filed under the key's handle without making
+        any later `--capability <handle>` lookup ambiguous
+  - [x] Naming a key that does not exist, or a stored DID that is not a
+        did:key with a signing key, refuses before any exchange is opened
+  - [x] Command tests cover the reuse path, the refusal, and the unchanged
+        mint path
+
+Filed from freewallet's FW-232 (archived 2026-09-27). Freewallet's
+`decisions/0030-agent-identity-is-the-agent-held-key.md` decides that an
+agent's stable identity is the did:key it holds and saves. The wallet
+custodies no agent key material and recognizes a returning agent by its
+grant `controller`, which the Applications page already groups rows by.
+Today every `request-grant` run mints a new key, so every re-grant shows
+up in the wallet as a new agent. This item is the whole of the remaining
+work. A lost key still means a new agent identity.
+
+Open decisions to settle here:
+
+- The flag. Either `--did <handle>` (matches how other `di was` commands
+  name a stored key, and leaves `--handle`'s taken-handle refusal as it
+  is), or letting `--handle <existing>` reuse the key it names (one flag,
+  but reusing a taken handle would turn a mint into a reuse without
+  saying so).
+  `--did <handle>` is the safer default.
+- Where the new zcaps go. Either replace the zcaps filed under the handle
+  (the earlier grants stay valid in the wallet until revoked, so the old
+  files would be lost but not their authority), or add them under the
+  next free `<handle>-N` suffix as a multi-grant run does today.
+
+Decided: `--did <handle>`, and the new zcaps go under the next free
+`<handle>-N` suffix (or an explicit free `--handle`).

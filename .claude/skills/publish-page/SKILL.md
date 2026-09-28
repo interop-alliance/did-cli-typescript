@@ -59,8 +59,13 @@ is the wrong choice here.)
 Drop `--exchange` when `WAS_SERVER_URL` is already set. `--reason` and `--name`
 are shown to the user at the consent step, so write them for that reader.
 
-If the command refuses because the handle is taken, a previous run already owns
-it. Pick a fresh one (`--handle agent-2`) and use that handle everywhere below.
+If the command refuses because the handle is taken, a previous run already
+saved a key under it. That key is your identity to the wallet, so reuse it
+rather than minting another: replace `--handle agent` with `--did agent`. The
+wallet then lists the new grant on your existing entry. The new grant is
+filed under the next free handle (`agent-2`, `agent-3`, ...), and the command
+prints it in its `--capability` example. Use that handle for `--capability`
+in step 4, and keep `--did agent`.
 
 ## 3. Have the user approve
 

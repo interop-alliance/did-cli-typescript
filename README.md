@@ -1781,16 +1781,37 @@ by your own DID and the server rejects it.
 
 A run files the minted key and the received capability under the same handle, so
 a handle already taken by a stored DID or capability is refused before anything
-is minted; pass a different `--handle` for a second grant. Nothing is written
-until the grant arrives -- a request that is declined, expires, or times out
-leaves no key behind.
+is minted. Nothing is written until the grant arrives -- a request that is
+declined, expires, or times out leaves no key behind.
+
+The wallet recognizes a returning agent by the key its grants are issued to.
+A second minted key shows up as a new agent. To ask again as the same agent,
+name the saved key with `--did` instead of minting one:
+
+```
+./di was request-grant --exchange https://freewallet.cloud/spaces/ --did agent
+...
+Granted. Use it with --capability agent-2, for example:
+  di was put ./index.html --capability agent-2 --did agent --resource index.html --content-type text/html
+```
+
+`--did` takes a stored DID or its handle. It must be a did:key with an Ed25519
+key, the same check `was put --did` applies, and anything else is refused
+before an exchange is opened. The key keeps its handle. The new capability is
+filed under the next handle no stored capability uses yet (`agent`, then
+`agent-2`, `agent-3`, ...), so earlier grants keep their files and every
+`--capability` handle still names exactly one grant. `--handle` names the new
+capability instead, and is refused if a stored capability already uses it. A
+key saved without a handle needs `--handle`. `WAS_DID` is not consulted here,
+so a run without `--did` always mints.
 
 Options are `--collection <name>` (default `web`), `--action <verb...>` (default
 `GET HEAD PUT POST`), `--reason <text>` (shown to the user at the consent step),
 `--name <name>` (what the agent calls itself, shown to the user beside its
 key), `--wallet <url>` (a wallet base URL to print an approval deep link for),
 `--timeout <seconds>` (default 600, matching the server's exchange
-lifetime), `--handle` / `--description`, `--no-save`, `--json`, and
+lifetime), `--did <did>` (reuse a stored key), `--handle` / `--description`,
+`--no-save`, `--json`, and
 `--exchange <url>` (or `WAS_SERVER_URL`).
 
 `--exchange` names the WAS server that hosts the ephemeral exchange carrying

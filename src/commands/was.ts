@@ -870,8 +870,8 @@ export function makeWasCommand(): Command {
     .command('request-grant')
     .description(
       'Ask a wallet for a capability on one of its public collections ' +
-        '(the inverse of grant: mints a key, prints a link for the user to ' +
-        'approve, and stores what comes back)'
+        '(the inverse of grant: mints a key or reuses a stored one, prints a ' +
+        'link for the user to approve, and stores what comes back)'
     )
     .option(
       '--collection <name>',
@@ -903,8 +903,14 @@ export function makeWasCommand(): Command {
         'then be invoked by a later command)'
     )
     .option(
+      '--did <did>',
+      'request the grant for a stored did:key (or its handle) instead of ' +
+        'minting one, so the wallet recognizes the returning agent'
+    )
+    .option(
       '--handle <handle>',
-      'short tag for the minted key and received capabilities (default agent)'
+      'short tag for the minted key and received capabilities (default ' +
+        "agent; with --did, the next free suffix of the key's handle)"
     )
     .option(
       '--description <description>',
@@ -928,6 +934,7 @@ export function makeWasCommand(): Command {
         name?: string
         wallet?: string
         save?: boolean
+        did?: string
         handle?: string
         description?: string
         timeout?: string

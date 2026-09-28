@@ -8,14 +8,21 @@
  * the CLI never handles key material: the secret goes straight to local DID
  * storage and stdout carries only the capabilities (or, with `--json`, one
  * object holding the DID, the handle, the interaction URL, and the
- * capabilities). Everything addressed to the human -- the approval link and
+ * capabilities). A returning agent names its saved key with `--did` instead,
+ * so the wallet sees the same grant `controller` and recognizes the agent. Everything addressed to the human -- the approval link and
  * the progress notes -- goes to stderr, so stdout stays pipe-clean.
  */
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import type { IZcap } from '@interop/data-integrity-core/zcap'
-import { sanitizeStorageId, saveToCollection } from '../../storage.js'
+import {
+  loadDidMeta,
+  loadMetaFromCollection,
+  sanitizeStorageId,
+  saveToCollection
+} from '../../storage.js'
 import { resolveDidRef, resolveZcapRef } from '../../meta.js'
+import { loadWasSigner } from '../../was/client.js'
 import { encodeCapability } from '../../zcap/encoding.js'
 import {
   awaitGrantedCapabilities,
@@ -114,33 +121,138 @@ async function isHandleTaken({ handle }: { handle: string }): Promise<boolean> {
     if (await resolveDidRef({ ref: handle })) {
       return true
     }
-    return (await resolveZcapRef({ ref: handle })) !== undefined
   } catch {
     // Resolution throws when the handle already matches more than one stored
     // item, which is itself proof that it is taken.
     return true
   }
+  return isZcapHandleTaken({ handle })
 }
 
 /**
- * Files the received capabilities in the local zcap store. The request carries
- * one capability query, so one capability is the expected answer; any extras
- * are saved under the same handle with a numeric suffix, which keeps every
- * handle unambiguous for later lookup.
+ * Reports whether a handle already names a stored zcap, so filing another
+ * capability under it would make `--capability <handle>` ambiguous.
+ *
+ * @param options {object}
+ * @param options.handle {string}
+ * @returns {Promise<boolean>}
+ */
+async function isZcapHandleTaken({
+  handle
+}: {
+  handle: string
+}): Promise<boolean> {
+  try {
+    return (await resolveZcapRef({ ref: handle })) !== undefined
+  } catch {
+    // Ambiguous already, so taken.
+    return true
+  }
+}
+
+/**
+ * Picks `count` handles that no stored zcap uses yet: `base` itself if free,
+ * then `base-2`, `base-3`, and so on. A reused key keeps its handle while its
+ * earlier grants hold `base` (and maybe some suffixes), so a new grant lands
+ * on the next free suffix rather than colliding with them.
+ *
+ * @param options {object}
+ * @param options.base {string}
+ * @param options.count {number}
+ * @returns {Promise<string[]>}
+ */
+async function freeZcapHandles({
+  base,
+  count
+}: {
+  base: string
+  count: number
+}): Promise<string[]> {
+  const handles: string[] = []
+  for (let suffix = 1; handles.length < count; suffix += 1) {
+    const candidate = suffix === 1 ? base : `${base}-${suffix}`
+    if (!(await isZcapHandleTaken({ handle: candidate }))) {
+      handles.push(candidate)
+    }
+  }
+  return handles
+}
+
+/**
+ * Picks one handle per received capability. A capability already in the store
+ * (the wallet re-returned an earlier grant with the same `id`) keeps the
+ * handle it was filed under, so `--capability <handle>` keeps working. Each
+ * new capability takes the next free handle from `base`.
  *
  * @param options {object}
  * @param options.zcaps {IZcap[]}
- * @param options.handle {string}
+ * @param options.base {string}
+ * @returns {Promise<string[]>}   One per capability, in order.
+ */
+async function assignZcapHandles({
+  zcaps,
+  base
+}: {
+  zcaps: IZcap[]
+  base: string
+}): Promise<string[]> {
+  const storedHandles = await Promise.all(
+    zcaps.map(
+      async zcap =>
+        (
+          await loadMetaFromCollection({
+            collection: ZCAP_COLLECTION,
+            storageId: sanitizeStorageId(zcap.id)
+          })
+        )?.handle
+    )
+  )
+  const freeHandles = await freeZcapHandles({
+    base,
+    count: storedHandles.filter(handle => handle === undefined).length
+  })
+  return storedHandles.map(handle => handle ?? freeHandles.shift()!)
+}
+
+/**
+ * Loads a stored key to sign the request with instead of minting one. It
+ * must be a did:key with an Ed25519 signing key, the same check a later
+ * `was put --did` applies, so a key that could not invoke the grant is
+ * refused before any exchange is opened.
+ *
+ * @param options {object}
+ * @param options.ref {string}   A stored DID or its handle.
+ * @returns {Promise<{did: string, handle?: string}>}
+ */
+async function loadAgentKey({
+  ref
+}: {
+  ref: string
+}): Promise<{ did: string; handle?: string }> {
+  const { did } = await loadWasSigner({ did: ref })
+  const handle = (await loadDidMeta({ did }))?.handle
+  return { did, ...(handle !== undefined && { handle }) }
+}
+
+/**
+ * Files the received capabilities in the local zcap store, one handle per
+ * capability. The request carries one capability query, so one capability is
+ * the expected answer; the caller picks free handles for any extras, which
+ * keeps every handle unambiguous for later lookup.
+ *
+ * @param options {object}
+ * @param options.zcaps {IZcap[]}
+ * @param options.handles {string[]}   One per capability, in order.
  * @param [options.description] {string}
  * @returns {Promise<string[]>}   The saved file paths.
  */
 async function saveCapabilities({
   zcaps,
-  handle,
+  handles,
   description
 }: {
   zcaps: IZcap[]
-  handle: string
+  handles: string[]
   description?: string
 }): Promise<string[]> {
   const savedPaths: string[] = []
@@ -157,16 +269,18 @@ async function saveCapabilities({
       collection: ZCAP_COLLECTION,
       storageId,
       created: new Date().toISOString(),
-      handle: index === 0 ? handle : `${handle}-${index + 1}`,
-      description
+      handle: handles[index],
+      description,
+      // A re-returned capability keeps its original timestamp.
+      mergeExisting: true
     })
   }
   return savedPaths
 }
 
 /**
- * Requests a capability from a user's wallet: mints the grantee key, opens an
- * ephemeral exchange carrying a zcap-only VPR, prints the interaction URL for
+ * Requests a capability from a user's wallet: mints the grantee key (or loads
+ * the stored one named by `did`), opens an ephemeral exchange carrying a zcap-only VPR, prints the interaction URL for
  * the user to open, then waits for their approval and records what came back.
  *
  * @param options {object}
@@ -183,7 +297,11 @@ async function saveCapabilities({
  *   deep link for, beside the interaction URL.
  * @param [options.save] {boolean}   Persist the key and capabilities
  *   (default true).
- * @param [options.handle] {string}   Handle to file them under.
+ * @param [options.did] {string}   A stored did:key (or its handle) to request
+ *   the grant for instead of minting a key.
+ * @param [options.handle] {string}   Handle to file them under. With `did`,
+ *   names the capabilities only (default: the next free suffix of the key's
+ *   handle).
  * @param [options.description] {string}   Longer description for the sidecar.
  * @param [options.timeout] {string}   Seconds to wait for approval.
  * @param [options.json] {boolean}   Print one JSON object instead of prose.
@@ -197,6 +315,7 @@ export async function runRequestGrant(options: {
   exchange?: string
   wallet?: string
   save?: boolean
+  did?: string
   handle?: string
   description?: string
   timeout?: string
@@ -237,19 +356,50 @@ export async function runRequestGrant(options: {
     }
 
     const collection = options.collection ?? DEFAULT_COLLECTION
-    const handle = options.handle ?? DEFAULT_HANDLE
-    if (save && (await isHandleTaken({ handle }))) {
-      console.error(
-        `The handle "${handle}" is already taken by a stored DID or ` +
-          'capability; pass a different --handle.'
-      )
-      return 2
-    }
     const walletRoute =
       options.wallet === undefined
         ? undefined
         : walletRequestRoute({ wallet: options.wallet })
-    const { did: controller, keyPair, didDocument } = await mintAgentKey()
+
+    // A reused key is already saved and keeps its own handle, so the handle
+    // (explicit or derived) names only the capabilities.
+    const reused =
+      options.did === undefined
+        ? undefined
+        : await loadAgentKey({ ref: options.did })
+    const baseHandle = options.handle ?? reused?.handle ?? DEFAULT_HANDLE
+    if (
+      save &&
+      reused === undefined &&
+      (await isHandleTaken({ handle: baseHandle }))
+    ) {
+      console.error(
+        `The handle "${baseHandle}" is already taken by a stored DID or ` +
+          'capability; pass a different --handle.'
+      )
+      return 2
+    }
+    if (save && reused !== undefined) {
+      if (options.handle === undefined && reused.handle === undefined) {
+        console.error(
+          `The stored DID ${reused.did} has no handle to file the ` +
+            'capabilities under; pass --handle.'
+        )
+        return 2
+      }
+      if (
+        options.handle !== undefined &&
+        (await isZcapHandleTaken({ handle: options.handle }))
+      ) {
+        console.error(
+          `The handle "${options.handle}" is already taken by a stored ` +
+            'capability; pass a different --handle.'
+        )
+        return 2
+      }
+    }
+    const minted = reused === undefined ? await mintAgentKey() : undefined
+    const controller = reused?.did ?? minted!.did
     const request = buildCapabilityRequest({
       controller,
       collection,
@@ -278,23 +428,37 @@ export async function runRequestGrant(options: {
 
     const zcaps = await awaitGrantedCapabilities({ exchangeUrl, timeoutMs })
     let savedPaths: string[] = []
+    let handles: string[] = []
     if (save) {
       const description =
         options.description !== undefined
           ? { description: options.description }
           : {}
-      await saveAgentDid({ keyPair, didDocument, handle, ...description })
-      savedPaths = await saveCapabilities({ zcaps, handle, ...description })
+      handles = await assignZcapHandles({ zcaps, base: baseHandle })
+      if (minted !== undefined) {
+        await saveAgentDid({
+          keyPair: minted.keyPair,
+          didDocument: minted.didDocument,
+          handle: baseHandle,
+          ...description
+        })
+      }
+      savedPaths = await saveCapabilities({ zcaps, handles, ...description })
     }
     for (const savedPath of savedPaths) {
       console.error(`Capability saved to ${savedPath}`)
     }
     if (!save) {
       console.error(
-        'Not saved (--no-save): the grantee key was discarded, so these ' +
-          'capabilities cannot be invoked by a later command.'
+        minted === undefined
+          ? 'Not saved (--no-save): the capabilities were not stored.'
+          : 'Not saved (--no-save): the grantee key was discarded, so these ' +
+              'capabilities cannot be invoked by a later command.'
       )
     }
+    const handle = handles[0]
+    const didRef =
+      minted === undefined ? (reused?.handle ?? controller) : baseHandle
 
     const encoded = zcaps.map(zcap => encodeCapability(zcap))
     if (options.json) {
@@ -302,7 +466,7 @@ export async function runRequestGrant(options: {
         JSON.stringify(
           {
             controller,
-            ...(save && { handle }),
+            ...(handle !== undefined && { handle }),
             interactionUrl,
             ...(walletUrl !== undefined && { walletUrl }),
             capabilities: zcaps,
@@ -315,11 +479,11 @@ export async function runRequestGrant(options: {
       return 0
     }
     console.error(
-      save
-        ? `Granted. Use it with --capability ${handle}, for example:\n` +
+      handle === undefined
+        ? 'Granted.'
+        : `Granted. Use it with --capability ${handle}, for example:\n` +
             `  di was put ./index.html --capability ${handle} ` +
-            `--did ${handle} --resource index.html --content-type text/html`
-        : 'Granted.'
+            `--did ${didRef} --resource index.html --content-type text/html`
     )
     for (const value of encoded) {
       console.log(value)
