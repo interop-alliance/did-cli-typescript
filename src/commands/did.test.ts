@@ -78,6 +78,25 @@ async function createWebvh(...extraArgs: string[]): Promise<void> {
   )
 }
 
+/**
+ * Replace the global `fetch` with a mock that answers every request with the
+ * given status and body -- standing in for the served did:webvh log that the
+ * fast-forward check reads. Returns the mock so tests can inspect its calls.
+ */
+function mockServedLog({
+  status,
+  body = ''
+}: {
+  status: number
+  body?: string
+}) {
+  return mock.method(
+    globalThis,
+    'fetch',
+    async () => new Response(body, { status })
+  )
+}
+
 describe('di did', () => {
   let logs: string[]
   let errors: string[]
@@ -96,6 +115,9 @@ describe('di did', () => {
     mock.method(process, 'exit', (code: number) => {
       exitCode = code
     })
+    // No test reaches the network: by default the served did:webvh log is
+    // unpublished (404), which the fast-forward check treats as empty.
+    mockServedLog({ status: 404 })
   })
 
   afterEach(() => {
@@ -1702,6 +1724,257 @@ describe('di did', () => {
       )
       assert.equal(exitCode, 1)
       assert.ok(errors[0].includes('only supported for did:webvh'))
+    })
+  })
+
+  describe('did:webvh fast-forward check', () => {
+    /**
+     * Create a saved did:webvh DID (without pre-rotation) under a fresh temp
+     * DIDS_DIR, returning the dir, the DID, and the path of its history log.
+     */
+    async function createSavedWebvh(): Promise<{
+      didsDir: string
+      did: string
+      logPath: string
+    }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await createWebvh('--save', '--no-prerotation')
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      errors.length = 0
+      return { didsDir, did, logPath: join(didsDir, 'webvh', `${did}.jsonl`) }
+    }
+
+    /**
+     * Append one entry (adding a service) to the stored log without the check
+     * (`--offline`).
+     */
+    async function appendOffline(
+      did: string,
+      serviceId: string
+    ): Promise<void> {
+      await makeDidCommand().parseAsync(
+        [
+          'add-service',
+          did,
+          '--id',
+          serviceId,
+          '--type',
+          'LinkedDomains',
+          '--endpoint',
+          'https://example.com',
+          '--yes',
+          '--offline'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, undefined, errors.join('\n'))
+      logs.length = 0
+      errors.length = 0
+    }
+
+    async function addService(did: string, ...extraArgs: string[]) {
+      await makeDidCommand().parseAsync(
+        [
+          'add-service',
+          did,
+          '--id',
+          'files',
+          '--type',
+          'LinkedDomains',
+          '--endpoint',
+          'https://example.com',
+          '--yes',
+          ...extraArgs
+        ],
+        { from: 'user' }
+      )
+    }
+
+    it('proceeds when the served log equals the local log', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const fetchMock = mockServedLog({
+          status: 200,
+          body: await readFile(logPath, 'utf8')
+        })
+        await addService(did)
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 1)
+        assert.equal(
+          fetchMock.mock.calls[0].arguments[0],
+          'https://example.com/.well-known/did.jsonl'
+        )
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '2')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('proceeds when the served log is behind the local log', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const servedText = await readFile(logPath, 'utf8')
+        await appendOffline(did, 'dwn')
+        mockServedLog({ status: 200, body: servedText })
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const meta = await resolveStoredWebvhMeta(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '3')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('proceeds when the log is unpublished (served 404)', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        const fetchMock = mockServedLog({ status: 404 })
+        const newKey = await Ed25519VerificationKey.generate()
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'replace-key',
+            did,
+            '--verification-key',
+            newKey.publicKeyMultibase,
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 1)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses when the served log is ahead, leaving the local log unchanged', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const localText = await readFile(logPath, 'utf8')
+        await appendOffline(did, 'dwn')
+        const servedText = await readFile(logPath, 'utf8')
+        // Roll the local copy back, as on a second admin machine.
+        await writeFile(logPath, localText)
+        mockServedLog({ status: 200, body: servedText })
+
+        await addService(did)
+        assert.equal(exitCode, 1)
+        const message = errors.join('\n')
+        assert.ok(message.includes(did), message)
+        assert.ok(
+          message.includes('local: 1 entries, served: 2 entries'),
+          message
+        )
+        assert.equal(await readFile(logPath, 'utf8'), localText)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses when the served log has diverged from the local log', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const baseText = await readFile(logPath, 'utf8')
+        await appendOffline(did, 'dwn')
+        const servedText = await readFile(logPath, 'utf8')
+        await writeFile(logPath, baseText)
+        await appendOffline(did, 'other')
+        const localText = await readFile(logPath, 'utf8')
+        mockServedLog({ status: 200, body: servedText })
+
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'files', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('diverged'), errors.join('\n'))
+        assert.equal(await readFile(logPath, 'utf8'), localText)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses when the served log cannot be fetched', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const localText = await readFile(logPath, 'utf8')
+        mockServedLog({ status: 500 })
+        await addService(did)
+        assert.equal(exitCode, 1)
+        const message = errors.join('\n')
+        assert.ok(message.includes('HTTP 500'), message)
+        assert.ok(message.includes('--offline'), message)
+
+        exitCode = undefined
+        errors.length = 0
+        mock.method(globalThis, 'fetch', async () => {
+          throw new TypeError('fetch failed')
+        })
+        await addService(did)
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('fetch failed'))
+        assert.equal(await readFile(logPath, 'utf8'), localText)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('reports a timed-out fetch with the --offline hint', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const localText = await readFile(logPath, 'utf8')
+        mock.method(globalThis, 'fetch', async () => {
+          throw new DOMException('The operation was aborted', 'TimeoutError')
+        })
+        await addService(did)
+        assert.equal(exitCode, 1)
+        const message = errors.join('\n')
+        assert.ok(message.includes('no response within'), message)
+        assert.ok(message.includes('--offline'), message)
+        assert.equal(await readFile(logPath, 'utf8'), localText)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('refuses a served log whose line is not an entry object', async () => {
+      const { didsDir, did, logPath } = await createSavedWebvh()
+      try {
+        const localText = await readFile(logPath, 'utf8')
+        mockServedLog({ status: 200, body: 'null\n' })
+        await addService(did)
+        assert.equal(exitCode, 1)
+        const message = errors.join('\n')
+        assert.ok(message.includes('not a valid did:webvh log'), message)
+        assert.ok(message.includes('Line 1'), message)
+        assert.equal(await readFile(logPath, 'utf8'), localText)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--offline skips the fetch', async () => {
+      const { didsDir, did } = await createSavedWebvh()
+      try {
+        const fetchMock = mockServedLog({ status: 500 })
+        await addService(did, '--offline')
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        await makeDidCommand().parseAsync(
+          ['remove-service', did, '--id', 'files', '--yes', '--offline'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 0)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
     })
   })
 

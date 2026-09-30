@@ -17,6 +17,10 @@
   `--purpose` is given. The creation-time vm id fragment mode is kept, the
   pre-rotation ratchet advances as in `add-service`, and a stored secret of
   the replaced key is removed from the keys file.
+- did:webvh appends (`add-service`, `remove-service`, `webvh rotate-keys`,
+  `webvh replace-key`) fetch the served `did.jsonl` first and refuse when it
+  has entries the local log lacks. A served 404 counts as an empty log.
+  The fetch gives up after 15 seconds. `--offline` skips the check.
 
 ## 0.16.0 - 2026-09-27
 

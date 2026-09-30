@@ -81,6 +81,8 @@ export function vmIdFragmentModeOf(
  * @param [options.keepOldKey] {boolean}   Retain the retired update key secret
  *   (pre-rotation path only).
  * @param [options.yes] {boolean}   Skip the confirmation prompt.
+ * @param [options.offline] {boolean}   Skip the fast-forward check against
+ *   the served log.
  * @returns {Promise<number>}   The process exit code.
  */
 export async function runReplaceKey({
@@ -88,13 +90,15 @@ export async function runReplaceKey({
   verificationKey,
   purpose,
   keepOldKey,
-  yes
+  yes,
+  offline
 }: {
   didRef: string
   verificationKey: string
   purpose?: string[]
   keepOldKey?: boolean
   yes?: boolean
+  offline?: boolean
 }): Promise<number> {
   let resolved: string | undefined
   try {
@@ -200,6 +204,7 @@ export async function runReplaceKey({
       console.error('Removed the replaced key from the keys file.')
     },
     yes,
-    keepOldKey
+    keepOldKey,
+    offline
   })
 }

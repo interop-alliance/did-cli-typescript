@@ -729,6 +729,8 @@ Flags:
   prior commitment.
 - `--keep-old-key` -- retain the retired update key's secret in the sidecar
   instead of dropping it.
+- `--offline` -- skip the fast-forward check against the served log (see
+  [did:webvh fast-forward check](#didwebvh-fast-forward-check)).
 - `--with-seed` -- emit the secret key seed of the new/next update key this
   rotation generates (the staged next key when pre-rotation stays armed, or the
   freshly generated active key in an ordinary rotation). Honors`SECRET_KEY_SEED`
@@ -766,6 +768,7 @@ Flags:
   (default: those of the method being replaced).
 - `--keep-old-key` -- pre-rotation only: retain the retired update key's secret
   in the sidecar instead of dropping it.
+- `--offline` -- skip the fast-forward check against the served log.
 - `-y`, `--yes` -- skip the confirmation prompt.
 
 As with the service commands, when pre-rotation is armed the update-key ratchet
@@ -821,6 +824,19 @@ the update-key ratchet is **advanced** as part of the change (the staged key is
 revealed and activated, and a fresh next key is staged), exactly as in
 `webvh rotate-keys`. Pass `--keep-old-key` to retain the retired update key's
 secret in that case.
+Pass `--offline` to skip the fast-forward check against the served log.
+
+#### did:webvh fast-forward check
+
+Every command that appends to a stored `did:webvh` log (`add-service`,
+`remove-service`, `webvh rotate-keys`, `webvh replace-key`) first fetches the
+served log (`<url>/did.jsonl`, the file a resolver reads). The local copy is
+the source of truth, but a failed upload or a second admin machine can leave
+the two copies diverged. The command refuses to sign when the served log has
+entries the local log lacks, or differs from it at some entry. A served log
+that is behind the local one passes, as does a 404 (never published, or
+wiped). Any other fetch failure is an error. Pass `--offline` to skip the
+check.
 
 #### List DIDs
 

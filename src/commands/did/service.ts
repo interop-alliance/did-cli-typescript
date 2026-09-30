@@ -238,18 +238,22 @@ async function runWebServiceUpdate({
  * @param [options.yes] {boolean} skip the confirmation prompt.
  * @param [options.keepOldKey] {boolean} retain the retired update key secret
  *   (pre-rotation path only; default is to drop it).
+ * @param [options.offline] {boolean} skip the fast-forward check against the
+ *   served log.
  * @returns {Promise<number>} the process exit code
  */
 async function runWebvhServiceUpdate({
   targetDid,
   transform,
   yes,
-  keepOldKey
+  keepOldKey,
+  offline
 }: {
   targetDid: string
   transform: (current: ServiceEndpoint[], did: string) => ServiceEndpoint[]
   yes?: boolean
   keepOldKey?: boolean
+  offline?: boolean
 }): Promise<number> {
   return runWebvhDocumentUpdate({
     targetDid,
@@ -262,7 +266,8 @@ async function runWebvhServiceUpdate({
       services: transform(Array.isArray(doc?.service) ? doc.service : [], did)
     }),
     yes,
-    keepOldKey
+    keepOldKey,
+    offline
   })
 }
 
@@ -276,18 +281,22 @@ async function runWebvhServiceUpdate({
  * @param options.transform {(current: ServiceEndpoint[], did: string) => ServiceEndpoint[]}
  * @param [options.yes] {boolean} skip the did:webvh confirmation prompt.
  * @param [options.keepOldKey] {boolean} did:webvh pre-rotation path only.
+ * @param [options.offline] {boolean} did:webvh only: skip the fast-forward
+ *   check against the served log.
  * @returns {Promise<number>} the process exit code
  */
 export async function dispatchServiceUpdate({
   ref,
   transform,
   yes,
-  keepOldKey
+  keepOldKey,
+  offline
 }: {
   ref: string
   transform: (current: ServiceEndpoint[], did: string) => ServiceEndpoint[]
   yes?: boolean
   keepOldKey?: boolean
+  offline?: boolean
 }): Promise<number> {
   let resolved: string | undefined
   try {
@@ -301,7 +310,13 @@ export async function dispatchServiceUpdate({
     return runWebServiceUpdate({ did, transform })
   }
   if (did.startsWith('did:webvh:')) {
-    return runWebvhServiceUpdate({ targetDid: did, transform, yes, keepOldKey })
+    return runWebvhServiceUpdate({
+      targetDid: did,
+      transform,
+      yes,
+      keepOldKey,
+      offline
+    })
   }
   console.error(
     'add-service/remove-service are only supported for did:web and ' +

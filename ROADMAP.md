@@ -116,26 +116,11 @@ the command is the only piece that needs extending.
   - [ ] The stored artifacts (document, log, keys, update-keys, metadata) are
         renamed to the new DID string, and the handle keeps pointing at them
   - [ ] Tests resolve the moved log and assert the new DID and unchanged SCID
+  - [ ] Runs the CLI-23 fast-forward check before signing (through
+        `resolveWebvhForUpdate`) and accepts `--offline`
 
 Needed by WAS-164's `SERVER_URL` move runbook. `did create webvh` already
 defaults to `portable: true`, but nothing exposes the move.
-
-### CLI-23: Fast-forward check against the served did:webvh log
-
-- status: todo
-- priority: medium
-- labels: webvh, was-server-identity
-- acceptance:
-  - [ ] Every did:webvh append path (`add-service`, `remove-service`,
-        `rotate-keys`, CLI-21, CLI-22) fetches `<url>/did.jsonl` before
-        signing, and refuses when the served log has entries the local log
-        lacks; a served 404 (never published, or wiped) is treated as empty
-  - [ ] `--offline` skips the fetch
-  - [ ] Tests cover behind, equal, and unpublished cases with a mocked fetch
-
-Needed by WAS-164: the admin's local copy is the source of truth, but a `PUT`
-that failed after a local append, or a second admin machine, leaves the two
-copies diverged. Today every append path reads only the local log.
 
 ---
 

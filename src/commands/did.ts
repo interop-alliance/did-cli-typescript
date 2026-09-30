@@ -204,6 +204,10 @@ export function makeDidCommand(): Command {
         'the sidecar (default: drop it)'
     )
     .option('-y, --yes', 'skip the did:webvh confirmation prompt')
+    .option(
+      '--offline',
+      'skip the fast-forward check against the served did:webvh log'
+    )
     .action(
       async (
         did: string,
@@ -214,6 +218,7 @@ export function makeDidCommand(): Command {
           endpointJson?: string
           keepOldKey?: boolean
           yes?: boolean
+          offline?: boolean
         }
       ) => {
         try {
@@ -242,7 +247,8 @@ export function makeDidCommand(): Command {
             ref: did,
             transform,
             yes: options.yes,
-            keepOldKey: options.keepOldKey
+            keepOldKey: options.keepOldKey,
+            offline: options.offline
           })
         )
       }
@@ -267,10 +273,19 @@ export function makeDidCommand(): Command {
         'the sidecar (default: drop it)'
     )
     .option('-y, --yes', 'skip the did:webvh confirmation prompt')
+    .option(
+      '--offline',
+      'skip the fast-forward check against the served did:webvh log'
+    )
     .action(
       async (
         did: string,
-        options: { id: string; keepOldKey?: boolean; yes?: boolean }
+        options: {
+          id: string
+          keepOldKey?: boolean
+          yes?: boolean
+          offline?: boolean
+        }
       ) => {
         const transform = (
           current: ServiceEndpoint[],
@@ -286,7 +301,8 @@ export function makeDidCommand(): Command {
             ref: did,
             transform,
             yes: options.yes,
-            keepOldKey: options.keepOldKey
+            keepOldKey: options.keepOldKey,
+            offline: options.offline
           })
         )
       }
@@ -398,6 +414,10 @@ export function makeDidCommand(): Command {
         'generates (honors SECRET_KEY_SEED if set, else generated)'
     )
     .option('-y, --yes', 'skip the confirmation prompt')
+    .option(
+      '--offline',
+      'skip the fast-forward check against the served did:webvh log'
+    )
     .action(
       (
         didRef: string,
@@ -408,6 +428,7 @@ export function makeDidCommand(): Command {
           keepOldKey?: boolean
           withSeed?: boolean
           yes?: boolean
+          offline?: boolean
         }
       ) => runAndExit(runRotateKeys({ didRef, ...options }))
     )
@@ -438,6 +459,10 @@ export function makeDidCommand(): Command {
         'sidecar (default: drop it)'
     )
     .option('-y, --yes', 'skip the confirmation prompt')
+    .option(
+      '--offline',
+      'skip the fast-forward check against the served did:webvh log'
+    )
     .action(
       (
         didRef: string,
@@ -446,6 +471,7 @@ export function makeDidCommand(): Command {
           purpose?: string[]
           keepOldKey?: boolean
           yes?: boolean
+          offline?: boolean
         }
       ) => runAndExit(runReplaceKey({ didRef, ...options }))
     )

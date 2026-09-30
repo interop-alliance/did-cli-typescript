@@ -451,3 +451,21 @@ Needed by WAS-164's seed-rotation runbook: after the server's
 `exportSigningKey` under `assertionMethod` and drops the old method. Today
 `add-key` is did:web only, there is no remove-key, and `webvh rotate-keys`
 never touches verification methods.
+
+### CLI-23: Fast-forward check against the served did:webvh log
+
+- status: done
+- done: 2026-09-30
+- priority: medium
+- labels: webvh, was-server-identity
+- acceptance:
+  - [x] Every did:webvh append path (`add-service`, `remove-service`,
+        `rotate-keys`, CLI-21, CLI-22) fetches `<url>/did.jsonl` before
+        signing, and refuses when the served log has entries the local log
+        lacks; a served 404 (never published, or wiped) is treated as empty
+  - [x] `--offline` skips the fetch
+  - [x] Tests cover behind, equal, and unpublished cases with a mocked fetch
+
+Needed by WAS-164: the admin's local copy is the source of truth, but a `PUT`
+that failed after a local append, or a second admin machine, leaves the two
+copies diverged. Today every append path reads only the local log.

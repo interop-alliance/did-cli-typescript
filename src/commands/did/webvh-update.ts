@@ -3,7 +3,7 @@
  * did:webvh is authored by appending entries to its history log (the source of
  * truth); each entry must be signed by an update (authorization) key. This
  * module owns the shared machinery for that -- loading and resolving the log,
- * selecting the signer (ordinary active key vs. a pre-rotation staged reveal),
+ * checking it against the served copy (the fast-forward check), selecting the signer (ordinary active key vs. a pre-rotation staged reveal),
  * and persisting the update-keys sidecar -- plus `runWebvhDocumentUpdate`
  * (append a document-overlay entry, advancing the pre-rotation ratchet when one
  * is armed) and `runRotateKeys`, which rotates the update key itself. The
@@ -13,6 +13,7 @@ import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import {
   deriveNextKeyHash,
+  getFileUrl,
   resolveDIDFromLog,
   updateDID,
   type DIDLog
@@ -38,17 +39,42 @@ import {
 
 /**
  * Parse a raw did:webvh history log (newline-delimited JSON) into the entry
- * array the library's resolver/updater expect, ignoring blank lines.
+ * array the library's resolver/updater expect, ignoring blank lines. Each line
+ * must be a JSON object with a string `versionId`; anything else (e.g. a bare
+ * `null` or number) is rejected here so callers see a parse error instead of a
+ * property access crash later.
  *
  * @param logText {string}
  * @returns {DIDLog}
+ * @throws {Error} if a line is not valid JSON or not a log entry.
  */
 export function parseDidLog(logText: string): DIDLog {
   return logText
     .split('\n')
     .filter(line => line.trim().length > 0)
-    .map(line => JSON.parse(line)) as DIDLog
+    .map((line, index) => {
+      const entry = JSON.parse(line)
+      if (
+        entry === null ||
+        typeof entry !== 'object' ||
+        Array.isArray(entry) ||
+        typeof entry.versionId !== 'string'
+      ) {
+        throw new Error(
+          `Line ${index + 1} is not a did:webvh log entry (expected an ` +
+            'object with a string versionId).'
+        )
+      }
+      return entry
+    }) as DIDLog
 }
+
+/**
+ * How long the fast-forward check waits for the served log before giving up,
+ * so a host that accepts the connection but never answers does not hang the
+ * command for the OS-level TCP timeout.
+ */
+const FETCH_TIMEOUT_MS = 15_000
 
 /**
  * Ask the user to confirm a hard-to-undo action. Returns true immediately when
@@ -89,24 +115,108 @@ export async function confirmAction({
 }
 
 /**
+ * Fast-forward check: fetch the served history log of a did:webvh DID (the
+ * `did.jsonl` a resolver reads) and refuse when it has entries the local log
+ * lacks. The local copy is the source of truth, but a failed upload after a
+ * local append, or a second admin machine, can leave the two diverged; an
+ * append on a stale local log would fork the served history. A served 404
+ * (never published, or wiped) counts as an empty log. A served log that is
+ * behind the local one (e.g. an earlier upload failed) passes.
+ *
+ * @param options {object}
+ * @param options.did {string} the did:webvh DID.
+ * @param options.log {DIDLog} the local history log.
+ * @returns {Promise<void>}
+ * @throws {Error} if the served log cannot be fetched or parsed, is ahead of
+ *   the local log, or has diverged from it.
+ */
+export async function assertFastForward({
+  did,
+  log
+}: {
+  did: string
+  log: DIDLog
+}): Promise<void> {
+  const url = getFileUrl(did)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    })
+  } catch (err) {
+    const reason =
+      (err as Error).name === 'TimeoutError'
+        ? `no response within ${FETCH_TIMEOUT_MS / 1000}s`
+        : (err as Error).message
+    throw new Error(
+      `Could not fetch the served log at ${url}: ${reason}. ` +
+        'Pass --offline to skip the fast-forward check.',
+      { cause: err }
+    )
+  }
+  if (response.status === 404) {
+    return
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Could not fetch the served log at ${url}: HTTP ${response.status}. ` +
+        'Pass --offline to skip the fast-forward check.'
+    )
+  }
+  let served: DIDLog
+  try {
+    served = parseDidLog(await response.text())
+  } catch (err) {
+    throw new Error(
+      `The served log at ${url} is not a valid did:webvh log: ` +
+        `${(err as Error).message}`,
+      { cause: err }
+    )
+  }
+  const counts = `local: ${log.length} entries, served: ${served.length} entries`
+  const overlap = Math.min(log.length, served.length)
+  for (let index = 0; index < overlap; index++) {
+    if (served[index].versionId !== log[index].versionId) {
+      throw new Error(
+        `Refusing to append to ${did}: the served log at ${url} has ` +
+          `diverged from the local log at entry ${index + 1} (${counts}). ` +
+          'Reconcile the two copies before retrying.'
+      )
+    }
+  }
+  if (served.length > log.length) {
+    throw new Error(
+      `Refusing to append to ${did}: the served log at ${url} has entries ` +
+        `the local log lacks (${counts}). Fetch the served log and ` +
+        'reconcile the local copy before retrying.'
+    )
+  }
+}
+
+/**
  * Load and resolve a locally stored did:webvh history log in preparation for an
  * update, asserting it is updatable. The log is the source of truth for a
- * stored did:webvh, so its absence is what "not locally stored" means.
+ * stored did:webvh, so its absence is what "not locally stored" means. Unless
+ * `offline` is set, the fast-forward check (`assertFastForward`) runs against
+ * the served log.
  *
  * @param options {object}
  * @param options.targetDid {string} the resolved did:webvh DID.
  * @param options.action {string} verb used in error messages (e.g.
  *   `rotate keys`, `update services`).
+ * @param [options.offline] {boolean} skip the fast-forward check.
  * @returns {Promise<{ log, doc, meta }>}
  * @throws {Error} with a user-facing message if the log is missing, fails to
- *   resolve, or the DID is deactivated.
+ *   resolve, the DID is deactivated, or the fast-forward check fails.
  */
 export async function resolveWebvhForUpdate({
   targetDid,
-  action
+  action,
+  offline
 }: {
   targetDid: string
   action: string
+  offline?: boolean
 }): Promise<{
   log: DIDLog
   doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
@@ -132,6 +242,9 @@ export async function resolveWebvhForUpdate({
   }
   if (resolved.meta.deactivated) {
     throw new Error(`Cannot ${action}: the DID is deactivated.`)
+  }
+  if (!offline) {
+    await assertFastForward({ did: targetDid, log })
   }
   return { log, doc: resolved.doc, meta: resolved.meta }
 }
@@ -473,6 +586,8 @@ export async function persistUpdateKeysSidecar({
  * @param [options.yes] {boolean} skip the confirmation prompt.
  * @param [options.keepOldKey] {boolean} retain the retired update key secret
  *   (pre-rotation path only; default is to drop it).
+ * @param [options.offline] {boolean} skip the fast-forward check against the
+ *   served log.
  * @returns {Promise<number>} the process exit code
  */
 export async function runWebvhDocumentUpdate({
@@ -483,7 +598,8 @@ export async function runWebvhDocumentUpdate({
   buildUpdate,
   onPersisted,
   yes,
-  keepOldKey
+  keepOldKey,
+  offline
 }: {
   targetDid: string
   action: string
@@ -499,12 +615,17 @@ export async function runWebvhDocumentUpdate({
   onPersisted?: (result: Awaited<ReturnType<typeof updateDID>>) => Promise<void>
   yes?: boolean
   keepOldKey?: boolean
+  offline?: boolean
 }): Promise<number> {
   let log: DIDLog
   let doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
   let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
   try {
-    ;({ log, doc, meta } = await resolveWebvhForUpdate({ targetDid, action }))
+    ;({ log, doc, meta } = await resolveWebvhForUpdate({
+      targetDid,
+      action,
+      offline
+    }))
   } catch (err) {
     console.error((err as Error).message)
     return 1
@@ -633,6 +754,8 @@ export async function runWebvhDocumentUpdate({
  * @param [options.keepOldKey] {boolean}   Retain the retired update key secret.
  * @param [options.withSeed] {boolean}   Emit the new/next update key's seed.
  * @param [options.yes] {boolean}   Skip the confirmation prompt.
+ * @param [options.offline] {boolean}   Skip the fast-forward check against
+ *   the served log.
  * @returns {Promise<number>}   The process exit code.
  */
 export async function runRotateKeys(options: {
@@ -643,6 +766,7 @@ export async function runRotateKeys(options: {
   keepOldKey?: boolean
   withSeed?: boolean
   yes?: boolean
+  offline?: boolean
 }): Promise<number> {
   const { didRef } = options
   let resolved: string | undefined
@@ -674,7 +798,8 @@ export async function runRotateKeys(options: {
   try {
     ;({ log, meta } = await resolveWebvhForUpdate({
       targetDid,
-      action: 'rotate keys'
+      action: 'rotate keys',
+      offline: options.offline
     }))
   } catch (err) {
     console.error((err as Error).message)
