@@ -68,6 +68,16 @@ async function storedDids(didsDir: string): Promise<string[]> {
   return dids.sort()
 }
 
+/**
+ * Run `di did create webvh --url https://example.com` with extra arguments.
+ */
+async function createWebvh(...extraArgs: string[]): Promise<void> {
+  await makeDidCommand().parseAsync(
+    ['create', 'webvh', '--url', 'https://example.com', ...extraArgs],
+    { from: 'user' }
+  )
+}
+
 describe('di did', () => {
   let logs: string[]
   let errors: string[]
@@ -677,6 +687,126 @@ describe('di did', () => {
       assert.equal(exitCode, 1)
       assert.ok(errors[0].includes('watcher URL'))
     })
+
+    it('--verification-key uses an external key under assertionMethod with multibase fragments', async () => {
+      const externalKey = await Ed25519VerificationKey.generate()
+      await createWebvh(
+        '--verification-key',
+        externalKey.publicKeyMultibase,
+        '--purpose',
+        'assertionMethod',
+        '--vm-id-fragment',
+        'multibase'
+      )
+      assert.equal(exitCode, undefined)
+      const { id: did, didDocument: doc } = JSON.parse(logs[0])
+      assert.equal(doc.verificationMethod.length, 1)
+      const method = doc.verificationMethod[0]
+      assert.equal(method.publicKeyMultibase, externalKey.publicKeyMultibase)
+      assert.equal(method.id, `${did}#${externalKey.publicKeyMultibase}`)
+      assert.deepEqual(doc.assertionMethod, [method.id])
+      for (const relationship of [
+        'authentication',
+        'capabilityInvocation',
+        'capabilityDelegation',
+        'keyAgreement'
+      ]) {
+        assert.deepEqual(doc[relationship] ?? [], [], relationship)
+      }
+    })
+
+    it('--save with --verification-key stores no secret for the external key', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        const externalKey = await Ed25519VerificationKey.generate()
+        await createWebvh(
+          '--verification-key',
+          externalKey.publicKeyMultibase,
+          '--save'
+        )
+        const did = JSON.parse(logs[0]).id
+        const webvhDir = join(didsDir, 'webvh')
+        const files = (await readdir(webvhDir)).sort()
+        assert.deepEqual(files, [
+          `${did}.json`,
+          `${did}.jsonl`,
+          `${did}.keys.json`,
+          `${did}.meta.json`,
+          `${did}.update-keys.json`
+        ])
+        // The keys file holds no entry for the external document key.
+        const keysContent = await readJson(join(webvhDir, `${did}.keys.json`))
+        assert.deepEqual(keysContent, {})
+        // The external key is not an update key either.
+        const updateKeysText = await readFile(
+          join(webvhDir, `${did}.update-keys.json`),
+          'utf8'
+        )
+        assert.ok(!updateKeysText.includes(externalKey.publicKeyMultibase))
+        const doc = await readJson<{
+          verificationMethod: { publicKeyMultibase: string }[]
+        }>(join(webvhDir, `${did}.json`))
+        assert.equal(
+          doc.verificationMethod[0].publicKeyMultibase,
+          externalKey.publicKeyMultibase
+        )
+        await resolveStoredWebvhMeta(didsDir, did)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--purpose selects the document key relationships', async () => {
+      await createWebvh('--purpose', 'authentication', 'capabilityInvocation')
+      const doc = JSON.parse(logs[0]).didDocument
+      const vmId = doc.verificationMethod[0].id
+      assert.deepEqual(doc.authentication, [vmId])
+      assert.deepEqual(doc.capabilityInvocation, [vmId])
+      assert.deepEqual(doc.assertionMethod ?? [], [])
+      assert.deepEqual(doc.capabilityDelegation ?? [], [])
+    })
+
+    it('--purpose rejects an unknown relationship', async () => {
+      await createWebvh('--purpose', 'signing')
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('Invalid --purpose "signing"'))
+    })
+
+    it('--purpose rejects keyAgreement for the Ed25519 document key', async () => {
+      await createWebvh('--purpose', 'keyAgreement')
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('X25519'))
+    })
+
+    it('--vm-id-fragment rejects an unknown mode', async () => {
+      await createWebvh('--vm-id-fragment', 'long')
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('Invalid --vm-id-fragment "long"'))
+    })
+
+    it('--verification-key rejects a malformed key', async () => {
+      await createWebvh('--verification-key', 'z6Mkbogus')
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('Invalid --verification-key'))
+    })
+
+    for (const [flag, value] of [
+      [
+        '--verification-key',
+        'z6MknydBKZsd56qwNtXmVAtZXWcKmh46rS2MxaZMoavoqJMt'
+      ],
+      ['--purpose', 'assertionMethod'],
+      ['--vm-id-fragment', 'multibase']
+    ]) {
+      it(`${flag} is rejected for did:key`, async () => {
+        await makeDidCommand().parseAsync(['create', 'key', flag, value], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes(`${flag} is only supported for did:webvh`))
+      })
+    }
 
     it('exits with error for unknown method', async () => {
       await makeDidCommand().parseAsync(['create', 'unknown'], { from: 'user' })

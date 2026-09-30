@@ -398,3 +398,33 @@ Open decisions to settle here:
 
 Decided: `--did <handle>`, and the new zcaps go under the next free
 `<handle>-N` suffix (or an explicit free `--handle`).
+
+### CLI-20: `did create webvh` with an external document key, purposes, and vm id fragment
+
+- status: done
+- done: 2026-09-30
+- priority: high
+- labels: webvh, was-server-identity
+- acceptance:
+  - [x] `--verification-key <publicKeyMultibase>` uses the given public key as
+        the document's `Multikey` verification method instead of generating
+        one; no secret is stored for it and `--save` writes no keys file entry
+        for it
+  - [x] `--purpose <purpose...>` selects the verification relationships the
+        document key is wired into (default: the current
+        `DEFAULT_VERIFICATION_PURPOSES`); `assertionMethod` alone is a valid
+        choice
+  - [x] `--vm-id-fragment <short|multibase>` is passed through to `createDID`
+        (default: the library default); no new stored field, since the mode is
+        recoverable from the stored document (a multibase fragment equals the
+        method's `publicKeyMultibase`) and the library honors an explicit
+        method `id` on later appends
+  - [x] Tests cover an external key under `assertionMethod` alone with
+        multibase fragments
+
+Needed by was-teaching-server's WAS-164: the server identity log names the
+server's export-signing key (read off `/service`, public only) as its single
+`assertionMethod` method with multibase fragments, and the admin must never
+hold the server seed. Today `did create webvh` always generates and stores a
+document key wired into every relationship, so the resulting document is one
+the server refuses to advertise.

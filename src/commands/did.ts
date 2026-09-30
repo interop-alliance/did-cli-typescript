@@ -80,6 +80,22 @@ export function makeDidCommand(): Command {
         '(repeatable; https:// or http://localhost)'
     )
     .option(
+      '--verification-key <publicKeyMultibase>',
+      'use this Ed25519 Multikey public key (z6Mk...) as the did:webvh ' +
+        'document verification method instead of generating one (no secret ' +
+        'is stored for it)'
+    )
+    .option(
+      '--purpose <purpose...>',
+      'verification relationship(s) to wire the did:webvh document key into ' +
+        `(default: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')})`
+    )
+    .option(
+      '--vm-id-fragment <mode>',
+      'did:webvh verification method id fragment: short or multibase ' +
+        '(default: the library default)'
+    )
+    .option(
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
@@ -107,6 +123,9 @@ export function makeDidCommand(): Command {
           witness?: string[]
           witnessThreshold?: string
           watcher?: string[]
+          verificationKey?: string
+          purpose?: string[]
+          vmIdFragment?: string
           withSeed?: boolean
           save?: boolean
           handle?: string

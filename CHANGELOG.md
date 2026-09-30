@@ -1,5 +1,17 @@
 # History
 
+## 0.17.0 - TBD
+
+### Added
+
+- `did create webvh --verification-key <publicKeyMultibase>` uses an existing
+  Ed25519 public key as the document verification method. No secret is stored
+  for it.
+- `did create webvh --purpose <purpose...>` selects the verification
+  relationships of the document key.
+- `did create webvh --vm-id-fragment <short|multibase>` selects the
+  verification method id fragment.
+
 ## 0.16.0 - 2026-09-27
 
 ### Added

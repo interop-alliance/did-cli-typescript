@@ -666,6 +666,27 @@ A few more create-time options are recorded in the signed history-log
   --watcher https://watcher.example.com --save
 ```
 
+Three options shape the document verification method:
+
+- `--verification-key <publicKeyMultibase>` -- use an existing Ed25519 Multikey
+  public key (`z6Mk...`) instead of generating a document key. No secret is
+  stored for it, so with `--save` the `<did>.keys.json` file is empty.
+- `--purpose <purpose...>` -- the verification relationships the document key
+  is wired into. Allowed: `authentication`, `assertionMethod`,
+  `capabilityDelegation`, `capabilityInvocation` (the default is all four).
+- `--vm-id-fragment <short|multibase>` -- the verification method id fragment.
+  `short` (the default) uses the last 8 characters of the key; `multibase`
+  uses the whole `publicKeyMultibase`.
+
+For example, a server identity DID that lists the server's public signing key
+under `assertionMethod` only, without the admin ever holding its secret:
+
+```
+./di did create webvh --url https://example.com \
+  --verification-key z6Mk... --purpose assertionMethod \
+  --vm-id-fragment multibase --save
+```
+
 #### Rotate a did:webvh update key
 
 Rotate the update (authorization) key of a locally stored `did:webvh` DID with

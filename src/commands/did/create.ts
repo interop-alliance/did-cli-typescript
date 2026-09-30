@@ -7,7 +7,10 @@
  */
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
-import { createDID } from '@interop/did-method-webvh'
+import {
+  createDID,
+  type DataIntegrityProofPurpose
+} from '@interop/did-method-webvh'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
@@ -44,6 +47,26 @@ export const DEFAULT_VERIFICATION_PURPOSES = [
   'capabilityDelegation',
   'capabilityInvocation'
 ] as const
+
+/**
+ * Whether `value` is a relationship a did:webvh document key may be wired
+ * into with `--purpose` (keyAgreement is excluded because it needs an X25519
+ * key, and the document key is always Ed25519).
+ */
+function isWebvhPurpose(value: string): value is DataIntegrityProofPurpose {
+  return (DEFAULT_VERIFICATION_PURPOSES as readonly string[]).includes(value)
+}
+
+/**
+ * Verification method id fragment modes accepted by `--vm-id-fragment`.
+ */
+const VM_ID_FRAGMENT_MODES = ['short', 'multibase'] as const
+
+function isVmIdFragmentMode(
+  value: string
+): value is (typeof VM_ID_FRAGMENT_MODES)[number] {
+  return (VM_ID_FRAGMENT_MODES as readonly string[]).includes(value)
+}
 
 /**
  * Save the artifacts of a newly created DID: the DID document, its keys file,
@@ -91,6 +114,46 @@ export async function saveDidArtifacts({
     }
   }
   console.error(`DID saved to ${docPath}`)
+}
+
+/**
+ * Reject the did:webvh-only document key options (`--verification-key`,
+ * `--purpose`, `--vm-id-fragment`) for any other DID method. Prints the error
+ * and returns true when one of them was wrongly supplied.
+ *
+ * @param options {object}
+ * @param options.method {string}
+ * @param [options.verificationKey] {string}
+ * @param [options.purpose] {string[]}
+ * @param [options.vmIdFragment] {string}
+ * @returns {boolean}   true when a webvh-only option was rejected.
+ */
+function rejectWebvhOnlyOptions({
+  method,
+  verificationKey,
+  purpose,
+  vmIdFragment
+}: {
+  method: string
+  verificationKey?: string
+  purpose?: string[]
+  vmIdFragment?: string
+}): boolean {
+  if (method === 'webvh') {
+    return false
+  }
+  const given = Object.entries({
+    '--verification-key': verificationKey,
+    '--purpose': purpose,
+    '--vm-id-fragment': vmIdFragment
+  })
+    .filter(([, value]) => value !== undefined)
+    .map(([flag]) => flag)
+  if (given.length === 0) {
+    return false
+  }
+  console.error(`${given.join(', ')} is only supported for did:webvh`)
+  return true
 }
 
 /**
@@ -183,6 +246,12 @@ function printDidOutput({
  * @param [options.witness] {string[]}   did:webvh witness did:key DIDs.
  * @param [options.witnessThreshold] {string}   Required witness approvals.
  * @param [options.watcher] {string[]}   did:webvh watcher URLs.
+ * @param [options.verificationKey] {string}   did:webvh external document key
+ *   (Ed25519 `publicKeyMultibase`); no secret is generated or stored for it.
+ * @param [options.purpose] {string[]}   did:webvh document key verification
+ *   relationships (default: `DEFAULT_VERIFICATION_PURPOSES`).
+ * @param [options.vmIdFragment] {string}   did:webvh verification method id
+ *   fragment mode: short or multibase (default: the library default).
  * @param [options.withSeed] {boolean}   Include/derive the secret key seed.
  * @param [options.save] {boolean}   Save the DID to local storage.
  * @param [options.handle] {string}   Short tag stored in the metadata sidecar.
@@ -199,6 +268,9 @@ export async function runCreate(options: {
   witness?: string[]
   witnessThreshold?: string
   watcher?: string[]
+  verificationKey?: string
+  purpose?: string[]
+  vmIdFragment?: string
   withSeed?: boolean
   save?: boolean
   handle?: string
@@ -206,6 +278,9 @@ export async function runCreate(options: {
 }): Promise<number> {
   const method = options.method ?? 'key'
   if (!requireSaveForMetaFlags(options)) {
+    return 1
+  }
+  if (rejectWebvhOnlyOptions({ method, ...options })) {
     return 1
   }
   switch (method) {
@@ -487,6 +562,55 @@ export async function runCreate(options: {
         }
       }
 
+      // Document key relationships: default to everything but keyAgreement.
+      const purposes: DataIntegrityProofPurpose[] = []
+      for (const purpose of options.purpose ?? DEFAULT_VERIFICATION_PURPOSES) {
+        if (!isWebvhPurpose(purpose)) {
+          const reason =
+            purpose === 'keyAgreement'
+              ? ' (keyAgreement needs an X25519 key; the document key is Ed25519)'
+              : ''
+          console.error(
+            `Invalid --purpose "${purpose}"${reason}. ` +
+              `Supported: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')}`
+          )
+          return 1
+        }
+        purposes.push(purpose)
+      }
+
+      const vmIdFragment = options.vmIdFragment
+      if (vmIdFragment !== undefined && !isVmIdFragmentMode(vmIdFragment)) {
+        console.error(
+          `Invalid --vm-id-fragment "${vmIdFragment}". ` +
+            `Supported: ${VM_ID_FRAGMENT_MODES.join(', ')}`
+        )
+        return 1
+      }
+
+      // Document verification key V, decoupled from the update keys so
+      // that rotating the update key never disturbs the document. With
+      // --verification-key it is an external public-only key (validated
+      // here as an Ed25519 Multikey); otherwise it is generated.
+      const isExternalDocKey = options.verificationKey !== undefined
+      let docKey: Ed25519VerificationKey
+      if (options.verificationKey !== undefined) {
+        try {
+          docKey = await Ed25519VerificationKey.from({
+            publicKeyMultibase: options.verificationKey
+          })
+        } catch (err) {
+          console.error(
+            `Invalid --verification-key "${options.verificationKey}": ` +
+              'expected an Ed25519 Multikey public key (z6Mk...). ' +
+              (err as Error).message
+          )
+          return 1
+        }
+      } else {
+        docKey = await Ed25519VerificationKey.generate()
+      }
+
       const { secretKeySeed, seedBytes } = await deriveSeed({
         withSeed: options.withSeed
       })
@@ -497,10 +621,6 @@ export async function runCreate(options: {
         seed: seedBytes
       })
       const signer = makeWebvhEntrySigner(updateKey)
-
-      // Document verification key V, decoupled from the update keys so
-      // that rotating the update key never disturbs the document.
-      const docKey = await Ed25519VerificationKey.generate()
 
       // Staged next update key B: when pre-rotation is on, commit its
       // hash now so the next update must reveal it.
@@ -516,13 +636,15 @@ export async function runCreate(options: {
         ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
         ...(witness ? { witness } : {}),
         ...(watchers.length > 0 ? { watchers } : {}),
+        ...(vmIdFragment ? { vmIdFragment } : {}),
         verificationMethods: [
           {
             type: 'Multikey',
             publicKeyMultibase: docKey.publicKeyMultibase,
             // Wire the document key into the same relationships as did:web
-            // (everything but keyAgreement, which needs an X25519 key).
-            purpose: [...DEFAULT_VERIFICATION_PURPOSES]
+            // (everything but keyAgreement, which needs an X25519 key),
+            // unless --purpose selects a subset.
+            purpose: purposes
           }
         ]
       })
@@ -542,16 +664,19 @@ export async function runCreate(options: {
           )
           return 1
         }
+        // An external document key has no secret here, so its keys file
+        // is written empty and no key/DID association is recorded.
         docKey.id = docVmId
-        const exportedDoc = (await docKey.export({
-          publicKey: true,
-          secretKey: true
-        })) as { publicKeyMultibase?: string }
+        const exportedDoc = isExternalDocKey
+          ? undefined
+          : ((await docKey.export({ publicKey: true, secretKey: true })) as {
+              publicKeyMultibase?: string
+            })
         await saveDidArtifacts({
           method: 'webvh',
           didDocument: result.doc as { id: string },
-          exportedKeys: { [docVmId]: exportedDoc },
-          fingerprints: [exportedDoc.publicKeyMultibase],
+          exportedKeys: exportedDoc ? { [docVmId]: exportedDoc } : {},
+          fingerprints: [exportedDoc?.publicKeyMultibase],
           handle: options.handle,
           description: options.description
         })
