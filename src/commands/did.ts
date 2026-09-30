@@ -4,7 +4,8 @@
  * subcommand) and delegates each action to a `run*` function in the `did/`
  * modules: create/add-key in `./did/create.js`, service edits in
  * `./did/service.js`, read/manage operations in `./did/manage.js`, and the
- * did:webvh update-key plumbing plus rotate-keys in `./did/webvh-update.js`.
+ * did:webvh update-key plumbing plus rotate-keys in `./did/webvh-update.js`,
+ * and replace-key in `./did/replace-key.js`.
  */
 import { Command } from 'commander'
 import { type ServiceEndpoint } from '@interop/did-method-webvh'
@@ -25,6 +26,7 @@ import {
 } from './did/service.js'
 import { runGet, runList, runMeta, runRemove, runShow } from './did/manage.js'
 import { runRotateKeys } from './did/webvh-update.js'
+import { runReplaceKey } from './did/replace-key.js'
 
 export { parseDidLog } from './did/webvh-update.js'
 
@@ -358,7 +360,8 @@ export function makeDidCommand(): Command {
     .action((didRef: string) => runAndExit(runRemove({ didRef })))
 
   const webvh = new Command('webvh').description(
-    'Manage did:webvh DIDs: rotate update (authorization) keys'
+    'Manage did:webvh DIDs: rotate update (authorization) keys, replace the ' +
+      'document verification key'
   )
 
   webvh
@@ -407,6 +410,44 @@ export function makeDidCommand(): Command {
           yes?: boolean
         }
       ) => runAndExit(runRotateKeys({ didRef, ...options }))
+    )
+
+  webvh
+    .command('replace-key <did>')
+    .description(
+      'Replace the document verification method of a locally stored ' +
+        'did:webvh DID with an external Ed25519 public key. Appends a log ' +
+        'entry that lists the new key in place of the old one (the old ' +
+        'method is dropped) under the same verification relationships; if ' +
+        'pre-rotation is armed the update key is advanced as part of the ' +
+        'change. The DID may be given as a metadata handle.'
+    )
+    .requiredOption(
+      '--verification-key <publicKeyMultibase>',
+      'the new Ed25519 Multikey public key (z6Mk...); no secret is stored ' +
+        'for it'
+    )
+    .option(
+      '--purpose <purpose...>',
+      'verification relationship(s) to wire the new key into (default: ' +
+        'those of the method being replaced)'
+    )
+    .option(
+      '--keep-old-key',
+      'pre-rotation only: retain the retired update key secret in the ' +
+        'sidecar (default: drop it)'
+    )
+    .option('-y, --yes', 'skip the confirmation prompt')
+    .action(
+      (
+        didRef: string,
+        options: {
+          verificationKey: string
+          purpose?: string[]
+          keepOldKey?: boolean
+          yes?: boolean
+        }
+      ) => runAndExit(runReplaceKey({ didRef, ...options }))
     )
 
   did.addCommand(webvh)

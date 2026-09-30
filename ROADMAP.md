@@ -103,28 +103,6 @@ token is absent). The remaining work is entirely CLI-side.
 `updateKeys` as a set (and its pre-rotation check validates all of them), so
 the command is the only piece that needs extending.
 
-### CLI-21: `did webvh replace-key`: swap the document verification method
-
-- status: todo
-- priority: high
-- labels: webvh, was-server-identity
-- acceptance:
-  - [ ] `di did webvh replace-key <did> --verification-key <key>` (optionally
-        `--purpose ...`) appends a signed log entry whose document lists the
-        new key in place of the old one (old method dropped, same purposes
-        unless `--purpose` is given)
-  - [ ] Pre-rotation advances as in `add-service` / `rotate-keys`, with the
-        same `--keep-old-key` and `-y` handling
-  - [ ] The vm id fragment mode recorded at creation (CLI-20) is honored
-  - [ ] Tests assert the resolved document after the append lists only the new
-        key
-
-Needed by WAS-164's seed-rotation runbook: after the server's
-`WAS_SERVER_KEY_SEED` changes, the admin appends one entry that lists the new
-`exportSigningKey` under `assertionMethod` and drops the old method. Today
-`add-key` is did:web only, there is no remove-key, and `webvh rotate-keys`
-never touches verification methods.
-
 ### CLI-22: `did webvh move`: portable domain move
 
 - status: todo

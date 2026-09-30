@@ -4,9 +4,10 @@
  * truth); each entry must be signed by an update (authorization) key. This
  * module owns the shared machinery for that -- loading and resolving the log,
  * selecting the signer (ordinary active key vs. a pre-rotation staged reveal),
- * and persisting the update-keys sidecar -- plus `runRotateKeys`, which rotates
- * the update key itself. The service-update and create runners reuse these
- * helpers.
+ * and persisting the update-keys sidecar -- plus `runWebvhDocumentUpdate`
+ * (append a document-overlay entry, advancing the pre-rotation ratchet when one
+ * is armed) and `runRotateKeys`, which rotates the update key itself. The
+ * service-update, replace-key, and create runners reuse these helpers.
  */
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
@@ -445,6 +446,178 @@ export async function persistUpdateKeysSidecar({
     updated.retired = retiredList
   }
   return saveDidUpdateKeys({ did, updateKeys: updated })
+}
+
+/**
+ * Append a document-overlay entry to a locally stored did:webvh DID: resolve
+ * the log, let `buildUpdate` derive the overlay directives (services,
+ * verification methods, ...) from the current document, confirm, sign, append,
+ * and persist. Update keys are carried forward unchanged -- with one exception:
+ * a pre-rotation-armed DID cannot author a key-neutral update (the library
+ * requires the staged key to sign), so the update-key ratchet is advanced as
+ * part of the change -- the staged key is revealed to sign and a fresh next key
+ * is staged.
+ *
+ * @param options {object}
+ * @param options.targetDid {string} the resolved did:webvh DID.
+ * @param options.action {string} verb used in error messages (e.g.
+ *   `update services`).
+ * @param options.confirmMessage {string} the confirmation prompt.
+ * @param options.failurePrefix {string} prefix of the append error message.
+ * @param options.buildUpdate {(doc, did) => object} derives the overlay
+ *   directives for `updateDID` from the current resolved document; throws
+ *   with a user-facing message to refuse the update.
+ * @param [options.onPersisted] {(result) => Promise<void>} runs after the
+ *   log and document are saved (e.g. to update the keys file); a failure
+ *   here is reported as a warning and does not change the exit code.
+ * @param [options.yes] {boolean} skip the confirmation prompt.
+ * @param [options.keepOldKey] {boolean} retain the retired update key secret
+ *   (pre-rotation path only; default is to drop it).
+ * @returns {Promise<number>} the process exit code
+ */
+export async function runWebvhDocumentUpdate({
+  targetDid,
+  action,
+  confirmMessage,
+  failurePrefix,
+  buildUpdate,
+  onPersisted,
+  yes,
+  keepOldKey
+}: {
+  targetDid: string
+  action: string
+  confirmMessage: string
+  failurePrefix: string
+  buildUpdate: (
+    doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc'],
+    did: string
+  ) => Omit<
+    Parameters<typeof updateDID>[0],
+    'log' | 'signer' | 'priorMeta' | 'updateKeys' | 'nextKeyHashes'
+  >
+  onPersisted?: (result: Awaited<ReturnType<typeof updateDID>>) => Promise<void>
+  yes?: boolean
+  keepOldKey?: boolean
+}): Promise<number> {
+  let log: DIDLog
+  let doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
+  let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
+  try {
+    ;({ log, doc, meta } = await resolveWebvhForUpdate({ targetDid, action }))
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Compute the overlay directives from the current resolved document.
+  let update: ReturnType<typeof buildUpdate>
+  try {
+    update = buildUpdate(doc, targetDid)
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  let stored: WebvhUpdateKeys | undefined
+  try {
+    stored = await loadStoredUpdateKeys(targetDid)
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  // Choose the signer and key parameters. A sparse update normally omits
+  // updateKeys/nextKeyHashes so the keys carry forward untouched; a
+  // pre-rotation DID instead must reveal its staged key (which signs) and stage
+  // a fresh one in the same entry.
+  let signerKeyPair: Ed25519VerificationKey
+  let updateKeys: string[] | undefined
+  let nextKeyHashes: string[] | undefined
+  let newActive: WebvhUpdateKey | undefined
+  let newStaged: (WebvhUpdateKey & { nextKeyHash: string }) | undefined
+  let retiredActive: WebvhUpdateKey | undefined
+  try {
+    if (meta.prerotation) {
+      ;({ signerKeyPair, newActive, retiredActive } = await revealStagedSigner({
+        stored,
+        meta,
+        targetDid,
+        action
+      }))
+      newStaged = await generateStagedKey()
+      updateKeys = [newActive.publicKeyMultibase]
+      nextKeyHashes = [newStaged.nextKeyHash]
+    } else {
+      ;({ signerKeyPair } = await loadActiveSigner({
+        stored,
+        meta,
+        targetDid,
+        action
+      }))
+    }
+  } catch (err) {
+    console.error((err as Error).message)
+    return 1
+  }
+
+  const confirmed = await confirmAction({ message: confirmMessage, yes })
+  if (!confirmed) {
+    console.error('Aborted.')
+    return 1
+  }
+
+  const signer = makeWebvhEntrySigner(signerKeyPair)
+
+  let result: Awaited<ReturnType<typeof updateDID>>
+  try {
+    result = await appendWebvhEntry({
+      log,
+      meta,
+      signer,
+      ...update,
+      ...(updateKeys ? { updateKeys } : {}),
+      ...(nextKeyHashes ? { nextKeyHashes } : {})
+    })
+  } catch (err) {
+    console.error(`${failurePrefix}: ${(err as Error).message}`)
+    return 1
+  }
+
+  // The advanced ratchet is persisted only on the pre-rotation path; an
+  // ordinary document update leaves the update-keys sidecar untouched.
+  const { logPath, docPath, updateKeysPath } = await persistWebvhUpdate({
+    result,
+    sidecar:
+      meta.prerotation && newActive
+        ? { newActive, newStaged, retiredActive, stored, keepOldKey }
+        : undefined
+  })
+  if (updateKeysPath !== undefined) {
+    console.error(`Update keys saved to ${updateKeysPath}`)
+    console.error(
+      'Pre-rotation: the update key was advanced as part of this change.'
+    )
+  }
+  // The log entry and document have already landed, so a failure in the
+  // follow-up bookkeeping must not turn the succeeded update into a non-zero
+  // exit (a retry would then be refused as already applied).
+  if (onPersisted) {
+    try {
+      await onPersisted(result)
+    } catch (err) {
+      console.error(
+        `Warning: post-update cleanup failed: ${(err as Error).message}`
+      )
+    }
+  }
+
+  console.error(`DID document saved to ${docPath}`)
+  console.error(`DID history log saved to ${logPath}`)
+  console.log(
+    JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
+  )
+  return 0
 }
 
 /**

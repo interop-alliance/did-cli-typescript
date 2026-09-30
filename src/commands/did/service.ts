@@ -6,31 +6,10 @@
  * pre-rotation ratchet when one is armed). The webvh log machinery is reused
  * from `./webvh-update.js`.
  */
-import {
-  resolveDIDFromLog,
-  updateDID,
-  type DIDLog,
-  type ServiceEndpoint
-} from '@interop/did-method-webvh'
-import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import {
-  loadDidDocument,
-  saveToDids,
-  type WebvhUpdateKey,
-  type WebvhUpdateKeys
-} from '../../storage.js'
+import { type ServiceEndpoint } from '@interop/did-method-webvh'
+import { loadDidDocument, saveToDids } from '../../storage.js'
 import { resolveDidRef } from '../../meta.js'
-import { generateStagedKey } from '../../keys/webvh-update.js'
-import {
-  appendWebvhEntry,
-  confirmAction,
-  loadActiveSigner,
-  loadStoredUpdateKeys,
-  makeWebvhEntrySigner,
-  persistWebvhUpdate,
-  resolveWebvhForUpdate,
-  revealStagedSigner
-} from './webvh-update.js'
+import { runWebvhDocumentUpdate } from './webvh-update.js'
 
 /**
  * Expand a service id to a full DID URL. A bare fragment (`files`) or a
@@ -250,12 +229,8 @@ async function runWebServiceUpdate({
 
 /**
  * Apply a service-array transform to a locally stored did:webvh DID by
- * appending a sparse log entry that overlays only the `service` array. Update
- * keys and document verification methods are carried forward unchanged -- with
- * one exception: a pre-rotation-armed DID cannot author a key-neutral update
- * (the library requires the staged key to sign), so the update-key ratchet is
- * advanced as part of the change -- the staged key is revealed to sign and a
- * fresh next key is staged.
+ * appending a sparse log entry that overlays only the `service` array (see
+ * `runWebvhDocumentUpdate` for the signing and pre-rotation handling).
  *
  * @param options {object}
  * @param options.targetDid {string} the resolved did:webvh DID.
@@ -276,121 +251,19 @@ async function runWebvhServiceUpdate({
   yes?: boolean
   keepOldKey?: boolean
 }): Promise<number> {
-  let log: DIDLog
-  let doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
-  let meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
-  try {
-    ;({ log, doc, meta } = await resolveWebvhForUpdate({
-      targetDid,
-      action: 'update services'
-    }))
-  } catch (err) {
-    console.error((err as Error).message)
-    return 1
-  }
-
-  // Compute the new service array from the current resolved document.
-  const current = Array.isArray(doc?.service) ? doc.service : []
-  let services: ServiceEndpoint[]
-  try {
-    services = transform(current, targetDid)
-  } catch (err) {
-    console.error((err as Error).message)
-    return 1
-  }
-
-  let stored: WebvhUpdateKeys | undefined
-  try {
-    stored = await loadStoredUpdateKeys(targetDid)
-  } catch (err) {
-    console.error((err as Error).message)
-    return 1
-  }
-
-  // Choose the signer and key parameters. A sparse update normally omits
-  // updateKeys/nextKeyHashes so the keys carry forward untouched; a
-  // pre-rotation DID instead must reveal its staged key (which signs) and stage
-  // a fresh one in the same entry.
-  let signerKeyPair: Ed25519VerificationKey
-  let updateKeys: string[] | undefined
-  let nextKeyHashes: string[] | undefined
-  let newActive: WebvhUpdateKey | undefined
-  let newStaged: (WebvhUpdateKey & { nextKeyHash: string }) | undefined
-  let retiredActive: WebvhUpdateKey | undefined
-  try {
-    if (meta.prerotation) {
-      ;({ signerKeyPair, newActive, retiredActive } = await revealStagedSigner({
-        stored,
-        meta,
-        targetDid,
-        action: 'update services'
-      }))
-      newStaged = await generateStagedKey()
-      updateKeys = [newActive.publicKeyMultibase]
-      nextKeyHashes = [newStaged.nextKeyHash]
-    } else {
-      ;({ signerKeyPair } = await loadActiveSigner({
-        stored,
-        meta,
-        targetDid,
-        action: 'update services'
-      }))
-    }
-  } catch (err) {
-    console.error((err as Error).message)
-    return 1
-  }
-
-  const confirmed = await confirmAction({
-    message:
+  return runWebvhDocumentUpdate({
+    targetDid,
+    action: 'update services',
+    confirmMessage:
       `Update the services of ${targetDid}? This appends a new log entry ` +
       'and is hard to undo.',
-    yes
+    failurePrefix: 'Service update failed',
+    buildUpdate: (doc, did) => ({
+      services: transform(Array.isArray(doc?.service) ? doc.service : [], did)
+    }),
+    yes,
+    keepOldKey
   })
-  if (!confirmed) {
-    console.error('Aborted.')
-    return 1
-  }
-
-  const signer = makeWebvhEntrySigner(signerKeyPair)
-
-  let result: Awaited<ReturnType<typeof updateDID>>
-  try {
-    result = await appendWebvhEntry({
-      log,
-      meta,
-      signer,
-      services,
-      ...(updateKeys ? { updateKeys } : {}),
-      ...(nextKeyHashes ? { nextKeyHashes } : {})
-    })
-  } catch (err) {
-    console.error(`Service update failed: ${(err as Error).message}`)
-    return 1
-  }
-
-  // The advanced ratchet is persisted only on the pre-rotation path; an
-  // ordinary service update leaves the update-keys sidecar untouched.
-  const { logPath, docPath, updateKeysPath } = await persistWebvhUpdate({
-    result,
-    sidecar:
-      meta.prerotation && newActive
-        ? { newActive, newStaged, retiredActive, stored, keepOldKey }
-        : undefined
-  })
-  if (updateKeysPath !== undefined) {
-    console.error(`Update keys saved to ${updateKeysPath}`)
-    console.error(
-      'Pre-rotation: the update key was advanced as part of this change.'
-    )
-  }
-
-  console.error(`DID document saved to ${docPath}`)
-  console.error(`DID history log saved to ${logPath}`)
-  console.log(
-    JSON.stringify({ id: result.did, didDocument: result.doc }, null, 2)
-  )
-  return 0
 }
 
 /**

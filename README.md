@@ -68,6 +68,7 @@ di did add-key <did>            add a verification method to a stored DID
 di did add-service <did>        add a service entry to a stored did:web/webvh
 di did remove-service <did>     remove a service entry from a stored did:web/webvh
 di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
+di did webvh replace-key <did>  replace a stored did:webvh document verification key
 di did get|resolve <did>        resolve a DID (or DID URL) via the document loader
 di did show|view|cat <did>      show a stored DID document
 di did list                     list stored DIDs
@@ -737,6 +738,46 @@ Flags:
 - `-y`, `--yes` -- skip the confirmation prompt (rotation is hard to undo).
   Required when stdin is not interactive (scripts, cron), where the prompt
   cannot be asked.
+
+#### Replace a did:webvh document verification key
+
+Swap the document verification method of a locally stored `did:webvh` DID for
+an external Ed25519 public key with `did webvh replace-key`. This appends a new
+entry whose document lists the new key in place of the old one; the old method
+is dropped. The new key is wired into the same verification relationships as
+the method it replaces, unless `--purpose` selects others, and the verification
+method id fragment mode chosen at creation (`short` or `multibase`) is kept.
+No secret is stored for the new key; a stored secret of the old key is removed
+from `<did>.keys.json`.
+
+```
+./di did webvh replace-key did:webvh:Qm...:example.com \
+  --verification-key z6Mk... --yes
+```
+
+The command expects the document to list exactly one verification method (as
+`did create webvh` produces). The DID may be given as a metadata handle.
+
+Flags:
+
+- `--verification-key <publicKeyMultibase>` -- the new Ed25519 Multikey public
+  key (`z6Mk...`); required.
+- `--purpose <purpose...>` -- the verification relationships for the new key
+  (default: those of the method being replaced).
+- `--keep-old-key` -- pre-rotation only: retain the retired update key's secret
+  in the sidecar instead of dropping it.
+- `-y`, `--yes` -- skip the confirmation prompt.
+
+As with the service commands, when pre-rotation is armed the update-key ratchet
+is advanced as part of the change (see `webvh rotate-keys`). The update keys
+are otherwise carried forward unchanged.
+
+For example, after a server rotates its export-signing key, the admin points
+the server identity DID at the new public key:
+
+```
+./di did webvh replace-key server-identity --verification-key z6Mk... --yes
+```
 
 #### Add or remove a service entry
 

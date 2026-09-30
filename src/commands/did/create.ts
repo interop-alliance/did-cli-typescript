@@ -58,6 +58,58 @@ function isWebvhPurpose(value: string): value is DataIntegrityProofPurpose {
 }
 
 /**
+ * Validate the `--purpose` values of a did:webvh document key, returning
+ * them typed. Throws with a user-facing message on an unsupported
+ * relationship.
+ *
+ * @param purpose {string[]}
+ * @returns {DataIntegrityProofPurpose[]}
+ */
+export function parseWebvhPurposes(
+  purpose: readonly string[]
+): DataIntegrityProofPurpose[] {
+  const purposes: DataIntegrityProofPurpose[] = []
+  for (const value of purpose) {
+    if (!isWebvhPurpose(value)) {
+      const reason =
+        value === 'keyAgreement'
+          ? ' (keyAgreement needs an X25519 key; the document key is Ed25519)'
+          : ''
+      throw new Error(
+        `Invalid --purpose "${value}"${reason}. ` +
+          `Supported: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')}`
+      )
+    }
+    purposes.push(value)
+  }
+  return purposes
+}
+
+/**
+ * Validate a `--verification-key` value as an Ed25519 Multikey public key,
+ * returning the public-only key pair. Throws with a user-facing message.
+ *
+ * @param verificationKey {string}
+ * @returns {Promise<Ed25519VerificationKey>}
+ */
+export async function parseVerificationKey(
+  verificationKey: string
+): Promise<Ed25519VerificationKey> {
+  try {
+    return await Ed25519VerificationKey.from({
+      publicKeyMultibase: verificationKey
+    })
+  } catch (err) {
+    throw new Error(
+      `Invalid --verification-key "${verificationKey}": ` +
+        'expected an Ed25519 Multikey public key (z6Mk...). ' +
+        (err as Error).message,
+      { cause: err }
+    )
+  }
+}
+
+/**
  * Verification method id fragment modes accepted by `--vm-id-fragment`.
  */
 const VM_ID_FRAGMENT_MODES = ['short', 'multibase'] as const
@@ -563,20 +615,14 @@ export async function runCreate(options: {
       }
 
       // Document key relationships: default to everything but keyAgreement.
-      const purposes: DataIntegrityProofPurpose[] = []
-      for (const purpose of options.purpose ?? DEFAULT_VERIFICATION_PURPOSES) {
-        if (!isWebvhPurpose(purpose)) {
-          const reason =
-            purpose === 'keyAgreement'
-              ? ' (keyAgreement needs an X25519 key; the document key is Ed25519)'
-              : ''
-          console.error(
-            `Invalid --purpose "${purpose}"${reason}. ` +
-              `Supported: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')}`
-          )
-          return 1
-        }
-        purposes.push(purpose)
+      let purposes: DataIntegrityProofPurpose[]
+      try {
+        purposes = parseWebvhPurposes(
+          options.purpose ?? DEFAULT_VERIFICATION_PURPOSES
+        )
+      } catch (err) {
+        console.error((err as Error).message)
+        return 1
       }
 
       const vmIdFragment = options.vmIdFragment
@@ -596,15 +642,9 @@ export async function runCreate(options: {
       let docKey: Ed25519VerificationKey
       if (options.verificationKey !== undefined) {
         try {
-          docKey = await Ed25519VerificationKey.from({
-            publicKeyMultibase: options.verificationKey
-          })
+          docKey = await parseVerificationKey(options.verificationKey)
         } catch (err) {
-          console.error(
-            `Invalid --verification-key "${options.verificationKey}": ` +
-              'expected an Ed25519 Multikey public key (z6Mk...). ' +
-              (err as Error).message
-          )
+          console.error((err as Error).message)
           return 1
         }
       } else {

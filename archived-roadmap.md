@@ -428,3 +428,26 @@ server's export-signing key (read off `/service`, public only) as its single
 hold the server seed. Today `did create webvh` always generates and stores a
 document key wired into every relationship, so the resulting document is one
 the server refuses to advertise.
+
+### CLI-21: `did webvh replace-key`: swap the document verification method
+
+- status: done
+- done: 2026-09-30
+- priority: high
+- labels: webvh, was-server-identity
+- acceptance:
+  - [x] `di did webvh replace-key <did> --verification-key <key>` (optionally
+        `--purpose ...`) appends a signed log entry whose document lists the
+        new key in place of the old one (old method dropped, same purposes
+        unless `--purpose` is given)
+  - [x] Pre-rotation advances as in `add-service` / `rotate-keys`, with the
+        same `--keep-old-key` and `-y` handling
+  - [x] The vm id fragment mode recorded at creation (CLI-20) is honored
+  - [x] Tests assert the resolved document after the append lists only the new
+        key
+
+Needed by WAS-164's seed-rotation runbook: after the server's
+`WAS_SERVER_KEY_SEED` changes, the admin appends one entry that lists the new
+`exportSigningKey` under `assertionMethod` and drops the old method. Today
+`add-key` is did:web only, there is no remove-key, and `webvh rotate-keys`
+never touches verification methods.

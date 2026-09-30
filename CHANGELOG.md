@@ -11,6 +11,12 @@
   relationships of the document key.
 - `did create webvh --vm-id-fragment <short|multibase>` selects the
   verification method id fragment.
+- `did webvh replace-key <did> --verification-key <publicKeyMultibase>`
+  appends a log entry that lists the given Ed25519 public key in place of the
+  document's verification method, under the same relationships unless
+  `--purpose` is given. The creation-time vm id fragment mode is kept, the
+  pre-rotation ratchet advances as in `add-service`, and a stored secret of
+  the replaced key is removed from the keys file.
 
 ## 0.16.0 - 2026-09-27
 

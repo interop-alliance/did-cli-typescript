@@ -1418,6 +1418,293 @@ describe('di did', () => {
     })
   })
 
+  describe('webvh replace-key', () => {
+    /**
+     * Create a saved did:webvh DID under a fresh temp DIDS_DIR, returning the
+     * dir, the DID, and the paths of its keys file and update-keys sidecar.
+     */
+    async function createSavedWebvh(extraArgs: string[] = []): Promise<{
+      didsDir: string
+      did: string
+      keysPath: string
+      updateKeysPath: string
+    }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await makeDidCommand().parseAsync(
+        [
+          'create',
+          'webvh',
+          '--url',
+          'https://example.com',
+          '--save',
+          ...extraArgs
+        ],
+        { from: 'user' }
+      )
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      errors.length = 0
+      return {
+        didsDir,
+        did,
+        keysPath: join(didsDir, 'webvh', `${did}.keys.json`),
+        updateKeysPath: join(didsDir, 'webvh', `${did}.update-keys.json`)
+      }
+    }
+
+    /**
+     * Resolve the stored history log (verifying every entry) to its current
+     * document and metadata.
+     */
+    async function resolveStoredWebvh(didsDir: string, did: string) {
+      const logText = await readFile(
+        join(didsDir, 'webvh', `${did}.jsonl`),
+        'utf8'
+      )
+      const { doc, meta } = await resolveDIDFromLog(parseDidLog(logText))
+      return {
+        doc: doc as {
+          verificationMethod: { id: string; publicKeyMultibase: string }[]
+          authentication?: string[]
+          assertionMethod?: string[]
+          keyAgreement?: string[]
+          capabilityDelegation?: string[]
+          capabilityInvocation?: string[]
+        },
+        meta
+      }
+    }
+
+    async function replaceKey(did: string, ...extraArgs: string[]) {
+      await makeDidCommand().parseAsync(
+        ['webvh', 'replace-key', did, '--yes', ...extraArgs],
+        { from: 'user' }
+      )
+    }
+
+    it('lists only the new key, under the same relationships, and drops its secret', async () => {
+      const { didsDir, did, keysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        const { doc: before } = await resolveStoredWebvh(didsDir, did)
+        const oldId = before.verificationMethod[0].id
+        assert.deepEqual(Object.keys(await readJson(keysPath)), [oldId])
+
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(did, '--verification-key', newKey.publicKeyMultibase)
+        assert.equal(exitCode, undefined, errors.join('\n'))
+
+        const { doc, meta } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '2')
+        assert.equal(doc.verificationMethod.length, 1)
+        const method = doc.verificationMethod[0]
+        assert.equal(method.publicKeyMultibase, newKey.publicKeyMultibase)
+        // The short fragment mode of the original key is kept.
+        assert.equal(method.id, `${did}#${newKey.publicKeyMultibase.slice(-8)}`)
+        for (const relationship of [
+          'authentication',
+          'assertionMethod',
+          'capabilityDelegation',
+          'capabilityInvocation'
+        ] as const) {
+          assert.deepEqual(doc[relationship], [method.id], relationship)
+        }
+        assert.deepEqual(doc.keyAgreement ?? [], [])
+        assert.ok(!JSON.stringify(doc).includes(oldId))
+
+        // The stdout document matches the resolved one, and the old key's
+        // secret is gone from the keys file.
+        assert.deepEqual(JSON.parse(logs[0]).didDocument, doc)
+        assert.deepEqual(await readJson(keysPath), {})
+        assert.ok(errors.join('\n').includes('Removed the replaced key'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('warns but still succeeds when the keys file cleanup fails', async () => {
+      const { didsDir, did, keysPath } = await createSavedWebvh([
+        '--no-prerotation'
+      ])
+      try {
+        await writeFile(keysPath, 'not json')
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(did, '--verification-key', newKey.publicKeyMultibase)
+
+        // The log entry landed, so the command reports success ...
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const { doc, meta } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '2')
+        assert.equal(
+          doc.verificationMethod[0].publicKeyMultibase,
+          newKey.publicKeyMultibase
+        )
+        assert.deepEqual(JSON.parse(logs[0]).didDocument, doc)
+        // ... and only warns about the bookkeeping it could not do.
+        assert.ok(
+          errors.join('\n').includes('Warning: post-update cleanup failed'),
+          errors.join('\n')
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('honors multibase fragments and the assertionMethod-only wiring from creation', async () => {
+      const firstKey = await Ed25519VerificationKey.generate()
+      const { didsDir, did, keysPath } = await createSavedWebvh([
+        '--no-prerotation',
+        '--verification-key',
+        firstKey.publicKeyMultibase,
+        '--purpose',
+        'assertionMethod',
+        '--vm-id-fragment',
+        'multibase'
+      ])
+      try {
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(did, '--verification-key', newKey.publicKeyMultibase)
+        assert.equal(exitCode, undefined, errors.join('\n'))
+
+        const { doc } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(doc.verificationMethod.length, 1)
+        const method = doc.verificationMethod[0]
+        assert.equal(method.id, `${did}#${newKey.publicKeyMultibase}`)
+        assert.deepEqual(doc.assertionMethod, [method.id])
+        for (const relationship of [
+          'authentication',
+          'capabilityDelegation',
+          'capabilityInvocation',
+          'keyAgreement'
+        ] as const) {
+          assert.deepEqual(doc[relationship] ?? [], [], relationship)
+        }
+        // Nothing to drop: the external key never had a stored secret.
+        assert.deepEqual(await readJson(keysPath), {})
+        assert.ok(!errors.join('\n').includes('Removed the replaced key'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('--purpose selects the new relationships', async () => {
+      const { didsDir, did } = await createSavedWebvh(['--no-prerotation'])
+      try {
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(
+          did,
+          '--verification-key',
+          newKey.publicKeyMultibase,
+          '--purpose',
+          'assertionMethod',
+          'capabilityInvocation'
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+
+        const { doc } = await resolveStoredWebvh(didsDir, did)
+        const [method] = doc.verificationMethod
+        assert.deepEqual(doc.assertionMethod, [method.id])
+        assert.deepEqual(doc.capabilityInvocation, [method.id])
+        assert.deepEqual(doc.authentication ?? [], [])
+        assert.deepEqual(doc.capabilityDelegation ?? [], [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('advances the ratchet under pre-rotation', async () => {
+      const { didsDir, did, updateKeysPath } = await createSavedWebvh()
+      try {
+        const before = await readJson<{
+          staged: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(did, '--verification-key', newKey.publicKeyMultibase)
+        assert.equal(exitCode, undefined, errors.join('\n'))
+
+        const after = await readJson<{
+          active: { publicKeyMultibase: string }
+          staged: { publicKeyMultibase: string }
+        }>(updateKeysPath)
+        assert.equal(
+          after.active.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+        assert.notEqual(
+          after.staged.publicKeyMultibase,
+          before.staged.publicKeyMultibase
+        )
+        const { doc, meta } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(meta.prerotation, true)
+        assert.deepEqual(meta.updateKeys, [after.active.publicKeyMultibase])
+        assert.equal(
+          doc.verificationMethod[0].publicKeyMultibase,
+          newKey.publicKeyMultibase
+        )
+        assert.ok(errors.join('\n').includes('Pre-rotation'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects the key the document already lists', async () => {
+      const { didsDir, did } = await createSavedWebvh(['--no-prerotation'])
+      try {
+        const { doc } = await resolveStoredWebvh(didsDir, did)
+        await replaceKey(
+          did,
+          '--verification-key',
+          doc.verificationMethod[0].publicKeyMultibase
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors.join('\n').includes('already lists'))
+        const { meta } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '1')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects a malformed key and an unknown purpose before touching the log', async () => {
+      const { didsDir, did } = await createSavedWebvh(['--no-prerotation'])
+      try {
+        await replaceKey(did, '--verification-key', 'nope')
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('Invalid --verification-key "nope"'))
+
+        exitCode = undefined
+        errors.length = 0
+        const newKey = await Ed25519VerificationKey.generate()
+        await replaceKey(
+          did,
+          '--verification-key',
+          newKey.publicKeyMultibase,
+          '--purpose',
+          'keyAgreement'
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('Invalid --purpose "keyAgreement"'))
+        const { meta } = await resolveStoredWebvh(didsDir, did)
+        assert.equal(meta.versionId.split('-')[0], '1')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rejects a non-webvh DID', async () => {
+      const newKey = await Ed25519VerificationKey.generate()
+      await replaceKey(
+        'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK',
+        '--verification-key',
+        newKey.publicKeyMultibase
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('only supported for did:webvh'))
+    })
+  })
+
   describe('get', () => {
     it('resolves a did:key to its DID document', async () => {
       // Create a did:key first, then resolve it (did:key is offline).
