@@ -5,7 +5,8 @@
  * modules: create/add-key in `./did/create.js`, service edits in
  * `./did/service.js`, read/manage operations in `./did/manage.js`, and the
  * did:webvh update-key plumbing plus rotate-keys in `./did/webvh-update.js`,
- * and replace-key in `./did/replace-key.js`.
+ * replace-key in `./did/replace-key.js`, and set-purpose in
+ * `./did/set-purpose.js`.
  */
 import { Command } from 'commander'
 import { type ServiceEndpoint } from '@interop/did-method-webvh'
@@ -27,6 +28,7 @@ import {
 import { runGet, runList, runMeta, runRemove, runShow } from './did/manage.js'
 import { runRotateKeys } from './did/webvh-update.js'
 import { runReplaceKey } from './did/replace-key.js'
+import { runSetPurpose } from './did/set-purpose.js'
 
 export { parseDidLog } from './did/webvh-update.js'
 
@@ -474,6 +476,43 @@ export function makeDidCommand(): Command {
           offline?: boolean
         }
       ) => runAndExit(runReplaceKey({ didRef, ...options }))
+    )
+
+  webvh
+    .command('set-purpose <did>')
+    .description(
+      'Change the verification relationships of the document verification ' +
+        'method of a locally stored did:webvh DID, keeping the key and its ' +
+        'method id. Appends a log entry that lists the key under exactly ' +
+        'the given relationships (the full replacement set); if ' +
+        'pre-rotation is armed the update key is advanced as part of the ' +
+        'change. The DID may be given as a metadata handle.'
+    )
+    .requiredOption(
+      '--purpose <purpose...>',
+      'the full set of verification relationship(s) to list the key under ' +
+        `(supported: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')})`
+    )
+    .option(
+      '--keep-old-key',
+      'pre-rotation only: retain the retired update key secret in the ' +
+        'sidecar (default: drop it)'
+    )
+    .option('-y, --yes', 'skip the confirmation prompt')
+    .option(
+      '--offline',
+      'skip the fast-forward check against the served did:webvh log'
+    )
+    .action(
+      (
+        didRef: string,
+        options: {
+          purpose: string[]
+          keepOldKey?: boolean
+          yes?: boolean
+          offline?: boolean
+        }
+      ) => runAndExit(runSetPurpose({ didRef, ...options }))
     )
 
   did.addCommand(webvh)

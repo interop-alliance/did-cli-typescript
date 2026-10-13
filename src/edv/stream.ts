@@ -137,7 +137,8 @@ export async function encryptToChunks({
 
 /**
  * Decrypt a document's chunks (in `index` order) back into the original bytes.
- * A wrong key surfaces as a thrown `DataError` from the decrypt transformer.
+ * A wrong key surfaces as a thrown `KeyMissError` from the decrypt
+ * transformer.
  *
  * @param options {object}
  * @param options.cipher {Cipher}

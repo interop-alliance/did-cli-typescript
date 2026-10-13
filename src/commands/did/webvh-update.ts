@@ -7,7 +7,8 @@
  * and persisting the update-keys sidecar -- plus `runWebvhDocumentUpdate`
  * (append a document-overlay entry, advancing the pre-rotation ratchet when one
  * is armed) and `runRotateKeys`, which rotates the update key itself. The
- * service-update, replace-key, and create runners reuse these helpers.
+ * service-update, replace-key, set-purpose, and create runners reuse these
+ * helpers.
  */
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'

@@ -85,6 +85,7 @@ describe('was capability resolution', () => {
         ref: encodeCapability(zcap)
       })
       assert.equal(target.server, 'https://was.example')
+      assert.equal(target.client.serverUrl, 'https://was.example/spaces/')
       assert.equal(target.depth, 'resource')
       assert.equal(target.did, did)
       assert.equal(target.url, 'https://was.example/space/space-1/docs/vc-1')
@@ -144,8 +145,22 @@ describe('was capability resolution', () => {
       })
       await assert.rejects(
         resolveCapabilityTarget({ ref: encodeCapability(zcap) }),
-        /Cannot derive a handle/
+        /not a WAS Space URL/
       )
+    })
+
+    it('takes the base URL of a sub-path mount from the target', async () => {
+      const { did } = await saveTestDid()
+      const zcap = makeZcap({
+        target: 'https://host.example/was/space/space-1/docs',
+        controller: did
+      })
+      const target = await resolveCapabilityTarget({
+        ref: encodeCapability(zcap)
+      })
+      assert.equal(target.server, 'https://host.example/was')
+      assert.equal(target.client.serverUrl, 'https://host.example/was/spaces/')
+      assert.equal(target.depth, 'collection')
     })
   })
 })

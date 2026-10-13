@@ -73,6 +73,13 @@ describe('parseWasAddress', () => {
       )
     })
 
+    it('keeps a sub-path mount in the server base URL', () => {
+      assert.deepEqual(parseWasAddress('https://host.example/was/space/abc'), {
+        server: 'https://host.example/was',
+        spaceRef: 'abc'
+      })
+    })
+
     it('rejects a URL without a /space/<id> path', () => {
       assert.throws(
         () => parseWasAddress('https://was.example/other/abc'),

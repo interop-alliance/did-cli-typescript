@@ -9,10 +9,12 @@
  * - a bare space id (e.g. a server-generated uuid or urn), which needs the
  *   server URL supplied separately;
  * - a full space https URL (e.g. `https://was.example/space/<id>`), which is
- *   self-contained: the server URL is the URL's origin and the space id is
- *   the segment after `/space/`. Collection/resource segments may appear
+ *   self-contained: the server base URL is everything before the `/space/`
+ *   segment (so a server mounted under a sub-path keeps its prefix) and the
+ *   space id is the segment after it. Collection/resource segments may appear
  *   inside the URL itself or be appended with the same `/<coll>/<res>`
- *   syntax as the other forms.
+ *   syntax as the other forms. The URL grammar is was-client's
+ *   `parseAbsoluteSpaceTarget`.
  *
  * Handles and bare space ids are not distinguished here -- both land in
  * `spaceRef` and are resolved against the registry by the caller. Resource
@@ -24,6 +26,8 @@
  * non-shell invocation) parsing is byte-identical to the address grammar
  * above.
  */
+
+import { parseAbsoluteSpaceTarget } from '@interop/was-client/paths'
 
 /**
  * The relative-path base (the shell's current working directory segments)
@@ -50,7 +54,7 @@ export function setWasAddressBase(segments: string[]): void {
  * written, and the optional collection/resource ids.
  */
 export interface WasAddress {
-  /** Server base URL (origin), present only for the full-URL form. */
+  /** Server base URL, present only for the full-URL form. */
   server?: string
   /** The space handle or space id, exactly as the user wrote it. */
   spaceRef: string
@@ -125,20 +129,26 @@ export function parseWasAddress(address: string): WasAddress {
     throw new Error('Invalid WAS address: empty string.')
   }
 
-  const url = tryParseHttpUrl(address)
-  if (url) {
-    const segments = url.pathname.split('/').filter(Boolean)
-    if (segments[0] !== 'space' || !segments[1]) {
+  if (tryParseHttpUrl(address)) {
+    const parsed = parseAbsoluteSpaceTarget(address)
+    if (parsed === null) {
       throw new Error(
         `Invalid WAS space URL "${address}": expected a path of the form ` +
           '/space/<space-id>[/<collection>[/<resource>]].'
       )
     }
-    const [, spaceRef, ...tail] = segments
+    const { baseUrl, path } = parsed
+    if (path.kind === 'sub-resource') {
+      throw new Error(
+        `Invalid WAS space URL "${address}": expected at most ` +
+          '/space/<space-id>/<collection>/<resource>.'
+      )
+    }
     return {
-      server: url.origin,
-      spaceRef,
-      ...parseTailSegments({ segments: tail, address })
+      server: baseUrl,
+      spaceRef: path.spaceId,
+      ...(path.kind !== 'space' && { collectionId: path.collectionId }),
+      ...(path.kind === 'resource' && { resourceId: path.resourceId })
     }
   }
 

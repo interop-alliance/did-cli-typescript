@@ -469,3 +469,35 @@ never touches verification methods.
 Needed by WAS-164: the admin's local copy is the source of truth, but a `PUT`
 that failed after a local append, or a second admin machine, leaves the two
 copies diverged. Today every append path reads only the local log.
+
+### CLI-24: `did webvh`: change a listed key's verification relationships
+
+- status: done
+- done: 2026-10-12
+- priority: medium
+- labels: webvh, was-server-identity
+- acceptance:
+  - [x] One command appends a log entry that changes the verification
+        relationships of a key the document already lists, keeping the key and
+        its method id (for example adding `capabilityInvocation` to a key
+        listed under `assertionMethod`)
+  - [x] The relationship list is the full replacement set, parsed by the same
+        `--purpose` rules as `create webvh` and `replace-key`; an empty result
+        is refused
+  - [x] Runs the fast-forward check before signing and accepts `--offline`,
+        like the other `did webvh` update commands
+  - [x] Tests resolve the updated log and assert the same key under the new
+        relationships and under none of the dropped ones
+
+Discovered from was-teaching-server WAS-175 (2026-10-03). That server's admin
+enables replication by listing its one server key under `capabilityInvocation`
+beside `assertionMethod`. Today `replace-key` refuses a key the document
+already lists, and `add-key` handles `did:web` only. So the relationship can be
+set only at mint (`create webvh --purpose ...`) or by rotating the seed
+(`replace-key --purpose ...`), which also rotates the export-signing key. The
+admin guide's "Enabling replication" section documents those two paths and
+would gain a third, with a runbook test, once this lands. Open choice: a new
+subcommand, or letting `replace-key` take the listed key when `--purpose` is
+given.
+
+Resolved the open choice with a new subcommand, `did webvh set-purpose`.

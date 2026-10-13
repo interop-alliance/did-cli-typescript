@@ -7,13 +7,20 @@
 import { STATUS_CODES } from 'node:http'
 import { Option } from 'commander'
 import {
-  WasError,
   type Collection,
-  type CollectionsList,
-  type Resource,
   type CollectionResourcesList,
-  type Space
+  type CollectionsList,
+  isCollectionTombstoneSummary,
+  type Resource,
+  type Space,
+  WasError
 } from '@interop/was-client'
+import {
+  collectionPath,
+  resourcePath,
+  spacePath,
+  toUrl
+} from '@interop/was-client/paths'
 import { parseWasAddress } from '../../was/address.js'
 import type { ResolvedCapabilityTarget } from '../../was/capability.js'
 import { resolveWasTarget, type ResolvedWasTarget } from '../../was/client.js'
@@ -188,13 +195,19 @@ export function withResourceId({
     ...resolved,
     depth: 'resource',
     handle: resolved.handle.resource(resourceId),
-    url: `${resolved.url.replace(/\/$/, '')}/${encodeURIComponent(resourceId)}`
+    url: wasUrl({
+      server: resolved.server,
+      spaceId: resolved.handle.spaceId,
+      collectionId: resolved.handle.id,
+      resourceId
+    })
   }
 }
 
 /**
  * Builds the canonical URL of a space, collection, or resource on its
- * server, for messages and output.
+ * server, for messages, output, and capability targets. The path builders
+ * own the segment encoding and the trailing slash that marks a container.
  *
  * @param options {object}
  * @param options.server {string}
@@ -214,10 +227,15 @@ export function wasUrl({
   collectionId?: string
   resourceId?: string
 }): string {
-  const segments = [spaceId, collectionId, resourceId]
-    .filter((segment): segment is string => segment !== undefined)
-    .map(encodeURIComponent)
-  return `${server.replace(/\/$/, '')}/space/${segments.join('/')}`
+  let path: string
+  if (collectionId === undefined) {
+    path = spacePath(spaceId)
+  } else if (resourceId === undefined) {
+    path = collectionPath(spaceId, collectionId)
+  } else {
+    path = resourcePath(spaceId, collectionId, resourceId)
+  }
+  return toUrl({ baseUrl: server, path })
 }
 
 /**
@@ -500,7 +518,13 @@ export function printCollectionListing({
       { header: 'NAME', maxWidth: 20 },
       { header: 'URL' }
     ],
-    toRow: item => [item.id, item.name, item.url]
+    // A tombstone item (no `name`) appears only in an `?include=deleted`
+    // listing, which the CLI never requests.
+    toRow: item => [
+      item.id,
+      isCollectionTombstoneSummary(item) ? '' : item.name,
+      item.url
+    ]
   })
 }
 

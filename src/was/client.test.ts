@@ -138,7 +138,8 @@ describe('was client factory', () => {
       })
       assert.equal(server, 'https://was.example')
       assert.equal(resolved, did)
-      assert.equal(client.serverUrl, 'https://was.example')
+      assert.equal(client.serverUrl, 'https://was.example/spaces/')
+      assert.equal(client.baseUrl, 'https://was.example')
       assert.equal(client.controllerDid, did)
     })
 
@@ -147,7 +148,8 @@ describe('was client factory', () => {
       process.env.WAS_SERVER_URL = 'https://env.example'
       process.env.WAS_DID = did
       const { client } = await buildWasClient()
-      assert.equal(client.serverUrl, 'https://env.example')
+      assert.equal(client.serverUrl, 'https://env.example/spaces/')
+      assert.equal(client.baseUrl, 'https://env.example')
       assert.equal(client.controllerDid, did)
     })
   })
@@ -172,7 +174,8 @@ describe('was client factory', () => {
       assert.equal(target.server, 'https://was.example')
       assert.equal(target.did, did)
       assert.equal(target.entry?.meta?.handle, 'home')
-      assert.equal(target.client.serverUrl, 'https://was.example')
+      assert.equal(target.client.serverUrl, 'https://was.example/spaces/')
+      assert.equal(target.client.baseUrl, 'https://was.example')
     })
 
     it('takes the server from a full space URL address', async () => {
@@ -182,6 +185,7 @@ describe('was client factory', () => {
         did
       })
       assert.equal(target.server, 'https://other.example')
+      assert.equal(target.client.baseUrl, 'https://other.example')
       assert.equal(target.spaceId, 'abc')
       assert.equal(target.collectionId, 'docs')
       assert.equal(target.entry, undefined)

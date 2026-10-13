@@ -316,7 +316,7 @@ describe(
       assert.ok(space.id)
 
       try {
-        await runWasOk([
+        const collectionLogs = await runWasOk([
           'collection',
           'create',
           'it-grant',
@@ -325,6 +325,8 @@ describe(
           '--id',
           'web'
         ])
+        // The canonical collection URL (trailing slash) is the grant target.
+        const web = JSON.parse(collectionLogs[0]) as { url: string }
         await runWasOk(['publish', 'it-grant/web'])
 
         // The agent's side: ask for the grant and wait for the wallet.
@@ -347,7 +349,7 @@ describe(
         const { requestedController } = await approveGrant({
           interactionUrl,
           controller: alice,
-          collectionUrl: `${space.url}/web`
+          collectionUrl: web.url
         })
         const exitCode = await grant.done
         assert.equal(
@@ -364,10 +366,7 @@ describe(
         assert.equal(granted.handle, 'agent')
         assert.equal(granted.capabilities.length, 1)
         assert.equal(granted.capabilities[0]?.controller, requestedController)
-        assert.equal(
-          granted.capabilities[0]?.invocationTarget,
-          `${space.url}/web`
-        )
+        assert.equal(granted.capabilities[0]?.invocationTarget, web.url)
 
         // Publish the page through the stored handle and read it back
         // anonymously as a page.
@@ -387,7 +386,7 @@ describe(
           'text/html'
         ])
         const { url } = JSON.parse(putLogs.join('\n')) as { url: string }
-        assert.equal(url, `${space.url}/web/index.html`)
+        assert.equal(url, `${web.url}index.html`)
         const response = await fetch(url)
         assert.equal(response.status, 200)
         assert.match(response.headers.get('content-type') ?? '', /^text\/html/)

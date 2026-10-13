@@ -4,16 +4,18 @@
  * registry. The signing DID resolution order is the `--did` flag (a DID or a
  * metadata handle), then the `WAS_DID` environment variable, then the
  * `controller` recorded in the registry entry for the addressed space. The
- * server URL resolution order is the origin of a full space URL address,
+ * server URL resolution order is the base URL of a full space URL address,
  * then the `--server` flag, then `WAS_SERVER_URL`, then the `server`
- * recorded in the registry entry.
+ * recorded in the registry entry. Every one of these is the server base URL
+ * (the server root); the client is constructed with the Spaces Repository URL
+ * beneath it.
  *
  * Only locally stored `did:key` DIDs with Ed25519 keys are supported for
  * signing (the constraint of the `Ed25519Signature2020` zcap suite used by
  * `@interop/was-client`).
  */
-import { discoverService, WasClient } from '@interop/was-client'
-import { spacePath, toUrl } from '@interop/was-client/paths'
+import { WasClient } from '@interop/was-client'
+import { spacesUrl } from '@interop/was-client/paths'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { createSigner } from '@interop/ed25519-signature'
 import type { ISigner } from '@interop/data-integrity-core'
@@ -35,37 +37,24 @@ import { resolveSpaceRef, type SpaceRecord } from './registry.js'
 const ED25519_MULTIBASE_PREFIX = 'z6Mk'
 
 /**
- * Constructs the `WasClient` for a resolved server URL and signer. Kept as a
- * replaceable factory so command tests can substitute a stubbed client (no
- * network) while exercising the full resolution path. `discoverFrom` names a
- * server-owned URL to run service discovery against instead of the base URL,
- * for a deployment whose base URL is a static page that carries no service
- * link.
+ * Constructs the `WasClient` for a resolved signer and `serverUrl`, the
+ * server's Spaces Repository URL (`https://host/spaces/`, as `WasClient`
+ * takes it). Kept as a replaceable factory so command tests can substitute a
+ * stubbed client (no network) while exercising the full resolution path.
  */
 type WasClientFactory = (options: {
   serverUrl: string
   signer: ISigner
-  discoverFrom?: string
 }) => WasClient | Promise<WasClient>
 
-async function defaultWasClientFactory({
+function defaultWasClientFactory({
   serverUrl,
-  signer,
-  discoverFrom
+  signer
 }: {
   serverUrl: string
   signer: ISigner
-  discoverFrom?: string
-}): Promise<WasClient> {
-  if (discoverFrom === undefined) {
-    return WasClient.fromSigner({ serverUrl, signer })
-  }
-  const { description } = await discoverService({ url: discoverFrom })
-  return WasClient.fromSigner({
-    serverUrl,
-    signer,
-    serviceDescription: description
-  })
+}): WasClient {
+  return WasClient.fromSigner({ serverUrl, signer })
 }
 
 let wasClientFactory: WasClientFactory = defaultWasClientFactory
@@ -154,18 +143,14 @@ export async function loadWasSigner({
  * @param options {object}
  * @param [options.server] {string}   The server base URL.
  * @param [options.did] {string}   A DID or stored-DID metadata handle.
- * @param [options.discoverFrom] {string}   A server-owned URL to run service
- *   discovery against instead of the base URL.
  * @returns {Promise<{client: WasClient, server: string, did: string}>}
  */
 export async function buildWasClient({
   server,
-  did,
-  discoverFrom
+  did
 }: {
   server?: string
   did?: string
-  discoverFrom?: string
 } = {}): Promise<{ client: WasClient; server: string; did: string }> {
   const serverUrl = server ?? process.env.WAS_SERVER_URL
   if (!serverUrl) {
@@ -179,9 +164,8 @@ export async function buildWasClient({
   }
   const { did: resolvedDid, signer } = await loadWasSigner({ did: didRef })
   const client = await wasClientFactory({
-    serverUrl,
-    signer,
-    ...(discoverFrom !== undefined && { discoverFrom })
+    serverUrl: spacesUrl({ baseUrl: serverUrl }),
+    signer
   })
   return { client, server: serverUrl, did: resolvedDid }
 }
@@ -233,12 +217,9 @@ export async function resolveWasTarget({
     )
   }
   const { did: resolvedDid, signer } = await loadWasSigner({ did: didRef })
-  // Discover the service from the space rather than the origin: a deployment
-  // may serve a static page at its origin with no service link.
   const client = await wasClientFactory({
-    serverUrl,
-    signer,
-    discoverFrom: toUrl({ serverUrl, path: spacePath(spaceId) })
+    serverUrl: spacesUrl({ baseUrl: serverUrl }),
+    signer
   })
 
   return {

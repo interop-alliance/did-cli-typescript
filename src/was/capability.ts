@@ -3,7 +3,8 @@
  * delegation): resolves a `--capability` reference (via the shared
  * `resolveCapabilityInput` resolver in `src/zcap/resolve.ts`) and rebuilds a
  * signed access handle from it with `was.fromCapability()`. The capability's
- * `invocationTarget` determines both the server URL (its origin) and the
+ * `invocationTarget` determines both the server base URL (read off the target
+ * by was-client's `parseAbsoluteSpaceTarget`, sub-path mounts included) and the
  * handle depth (space, collection, or resource), so no path argument is
  * needed. The signing DID falls back from `--did` / `WAS_DID` to the
  * capability's `controller` (the delegatee, who is the one invoking it).
@@ -15,6 +16,7 @@ import type {
   IZcap,
   WasClient
 } from '@interop/was-client'
+import { parseAbsoluteSpaceTarget } from '@interop/was-client/paths'
 import { resolveCapabilityInput } from '../zcap/resolve.js'
 import { buildWasClient } from './client.js'
 
@@ -30,7 +32,7 @@ export type CapabilityDepth = 'space' | 'collection' | 'resource'
 interface ResolvedCapabilityBase {
   client: WasClient
   zcap: IZcap
-  /** The server base URL (the invocation target's origin). */
+  /** The server base URL the invocation target sits beneath. */
   server: string
   /** The resolved signing DID. */
   did: string
@@ -72,15 +74,13 @@ export async function resolveCapabilityTarget({
     throw new Error(`The capability "${ref}" has no invocationTarget.`)
   }
   const url = zcap.invocationTarget
-  let server: string
-  try {
-    server = new URL(url).origin
-  } catch (err) {
+  const parsed = parseAbsoluteSpaceTarget(url)
+  if (parsed === null) {
     throw new Error(
-      `The capability's invocationTarget is not a valid URL: ${url}`,
-      { cause: err }
+      `The capability's invocationTarget is not a WAS Space URL: ${url}`
     )
   }
+  const server = parsed.baseUrl
   const didRef =
     did ??
     process.env.WAS_DID ??
@@ -90,12 +90,9 @@ export async function resolveCapabilityTarget({
       'No signing DID for the capability: provide --did or WAS_DID.'
     )
   }
-  // Discover the service from the target itself rather than the origin: a
-  // deployment may serve a static page at its origin with no service link.
   const { client, did: resolvedDid } = await buildWasClient({
     server,
-    did: didRef,
-    discoverFrom: url
+    did: didRef
   })
   const handle = client.fromCapability(zcap)
   const base = { client, zcap, server, did: resolvedDid, url }

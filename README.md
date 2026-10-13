@@ -69,6 +69,7 @@ di did add-service <did>        add a service entry to a stored did:web/webvh
 di did remove-service <did>     remove a service entry from a stored did:web/webvh
 di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
 di did webvh replace-key <did>  replace a stored did:webvh document verification key
+di did webvh set-purpose <did>  change a stored did:webvh key's verification relationships
 di did get|resolve <did>        resolve a DID (or DID URL) via the document loader
 di did show|view|cat <did>      show a stored DID document
 di did list                     list stored DIDs
@@ -782,6 +783,44 @@ the server identity DID at the new public key:
 ./di did webvh replace-key server-identity --verification-key z6Mk... --yes
 ```
 
+#### Change a did:webvh key's verification relationships
+
+Change the verification relationships of the document verification method of a
+locally stored `did:webvh` DID with `did webvh set-purpose`. This appends a new
+entry whose document lists the same key, under the same method id, in exactly
+the given relationships. `--purpose` is the full replacement set, so a
+relationship left out is dropped. The keys file is not touched.
+
+```
+./di did webvh set-purpose did:webvh:Qm...:example.com \
+  --purpose assertionMethod capabilityInvocation --yes
+```
+
+The command expects the document to list exactly one verification method (as
+`did create webvh` produces), and refuses when the key is already listed under
+exactly the given relationships. The DID may be given as a metadata handle.
+
+Flags:
+
+- `--purpose <purpose...>` -- the full set of verification relationships for
+  the key (`authentication`, `assertionMethod`, `capabilityDelegation`,
+  `capabilityInvocation`); required.
+- `--keep-old-key` -- pre-rotation only: retain the retired update key's secret
+  in the sidecar instead of dropping it.
+- `--offline` -- skip the fast-forward check against the served log.
+- `-y`, `--yes` -- skip the confirmation prompt.
+
+As with `replace-key`, when pre-rotation is armed the update-key ratchet is
+advanced as part of the change.
+
+For example, a server admin enables replication by listing the one server key
+under `capabilityInvocation` beside `assertionMethod`, without rotating it:
+
+```
+./di did webvh set-purpose server-identity \
+  --purpose assertionMethod capabilityInvocation --yes
+```
+
 #### Add or remove a service entry
 
 Add or remove a [service](https://www.w3.org/TR/did-core/#services) entry on a
@@ -829,8 +868,8 @@ Pass `--offline` to skip the fast-forward check against the served log.
 #### did:webvh fast-forward check
 
 Every command that appends to a stored `did:webvh` log (`add-service`,
-`remove-service`, `webvh rotate-keys`, `webvh replace-key`) first fetches the
-served log (`<url>/did.jsonl`, the file a resolver reads). The local copy is
+`remove-service`, `webvh rotate-keys`, `webvh replace-key`, `webvh set-purpose`)
+first fetches the served log (`<url>/did.jsonl`, the file a resolver reads). The local copy is
 the source of truth, but a failed upload or a second admin machine can leave
 the two copies diverged. The command refuses to sign when the served log has
 entries the local log lacks, or differs from it at some entry. A served log
@@ -1540,7 +1579,8 @@ where `SPACE` is one of:
 - a **bare space id** (a server-generated uuid or urn), combined with
   `--server` / `WAS_SERVER_URL`;
 - a **full space URL** (e.g. `https://was.example/space/8124...cf2e`), which
-  is self-contained -- the server URL is its origin. Collection and resource
+  is self-contained -- the server base URL is everything before `/space/`, so
+  a server mounted under a sub-path keeps its prefix. Collection and resource
   segments can be appended to any of the three forms.
 
 The signing DID resolves from `--did` (a DID or stored-DID handle), the
@@ -1950,8 +1990,9 @@ still an invocation of the grant you received.
 
 Any other depth mismatch (e.g. `get` with a space-scoped capability) is an
 input error, as is `--resource` without a capability to anchor it. The
-server URL is taken from the invocation target's origin, and the signing DID
-defaults to the capability's controller (the delegatee) when that DID is
+server base URL is read off the invocation target (everything before its
+`/space/` segment, so a server mounted under a sub-path works). The signing
+DID defaults to the capability's controller (the delegatee) when that DID is
 stored locally -- so usually no flags are needed at all.
 
 In the examples below, `bob-share` is the metadata handle of a _stored zcap_

@@ -30,7 +30,7 @@ export interface SpaceRecord {
   id: string
   /** The space's display name. */
   name?: string
-  /** The server base URL (origin). */
+  /** The server base URL. */
   server: string
   /** The controller DID, used as the default signing DID. */
   controller?: string

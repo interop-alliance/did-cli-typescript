@@ -529,7 +529,7 @@ describe('di was', () => {
         assert.deepEqual(calls.createSpace, [[{}]])
         const output = JSON.parse(logs[0])
         assert.equal(output.id, 'space-new')
-        assert.equal(output.url, 'https://was.example/space/space-new')
+        assert.equal(output.url, 'https://was.example/space/space-new/')
         assert.equal(output.controller, did)
         assert.ok(!('name' in output))
       })
@@ -581,7 +581,7 @@ describe('di was', () => {
         const output = JSON.parse(logs[0])
         assert.equal(output.id, 'docs')
         assert.equal(output.name, 'Docs')
-        assert.equal(output.url, 'https://was.example/space/space-1/docs')
+        assert.equal(output.url, 'https://was.example/space/space-1/docs/')
       })
 
       it('create works without a name', async () => {
@@ -679,7 +679,7 @@ describe('di was', () => {
         assert.equal(calls.deleteCollection.length, 1)
         assert.match(
           errors[0],
-          /Deleted https:\/\/was\.example\/space\/space-1\/docs on the server\./
+          /Deleted https:\/\/was\.example\/space\/space-1\/docs\/ on the server\./
         )
       })
     })
@@ -1265,7 +1265,7 @@ describe('di was', () => {
         assert.deepEqual(grantOptions.actions, ['GET', 'PUT'])
         assert.equal(
           grantOptions.target,
-          'https://was.example/space/space-1/docs'
+          'https://was.example/space/space-1/docs/'
         )
         assert.ok(grantOptions.expires)
         const output = JSON.parse(logs[0])
@@ -1297,7 +1297,7 @@ describe('di was', () => {
           args => (args[0] as { target: string }).target
         )
         assert.deepEqual(targets, [
-          'https://was.example/space/space-1',
+          'https://was.example/space/space-1/',
           'https://was.example/space/space-1/docs/vc-1'
         ])
       })
@@ -1832,7 +1832,7 @@ describe('di was', () => {
         })
         assert.equal(exitCode, undefined)
         assert.deepEqual(calls.setPublic, [['collection']])
-        assert.deepEqual(logs, ['https://was.example/space/space-1/docs'])
+        assert.deepEqual(logs, ['https://was.example/space/space-1/docs/'])
         assert.match(
           errors[0],
           /Published \(world-readable\): https:\/\/was\.example\/space\/space-1\/docs/
