@@ -1,6 +1,6 @@
 /**
  * Env-gated end-to-end test of the `was` command group against a real WAS
- * server (e.g. a locally running was-teaching-server). Skipped unless
+ * server (e.g. a locally running web-spaces-server). Skipped unless
  * `WAS_TEST_SERVER_URL` points at a running server:
  *
  *     WAS_TEST_SERVER_URL=http://localhost:3002 npm run test:node

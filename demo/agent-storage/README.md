@@ -21,7 +21,7 @@ The agent-facing version of this script is the
 - **A WAS server** serving the ephemeral-exchange routes
   (`/workflows/ephemeral/exchanges`), which carry the request to the wallet and
   the signed capability back. The reference
-  [was-teaching-server](https://github.com/digitalcredentials/was-teaching-server)
+  [web-spaces-server](https://github.com/interop-alliance/web-spaces-server)
   serves them with no extra configuration:
 
   ```

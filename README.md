@@ -2080,7 +2080,7 @@ Wrote 10240 bytes to home.tar
 #### End-to-end smoke test
 
 To exercise the whole flow against a local server, start the reference
-[was-teaching-server](https://github.com/digitalcredentials/was-teaching-server)
+[web-spaces-server](https://github.com/interop-alliance/web-spaces-server)
 (the server URL must match byte-for-byte, including the port, since zcap
 invocation targets embed it):
 

@@ -54,8 +54,8 @@ importers:
         specifier: ^7.11.1
         version: 7.11.1
       '@interop/pws-client':
-        specifier: ^0.104.0
-        version: 0.104.0(@interop/jsonld-signatures@11.9.0)
+        specifier: ^0.105.0
+        version: 0.105.0(@interop/jsonld-signatures@11.9.0)
       '@interop/security-document-loader':
         specifier: ^10.1.6
         version: 10.1.6
@@ -66,8 +66,8 @@ importers:
         specifier: ^4.1.0
         version: 4.1.0
       '@interop/wallet-core':
-        specifier: ^0.111.0
-        version: 0.111.0(@interop/jsonld-signatures@11.9.0)(@interop/was-client@0.103.0(@interop/jsonld-signatures@11.9.0))
+        specifier: ^0.112.0
+        version: 0.112.0(@interop/jsonld-signatures@11.9.0)(@interop/pws-client@0.105.0(@interop/jsonld-signatures@11.9.0))(@interop/storage-core@0.44.0)
       '@interop/wallet-request':
         specifier: ^0.6.0
         version: 0.6.0
@@ -568,8 +568,8 @@ packages:
     resolution: {integrity: sha512-2IW190KLOH7GmUqwD7Wg82bc9dC5DYxRpgW5Z+MV87CxsVOu5wRNXr7Bd7Bne0bo3XU04r4lAVq4KB3eJuHbig==}
     engines: {node: '>=24.0'}
 
-  '@interop/pws-client@0.104.0':
-    resolution: {integrity: sha512-If1ZihvdZBdCc/RHnjCacDISmx7SMXBPvRcMeJeGsOwY6Vi9fgy66+4dBaOFF0LDjOXnfzZsPn0xCbzMVDz8pQ==}
+  '@interop/pws-client@0.105.0':
+    resolution: {integrity: sha512-rZpMDvjqzcxSzyseyKnZ90tgQbLLiAjmMagk0n0AVU07ShZKYoOo5UNzuvAAd6RJXx/Uk08PcLB8e5z3aeyPEw==}
     engines: {node: '>=24.0'}
 
   '@interop/security-document-loader@10.1.6':
@@ -580,12 +580,12 @@ packages:
     resolution: {integrity: sha512-WxnkYKmg4y0eSMlXVUPlzHkZlWSRVlyjTBRQkrEtcmPY5A7gw/K/ANB9S8YPtOVWreV+RAATEvjF56CJGDU3Yg==}
     engines: {node: '>=24.0'}
 
-  '@interop/storage-core@0.38.0':
-    resolution: {integrity: sha512-wavRRv4uzKz9m21sdfZtOGeBy8TSgYWRgHTfq+SE7Dak/E2u77xmn4x7EaV4q3sPgmjFhSbz+YlzG6WpQor3mA==}
-    engines: {node: '>=22.0'}
-
   '@interop/storage-core@0.43.0':
     resolution: {integrity: sha512-pa9aoh1WgeKqodIvi74iYR1mQm6v3rpQYbyzvQs73XPE4p01EN7Sh8wkOGZ7hyZTdwPRHd5oDeS2G2qwnUCRMA==}
+    engines: {node: '>=22.0'}
+
+  '@interop/storage-core@0.44.0':
+    resolution: {integrity: sha512-YShPVgRYO5+9zEU44cRWuDLMSh1baBiiw/bDRKdIDZ9ucZXpsItGl0Xl3+o0mE/HPkZkr8vkfUYoDMrvtqcnqA==}
     engines: {node: '>=22.0'}
 
   '@interop/vc-bitstring-status-list@3.4.1':
@@ -604,15 +604,17 @@ packages:
     resolution: {integrity: sha512-6WGeYO3jdFHsfrFLmqZhcpdXVlXnxY2DNUDMmAKDU3esw3dNUC4SjwrDtUPLdaODu3ww7GCfBdrHBKExRVRViA==}
     engines: {node: '>=24.0'}
 
-  '@interop/vh-resource-log@0.9.0':
-    resolution: {integrity: sha512-9QP1XExxu95IuHlB3b9V3QKAKF4tLbp+agF4YByVlywgWcSrUCRD9YxYctacummgPIQTTV+iKBMZJIu72i8OnQ==}
-    engines: {node: '>=24.0'}
-
-  '@interop/wallet-core@0.111.0':
-    resolution: {integrity: sha512-5TEt4ZxUI/2Vj40gyYcLiCu8vjSz3kd6Al5KVZMUR6f26TL7sh8LWs1EdDHl53OVfCcxUBjrP5c9ry2xsudAKw==}
+  '@interop/vh-resource-log@0.11.0':
+    resolution: {integrity: sha512-ZJuTdIMcR6v6gZttf1pjCE8VjfgZaO1jVjGgsEBn2qvDzc6OfIkHrz5XnoKfJCGjUN+Az84S7ppWHv0qj5BbBw==}
     engines: {node: '>=24.0'}
     peerDependencies:
-      '@interop/was-client': '>=0.100.1 <1.0.0'
+      '@interop/storage-core': '>=0.44.0'
+
+  '@interop/wallet-core@0.112.0':
+    resolution: {integrity: sha512-U/OiioiZVPuLx/0Q2oUUglKBR8ZLemZ+RhGrr0b4Fx8yhM1MWZ734OTKQSCMNTUXOJ4I9UkK7mWQC/EN3rtM1Q==}
+    engines: {node: '>=24.0'}
+    peerDependencies:
+      '@interop/pws-client': '>=0.105.0 <1.0.0'
 
   '@interop/wallet-request@0.6.0':
     resolution: {integrity: sha512-4IJm7t3eGjjI3T86/jrIFLBFRhjn+7yZXTWaAdg9rrGZUvt0DZ2w/rQWo1Dj6tZkMNZmTHAz5ZkxdYU3auh7tw==}
@@ -2347,7 +2349,7 @@ snapshots:
       '@stablelib/chacha': 2.0.1
       '@stablelib/chacha20poly1305': 2.0.1
 
-  '@interop/pws-client@0.104.0(@interop/jsonld-signatures@11.9.0)':
+  '@interop/pws-client@0.105.0(@interop/jsonld-signatures@11.9.0)':
     dependencies:
       '@interop/capability-agent': 0.2.2
       '@interop/data-integrity-core': 8.9.0
@@ -2356,8 +2358,8 @@ snapshots:
       '@interop/ezcap': 7.5.4
       '@interop/http-client': 1.0.5
       '@interop/minimal-cipher': 7.11.1
-      '@interop/storage-core': 0.43.0
-      '@interop/vh-resource-log': 0.10.1
+      '@interop/storage-core': 0.44.0
+      '@interop/vh-resource-log': 0.11.0(@interop/storage-core@0.44.0)
       '@interop/x25519-key-agreement-key': 5.4.3
       '@interop/zcap': 11.4.0
       '@noble/hashes': 2.4.0
@@ -2397,11 +2399,11 @@ snapshots:
 
   '@interop/social-core@0.8.1': {}
 
-  '@interop/storage-core@0.38.0':
+  '@interop/storage-core@0.43.0':
     dependencies:
       '@interop/data-integrity-core': 8.9.0
 
-  '@interop/storage-core@0.43.0':
+  '@interop/storage-core@0.44.0':
     dependencies:
       '@interop/data-integrity-core': 8.9.0
 
@@ -2449,12 +2451,12 @@ snapshots:
       '@interop/did-method-webvh': 5.18.0
       '@interop/storage-core': 0.43.0
 
-  '@interop/vh-resource-log@0.9.0':
+  '@interop/vh-resource-log@0.11.0(@interop/storage-core@0.44.0)':
     dependencies:
       '@interop/did-method-webvh': 5.18.0
-      '@interop/storage-core': 0.38.0
+      '@interop/storage-core': 0.44.0
 
-  '@interop/wallet-core@0.111.0(@interop/jsonld-signatures@11.9.0)(@interop/was-client@0.103.0(@interop/jsonld-signatures@11.9.0))':
+  '@interop/wallet-core@0.112.0(@interop/jsonld-signatures@11.9.0)(@interop/pws-client@0.105.0(@interop/jsonld-signatures@11.9.0))(@interop/storage-core@0.44.0)':
     dependencies:
       '@interop/capability-agent': 0.2.2
       '@interop/data-integrity-core': 8.9.0
@@ -2463,9 +2465,9 @@ snapshots:
       '@interop/ed25519-signature': 7.2.5(@interop/jsonld-signatures@11.9.0)
       '@interop/ed25519-verification-key': 8.2.2
       '@interop/ezcap': 7.5.4
+      '@interop/pws-client': 0.105.0(@interop/jsonld-signatures@11.9.0)
       '@interop/social-core': 0.8.1
-      '@interop/vh-resource-log': 0.9.0
-      '@interop/was-client': 0.103.0(@interop/jsonld-signatures@11.9.0)
+      '@interop/vh-resource-log': 0.11.0(@interop/storage-core@0.44.0)
       '@interop/x25519-key-agreement-key': 5.4.3
       '@noble/ciphers': 2.4.0
       '@noble/hashes': 2.4.0
@@ -2473,6 +2475,7 @@ snapshots:
       byoe-context: 0.5.0
     transitivePeerDependencies:
       - '@interop/jsonld-signatures'
+      - '@interop/storage-core'
       - expo-crypto
       - react-native-get-random-values
 
