@@ -21,31 +21,31 @@ Graduate `di edv` from a fixture tool (encrypt/decrypt to files) to a real EDV
 client that round-trips documents through Wallet Attached Storage. The
 building blocks are already in place: `src/edv/core.ts` routes envelope
 encryption/decryption and index blinding through `EdvClientCore`
-(`@interop/edv-client`), and `@interop/was-client` ships a documents-only
-`WasTransport` (plus `EDV_CONTENT_TYPE`) on its `/edv` subpath, mapping
+(`@interop/edv-client`), and `@interop/pws-client` ships a documents-only
+`PwsTransport` (plus `EDV_CONTENT_TYPE`) on its `/edv` subpath, mapping
 `insert`/`update`/`get` onto ordinary WAS Resource CRUD (vault = Collection,
 EDV doc id = WAS resource id).
 
-### CLI-1: `di edv insert | get | update` over `WasTransport`
+### CLI-1: `di edv insert | get | update` over `PwsTransport`
 
 - status: todo
 - priority: medium
 - labels: edv, was
 - acceptance:
   - [ ] `di edv insert | get | update` subcommands wire `EdvClientCore` +
-        `WasTransport`
+        `PwsTransport`
   - [ ] Existing plumbing reused: `resolveWasTarget` (`src/was/client.ts`) for
-        the `SPACE/COLLECTION[/DOCID]` address + signed `WasClient`;
+        the `SPACE/COLLECTION[/DOCID]` address + signed `PwsClient`;
         `resolveRecipient` / `resolveRecipientFile` (`src/edv/recipients.ts`)
         for `--recipient`; `loadKeyAgreementKey` / `autoSelectKeyAgreementKey`
         for the decrypt key
   - [ ] Command tests follow the command-test conventions with a stubbed
-        `WasClient` (`setWasClientFactory`), as in the existing `was` tests
+        `PwsClient` (`setWasClientFactory`), as in the existing `was` tests
 
-Canonical wiring (mirrors was-client's own
+Canonical wiring (mirrors pws-client's own
 `test/integration/edv-roundtrip.test.ts`):
 `new EdvClientCore({ keyAgreementKey, keyResolver })` +
-`new WasTransport({ was, spaceId, collectionId })`, then
+`new PwsTransport({ pws, spaceUrl, collectionId })`, then
 `edv.insert({ doc: { content }, transport })` / `edv.get({ id, transport })` /
 `edv.update({ doc, transport })`. The core encrypts/decrypts client-side; the
 transport only moves opaque JWE envelopes.
@@ -71,8 +71,8 @@ Open decisions to settle here:
 - labels: edv, was
 - blocked-by: CLI-1
 - acceptance:
-  - [ ] `@interop/was-client` bumped to a version whose `WasTransport` ships
-        `find` and the chunk operations (>= 0.18.0)
+  - [x] `@interop/pws-client` is at a version whose `PwsTransport` ships
+        `find` and the chunk operations (every release since the rename)
   - [ ] `di edv find` subcommand wiring `EdvClientCore.find` (blinded-index
         query) through the transport
   - [ ] Chunked-stream insert/get wired through the transport's chunk
@@ -80,10 +80,11 @@ Open decisions to settle here:
 
 Formerly server-blocked; no longer. The WAS server now ships all the needed
 affordances (blinded `/query`, chunk addressing, conditional writes), and
-`WasTransport` (was-client 0.18.0) implements `find` and chunk read/write,
-gated on the collection's backend advertising the `blinded-index-query` /
-`chunked-streams` feature tokens (it throws `NotSupportedError` only when the
-token is absent). The remaining work is entirely CLI-side.
+`PwsTransport` (added as `WasTransport` in was-client 0.18.0) implements `find`
+and chunk read/write, gated on the collection's backend advertising the
+`blinded-index-query` / `chunked-streams` feature tokens (it throws
+`NotSupportedError` only when the token is absent). The remaining work is
+entirely CLI-side.
 
 ## `did webvh`
 
@@ -119,7 +120,7 @@ the command is the only piece that needs extending.
   - [ ] Runs the CLI-23 fast-forward check before signing (through
         `resolveWebvhForUpdate`) and accepts `--offline`
 
-Needed by WAS-164's `SERVER_URL` move runbook. `did create webvh` already
+Needed by WSS-164's `SERVER_URL` move runbook. `did create webvh` already
 defaults to `portable: true`, but nothing exposes the move.
 
 ---
@@ -158,28 +159,20 @@ interaction URL, which is the whole payload a QR would encode. The QR only
 saves the user a copy-paste onto a phone, so this lands if and when that
 matters.
 
-### CLI-15: Keep the server base path when resolving a capability
+## Dependency upkeep
 
-- status: todo
-- priority: medium
-- labels: was, zcap, bug
-- touches:
-  - freewallet -- FW-244 is the other half of the same end-to-end break
-- acceptance:
-  - [ ] `resolveCapabilityTarget` derives the server base URL from the
-        capability's `invocationTarget` without discarding its path
-        prefix, so a sub-path deployment (`https://host/was`) resolves to
-        `https://host/was` rather than `https://host`
-  - [ ] `fromCapability` then parses the target against the full base, and
-        a sub-path target no longer misparses
-  - [ ] A test covers a capability issued on a sub-path deployment
+### CLI-26: Drop the transitive `@interop/was-client`
 
-Discovered by FW-227's 2026-08-21 CLI-lens review. Today the server is
-taken as `new URL(invocationTarget).origin`, which drops any base path
-before was-client strips that same base path to classify the target. Paired
-with freewallet's FW-244; both must land for the agent demo to claim
-sub-path deployments, and FW-227 section 8 question 10 is where the "or
-state bare-origin only" alternative is decided.
+- status: draft
+- priority: low
+- labels: deps
+
+discovered-from: the `@interop/pws-client` rename. `@interop/wallet-request`
+0.6.0 still depends on `@interop/was-client` `^0.103.0`, and
+`@interop/wallet-core` 0.111.0 still has it as a peer dependency, so 0.103.0
+stays in the install tree beside `pws-client`. Blocked until both packages
+publish versions that depend on `@interop/pws-client`. Nothing in `src/`
+imports `@interop/wallet-core`, so its dependency may be removable instead.
 
 ## Someday / Maybe
 

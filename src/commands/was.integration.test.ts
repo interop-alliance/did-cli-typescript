@@ -165,11 +165,10 @@ async function approveGrant({
     server: serverUrl as string,
     did: controller
   })
-  const zcap = await client.grant({
+  const zcap = await client.collectionAt(collectionUrl).grant({
     to: detail!.controller as string,
     actions: ['GET', 'PUT', 'POST'],
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    target: collectionUrl
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   })
   const verifiablePresentation = await composeVp({
     didAuthRequested: false,

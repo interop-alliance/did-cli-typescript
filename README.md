@@ -25,7 +25,7 @@ cryptographic key pairs that underpin them.
 It lets you generate and manage these objects locally -- minting DIDs, issuing
 and verifying credentials, delegating capabilities, and encrypting data -- and
 interact with remote
-[Wallet Attached Storage](https://w3c-ccg.github.io/wallet-attached-storage-spec/)
+[Wallet Attached Storage](https://w3c-ccg.github.io/portable-web-spaces-spec/)
 servers, all from the terminal and backed by a local file-based wallet.
 
 ### Features
@@ -1559,7 +1559,7 @@ valid until it expires (see `--ttl` / `--expires`).
 ### Wallet Attached Storage (WAS)
 
 The `was` command group is a client for
-[Wallet Attached Storage](https://w3c-ccg.github.io/wallet-attached-storage-spec/)
+[Wallet Attached Storage](https://w3c-ccg.github.io/portable-web-spaces-spec/)
 servers, which organize content as `Space > Collection > Resource` behind
 zcap-authorized HTTP. Every request is signed with a `did:key` DID stored in
 the local wallet (saved with `did create --save`; Ed25519 keys only for now).
@@ -1989,11 +1989,11 @@ The resource handle inherits the collection's capability, so the request is
 still an invocation of the grant you received.
 
 Any other depth mismatch (e.g. `get` with a space-scoped capability) is an
-input error, as is `--resource` without a capability to anchor it. The
-server base URL is read off the invocation target (everything before its
-`/space/` segment, so a server mounted under a sub-path works). The signing
-DID defaults to the capability's controller (the delegatee) when that DID is
-stored locally -- so usually no flags are needed at all.
+input error, as is `--resource` without a capability to anchor it. The client
+opens on the Space named by the capability's chain root, so a server mounted
+under a sub-path works, as does a single fixed Space. The signing DID defaults
+to the capability's controller (the delegatee) when that DID is stored locally
+-- so usually no flags are needed at all.
 
 In the examples below, `bob-share` is the metadata handle of a _stored zcap_
 (not a space or collection handle): say Alice granted Bob `GET`/`PUT` on the

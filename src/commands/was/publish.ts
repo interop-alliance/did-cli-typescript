@@ -5,7 +5,7 @@
 import { resolveWasTarget } from '../../was/client.js'
 import { grantAccess } from '../../was/grant.js'
 import { requireSaveForMetaFlags } from '../collection-command.js'
-import { handleForTarget, reportError, wasUrl } from './shared.js'
+import { handleForTarget, reportError } from './shared.js'
 
 /**
  * Makes a space, collection, or resource world-readable (the
@@ -29,10 +29,10 @@ export async function runPublish(options: {
       server: options.server,
       did: options.did
     })
-    const { handle, url } = handleForTarget(target)
+    const handle = handleForTarget(target)
     await handle.setPublic()
-    console.error(`Published (world-readable): ${url}`)
-    console.log(url)
+    console.error(`Published (world-readable): ${handle.url}`)
+    console.log(handle.url)
     return 0
   } catch (err) {
     return reportError({ action: 'publish the path', err })
@@ -60,9 +60,9 @@ export async function runUnpublish(options: {
       server: options.server,
       did: options.did
     })
-    const { handle, url } = handleForTarget(target)
+    const handle = handleForTarget(target)
     await handle.clearPolicy()
-    console.error(`Unpublished (capability-only access): ${url}`)
+    console.error(`Unpublished (capability-only access): ${handle.url}`)
     return 0
   } catch (err) {
     return reportError({ action: 'unpublish the path', err })
@@ -113,15 +113,10 @@ export async function runGrant(options: {
       server: options.server,
       did: options.did
     })
-    const url = wasUrl({
-      server: target.server,
-      spaceId: target.spaceId,
-      collectionId: target.collectionId,
-      resourceId: target.resourceId
-    })
     const { delegatedCapability, encoded, savedPath } = await grantAccess({
       client: target.client,
-      target: url,
+      target: handleForTarget(target).url,
+      spaceUrl: target.client.space(target.spaceId).url,
       to: options.to,
       actions: options.action,
       ttl: options.ttl,

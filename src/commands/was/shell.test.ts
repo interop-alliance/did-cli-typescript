@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import type { WasClient } from '@interop/was-client'
+import type { PwsClient } from '@interop/pws-client'
 import { runWasShell } from './shell.js'
 import { setWasClientFactory } from '../../was/client.js'
 import { saveSpaceRecord } from '../../was/registry.js'
@@ -40,11 +40,11 @@ async function saveTestDid(): Promise<string> {
 }
 
 /**
- * A stub `WasClient` recording collection/resource listing calls per space, so
+ * A stub `PwsClient` recording collection/resource listing calls per space, so
  * shell dispatch can be asserted without a server.
  */
 function makeStubClient(): {
-  client: WasClient
+  client: PwsClient
   calls: { collections: string[]; listResources: string[] }
 } {
   const calls = { collections: [] as string[], listResources: [] as string[] }
@@ -80,7 +80,7 @@ function makeStubClient(): {
       }
     }
   }
-  return { client: client as unknown as WasClient, calls }
+  return { client: client as unknown as PwsClient, calls }
 }
 
 describe('runWasShell', () => {
@@ -177,6 +177,28 @@ describe('runWasShell', () => {
     process.env.WAS_SERVER_URL = 'https://original.example'
     await runScript(['connect https://other.example', 'pwd', 'exit'])
     assert.equal(process.env.WAS_SERVER_URL, 'https://original.example')
+  })
+
+  it('prints one server form for connect and a cd to a full URL', async () => {
+    const { output } = await runScript([
+      'connect https://other.example',
+      'pwd',
+      'cd https://other.example/space/abc',
+      'pwd',
+      'exit'
+    ])
+    const servers = output.match(/server: .*$/gm)
+    assert.deepEqual(servers, [
+      'server: https://other.example/',
+      'server: https://other.example/',
+      'server: https://other.example/'
+    ])
+  })
+
+  it('refuses a connect target that is not a server URL', async () => {
+    const { output } = await runScript(['connect not-a-url', 'exit'])
+    assert.match(output, /not a base server URL/)
+    assert.doesNotMatch(output, /server: /)
   })
 
   it('leaves WAS_SERVER_URL unset when it started unset', async () => {

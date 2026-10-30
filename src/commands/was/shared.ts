@@ -11,16 +11,10 @@ import {
   type CollectionResourcesList,
   type CollectionsList,
   isCollectionTombstoneSummary,
+  PwsError,
   type Resource,
-  type Space,
-  WasError
-} from '@interop/was-client'
-import {
-  collectionPath,
-  resourcePath,
-  spacePath,
-  toUrl
-} from '@interop/was-client/paths'
+  type Space
+} from '@interop/pws-client'
 import { parseWasAddress } from '../../was/address.js'
 import type { ResolvedCapabilityTarget } from '../../was/capability.js'
 import { resolveWasTarget, type ResolvedWasTarget } from '../../was/client.js'
@@ -191,51 +185,8 @@ export function withResourceId({
         `this one targets a ${resolved.depth}.`
     )
   }
-  return {
-    ...resolved,
-    depth: 'resource',
-    handle: resolved.handle.resource(resourceId),
-    url: wasUrl({
-      server: resolved.server,
-      spaceId: resolved.handle.spaceId,
-      collectionId: resolved.handle.id,
-      resourceId
-    })
-  }
-}
-
-/**
- * Builds the canonical URL of a space, collection, or resource on its
- * server, for messages, output, and capability targets. The path builders
- * own the segment encoding and the trailing slash that marks a container.
- *
- * @param options {object}
- * @param options.server {string}
- * @param options.spaceId {string}
- * @param [options.collectionId] {string}
- * @param [options.resourceId] {string}
- * @returns {string}
- */
-export function wasUrl({
-  server,
-  spaceId,
-  collectionId,
-  resourceId
-}: {
-  server: string
-  spaceId: string
-  collectionId?: string
-  resourceId?: string
-}): string {
-  let path: string
-  if (collectionId === undefined) {
-    path = spacePath(spaceId)
-  } else if (resourceId === undefined) {
-    path = collectionPath(spaceId, collectionId)
-  } else {
-    path = resourcePath(spaceId, collectionId, resourceId)
-  }
-  return toUrl({ baseUrl: server, path })
+  const handle = resolved.handle.resource(resourceId)
+  return { ...resolved, depth: 'resource', handle, url: handle.url }
 }
 
 /**
@@ -243,7 +194,7 @@ export function wasUrl({
  * 1 for operation errors (typed WAS errors from the server exchange), 2 for
  * input errors (bad addresses, unknown handles/DIDs, missing server URL).
  *
- * For a `WasError` the HTTP status and its reason phrase (e.g.
+ * For a `PwsError` the HTTP status and its reason phrase (e.g.
  * `HTTP 415 Unsupported Media Type`) plus any server-provided problem details
  * are appended, so a generic client message like `Request error` still carries
  * the actionable status instead of hiding it.
@@ -260,7 +211,7 @@ export function reportError({
   action: string
   err: unknown
 }): number {
-  if (err instanceof WasError) {
+  if (err instanceof PwsError) {
     const detail: string[] = []
     if (typeof err.status === 'number') {
       const reason = STATUS_CODES[err.status]
@@ -577,29 +528,22 @@ export function printFieldValueTable(rows: string[][]): void {
 
 /**
  * Builds the access handle (space, collection, or resource) a resolved
- * target addresses, together with its URL. Policies and publishing work at
- * every depth, so these commands dispatch through this helper.
+ * target addresses. Policies and publishing work at every depth, so these
+ * commands dispatch through this helper.
  *
  * @param target {ResolvedWasTarget}
- * @returns {{handle: Space | Collection | Resource, url: string}}
+ * @returns {Space | Collection | Resource}
  */
-export function handleForTarget(target: ResolvedWasTarget): {
-  handle: Space | Collection | Resource
-  url: string
-} {
-  const url = wasUrl({
-    server: target.server,
-    spaceId: target.spaceId,
-    collectionId: target.collectionId,
-    resourceId: target.resourceId
-  })
+export function handleForTarget(
+  target: ResolvedWasTarget
+): Space | Collection | Resource {
   const space = target.client.space(target.spaceId)
   if (target.collectionId === undefined) {
-    return { handle: space, url }
+    return space
   }
   const collection = space.collection(target.collectionId)
   if (target.resourceId === undefined) {
-    return { handle: collection, url }
+    return collection
   }
-  return { handle: collection.resource(target.resourceId), url }
+  return collection.resource(target.resourceId)
 }

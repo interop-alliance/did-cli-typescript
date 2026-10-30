@@ -14,6 +14,12 @@ import {
 const VERIFICATION_METHOD_UNRESOLVED =
   'https://www.w3.org/TR/vc-data-model#VERIFICATION_METHOD_UNRESOLVED'
 
+const SIGNATURE = 'cryptographic.proof.signature'
+const VALIDITY_PERIOD = 'cryptographic.proof.validity-period'
+const STATUS = 'cryptographic.status.bitstring'
+const ISSUER_DETAILS = 'trust.issuer-details'
+const PARSING = 'cryptographic.parsing.envelope'
+
 /**
  * Builds a minimal CredentialVerificationResult from a list of check results,
  * for exercising the pure translation helpers without running the verifier.
@@ -38,29 +44,34 @@ function makeResult({
   } as CredentialVerificationResult
 }
 
-function successCheck(check: string, payload?: unknown): CheckResult {
+function successCheck(id: string, payload?: unknown): CheckResult {
   return {
-    check,
-    suite: check.split('.')[0],
+    id,
+    suite: id.split('.').at(-2),
     outcome: { status: 'success', message: 'ok', payload }
   } as CheckResult
 }
 
-function failureCheck(check: string, type = 'urn:test:problem'): CheckResult {
+function failureCheck(
+  id: string,
+  type = 'urn:test:problem',
+  payload?: unknown
+): CheckResult {
   return {
-    check,
-    suite: check.split('.')[0],
+    id,
+    suite: id.split('.').at(-2),
     outcome: {
       status: 'failure',
-      problems: [{ type, title: 'Problem', detail: 'detail' }]
+      problems: [{ type, title: 'Problem', detail: 'detail' }],
+      payload
     }
   } as CheckResult
 }
 
-function skippedCheck(check: string): CheckResult {
+function skippedCheck(id: string): CheckResult {
   return {
-    check,
-    suite: check.split('.')[0],
+    id,
+    suite: id.split('.').at(-2),
     outcome: { status: 'skipped', reason: 'n/a' }
   } as CheckResult
 }
@@ -71,10 +82,10 @@ describe('toSummary', () => {
       makeResult({
         verified: true,
         results: [
-          successCheck('proof.signature'),
-          successCheck('validity.expiration'),
-          successCheck('status.bitstring'),
-          successCheck('trust.issuer-details', {
+          successCheck(SIGNATURE),
+          successCheck(VALIDITY_PERIOD, { end: '2099-01-01T00:00:00Z' }),
+          successCheck(STATUS),
+          successCheck(ISSUER_DETAILS, {
             matchingIssuers: [{ name: 'Acme' }]
           })
         ]
@@ -92,7 +103,7 @@ describe('toSummary', () => {
     const summary = toSummary(
       makeResult({
         verified: false,
-        results: [failureCheck('proof.signature')]
+        results: [failureCheck(SIGNATURE)]
       })
     )
     assert.equal(summary.checks.signature, false)
@@ -102,22 +113,46 @@ describe('toSummary', () => {
     const summary = toSummary(
       makeResult({
         verified: true,
-        results: [failureCheck('validity.expiration')]
+        results: [
+          failureCheck(VALIDITY_PERIOD, ProblemTypes.CREDENTIAL_EXPIRED, {
+            end: '2020-01-01T00:00:00Z'
+          })
+        ]
       })
     )
     assert.equal(summary.checks.expired, true)
+  })
+
+  it('does not report a not-yet-valid credential as expired', () => {
+    const summary = toSummary(
+      makeResult({
+        verified: false,
+        results: [
+          failureCheck(VALIDITY_PERIOD, ProblemTypes.CREDENTIAL_NOT_YET_VALID, {
+            start: '2099-01-01T00:00:00Z',
+            end: '2100-01-01T00:00:00Z'
+          })
+        ]
+      })
+    )
+    assert.equal(summary.checks.expired, false)
+  })
+
+  it('leaves expired undefined when no expiration date is stated', () => {
+    const summary = toSummary(
+      makeResult({
+        verified: true,
+        results: [successCheck(VALIDITY_PERIOD, {})]
+      })
+    )
+    assert.equal(summary.checks.expired, undefined)
   })
 
   it('marks a revoked credential revoked:true', () => {
     const summary = toSummary(
       makeResult({
         verified: false,
-        results: [
-          failureCheck(
-            'status.bitstring',
-            ProblemTypes.CREDENTIAL_REVOKED_OR_SUSPENDED
-          )
-        ]
+        results: [failureCheck(STATUS, ProblemTypes.CREDENTIAL_REVOKED)]
       })
     )
     assert.equal(summary.checks.revoked, true)
@@ -127,9 +162,7 @@ describe('toSummary', () => {
     const summary = toSummary(
       makeResult({
         verified: true,
-        results: [
-          failureCheck('status.bitstring', ProblemTypes.STATUS_LIST_NOT_FOUND)
-        ]
+        results: [failureCheck(STATUS, ProblemTypes.STATUS_LIST_NOT_FOUND)]
       })
     )
     assert.equal(summary.checks.revoked, false)
@@ -139,10 +172,7 @@ describe('toSummary', () => {
     const summary = toSummary(
       makeResult({
         verified: true,
-        results: [
-          skippedCheck('status.bitstring'),
-          skippedCheck('validity.expiration')
-        ]
+        results: [skippedCheck(STATUS), skippedCheck(VALIDITY_PERIOD)]
       })
     )
     assert.equal(summary.checks.revoked, undefined)
@@ -154,7 +184,7 @@ describe('toSummary', () => {
     const summary = toSummary(
       makeResult({
         verified: true,
-        results: [successCheck('trust.issuer-details', { matchingIssuers: [] })]
+        results: [successCheck(ISSUER_DETAILS, { matchingIssuers: [] })]
       })
     )
     assert.equal(summary.checks.issuerRecognized, false)
@@ -165,17 +195,17 @@ describe('findParseFailure', () => {
   it('returns the parsing.envelope failure when present', () => {
     const result = makeResult({
       verified: false,
-      results: [failureCheck('parsing.envelope')]
+      results: [failureCheck(PARSING)]
     })
     const failure = findParseFailure(result)
     assert.ok(failure)
-    assert.equal(failure?.check, 'parsing.envelope')
+    assert.equal(failure?.id, PARSING)
   })
 
   it('returns undefined when there is no parse failure', () => {
     const result = makeResult({
       verified: true,
-      results: [successCheck('proof.signature')]
+      results: [successCheck(SIGNATURE)]
     })
     assert.equal(findParseFailure(result), undefined)
   })
@@ -185,7 +215,7 @@ describe('unresolvedMethodDetail', () => {
   it('returns the problem detail when the proof DID method is unresolved', () => {
     const result = makeResult({
       verified: false,
-      results: [failureCheck('proof.signature', VERIFICATION_METHOD_UNRESOLVED)]
+      results: [failureCheck(SIGNATURE, VERIFICATION_METHOD_UNRESOLVED)]
     })
     assert.equal(unresolvedMethodDetail(result), 'detail')
   })
@@ -193,7 +223,7 @@ describe('unresolvedMethodDetail', () => {
   it('returns undefined for a genuine invalid-signature failure', () => {
     const result = makeResult({
       verified: false,
-      results: [failureCheck('proof.signature', ProblemTypes.INVALID_SIGNATURE)]
+      results: [failureCheck(SIGNATURE, ProblemTypes.INVALID_SIGNATURE)]
     })
     assert.equal(unresolvedMethodDetail(result), undefined)
   })
@@ -201,7 +231,7 @@ describe('unresolvedMethodDetail', () => {
   it('returns undefined when verification succeeded', () => {
     const result = makeResult({
       verified: true,
-      results: [successCheck('proof.signature')]
+      results: [successCheck(SIGNATURE)]
     })
     assert.equal(unresolvedMethodDetail(result), undefined)
   })

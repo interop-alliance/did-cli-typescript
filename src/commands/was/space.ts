@@ -7,6 +7,8 @@
  * quotas (the space's storage report grouped by backend), and export/import
  * of a whole space as a tar archive.
  */
+import type { Space } from '@interop/pws-client'
+import { serverOfSpaceUrl } from '../../was/address.js'
 import { buildWasClient, resolveWasTarget } from '../../was/client.js'
 import { readInputBytes, writeBytesOutput } from '../../was/io.js'
 import {
@@ -22,12 +24,32 @@ import {
   printFieldValueTable,
   reportDeleted,
   reportError,
-  reportNotFound,
-  wasUrl
+  reportNotFound
 } from './shared.js'
 
 /**
- * Creates a space on the server and prints `{ id, url, name?, controller }`.
+ * The fields a registry record locates a space with, read off the URL the
+ * server named for it. Undefined when that URL has no such form: a record
+ * holds an id and a server base URL, so it can only express a Space at
+ * `{server}space/{id}/`.
+ *
+ * @param space {Space}
+ * @returns {{id: string, server: string} | undefined}
+ */
+function registryLocation(
+  space: Space
+): { id: string; server: string } | undefined {
+  const server = serverOfSpaceUrl(space.url)
+  if (space.id === undefined || server === undefined) {
+    return undefined
+  }
+  return { id: space.id, server }
+}
+
+/**
+ * Creates a space on the server and prints `{ id?, url, name?, controller }`,
+ * reporting the URL the server named for it. The output is printed even when
+ * `--save` cannot register that URL (exit code 1), since the space exists.
  *
  * @param options {object}
  * @param [options.name] {string}   The space's display name.
@@ -52,7 +74,7 @@ export async function runSpaceCreate(options: {
     if (!requireSaveForMetaFlags(options)) {
       return 2
     }
-    const { client, server, did } = await buildWasClient({
+    const { client, did } = await buildWasClient({
       server: options.server,
       did: options.did
     })
@@ -60,25 +82,34 @@ export async function runSpaceCreate(options: {
       ...(options.name !== undefined && { name: options.name }),
       ...(options.id !== undefined && { id: options.id })
     })
-    const url = wasUrl({ server, spaceId: space.id })
+    let exitCode = 0
     if (options.save) {
-      const filePath = await saveSpaceRecord({
-        record: {
-          id: space.id,
-          ...(options.name !== undefined && { name: options.name }),
-          server,
-          controller: did
-        },
-        handle: options.handle,
-        description: options.description
-      })
-      console.error(`Space registered in ${filePath}`)
+      const location = registryLocation(space)
+      if (location) {
+        const filePath = await saveSpaceRecord({
+          record: {
+            id: location.id,
+            ...(options.name !== undefined && { name: options.name }),
+            server: location.server,
+            controller: did
+          },
+          handle: options.handle,
+          description: options.description
+        })
+        console.error(`Space registered in ${filePath}`)
+      } else {
+        console.error(
+          `Could not register the space: ${space.url} is not at ` +
+            '{server}space/{id}/.'
+        )
+        exitCode = 1
+      }
     }
     console.log(
       JSON.stringify(
         {
-          id: space.id,
-          url,
+          ...(space.id !== undefined && { id: space.id }),
+          url: space.url,
           ...(options.name !== undefined && { name: options.name }),
           controller: did
         },
@@ -86,7 +117,7 @@ export async function runSpaceCreate(options: {
         2
       )
     )
-    return 0
+    return exitCode
   } catch (err) {
     return reportError({ action: 'create the space', err })
   }
@@ -237,11 +268,10 @@ export async function runSpaceShow(options: {
       server: options.server,
       did: options.did
     })
-    const description = await target.client.space(target.spaceId).describe()
+    const space = target.client.space(target.spaceId)
+    const description = await space.describe()
     if (description === null) {
-      return reportNotFound(
-        wasUrl({ server: target.server, spaceId: target.spaceId })
-      )
+      return reportNotFound(space.url)
     }
     console.log(JSON.stringify(description, null, 2))
     return 0
@@ -312,8 +342,9 @@ export async function runSpaceDelete(options: {
       server: options.server,
       did: options.did
     })
-    await target.client.space(target.spaceId).delete()
-    reportDeleted(wasUrl({ server: target.server, spaceId: target.spaceId }))
+    const space = target.client.space(target.spaceId)
+    await space.delete()
+    reportDeleted(space.url)
     if (target.entry) {
       const removed = await removeSpaceRecord({
         storageId: target.entry.storageId
@@ -423,11 +454,10 @@ export async function runSpaceAdd(options: {
       server: options.server,
       did: options.did
     })
-    const description = await target.client.space(target.spaceId).describe()
+    const space = target.client.space(target.spaceId)
+    const description = await space.describe()
     if (description === null) {
-      return reportNotFound(
-        wasUrl({ server: target.server, spaceId: target.spaceId })
-      )
+      return reportNotFound(space.url)
     }
     const filePath = await saveSpaceRecord({
       record: {

@@ -3,7 +3,7 @@
  * clear the access-control policy of a space, collection, or resource.
  */
 import { readFile } from 'node:fs/promises'
-import { type PolicyDocument } from '@interop/was-client'
+import { type PolicyDocument } from '@interop/pws-client'
 import { resolveWasTarget } from '../../was/client.js'
 import { handleForTarget, reportError } from './shared.js'
 
@@ -27,10 +27,10 @@ export async function runPolicyShow(options: {
       server: options.server,
       did: options.did
     })
-    const { handle, url } = handleForTarget(target)
+    const handle = handleForTarget(target)
     const policy = await handle.getPolicy()
     if (policy === null) {
-      console.error(`No policy set (or not visible to you): ${url}`)
+      console.error(`No policy set (or not visible to you): ${handle.url}`)
       return 1
     }
     console.log(JSON.stringify(policy, null, 2))
@@ -117,9 +117,9 @@ export async function runPolicySet(options: {
       server: options.server,
       did: options.did
     })
-    const { handle, url } = handleForTarget(target)
+    const handle = handleForTarget(target)
     await handle.setPolicy(policy)
-    console.error(`Policy set on ${url}`)
+    console.error(`Policy set on ${handle.url}`)
     console.log(JSON.stringify(policy, null, 2))
     return 0
   } catch (err) {
@@ -148,9 +148,11 @@ export async function runPolicyClear(options: {
       server: options.server,
       did: options.did
     })
-    const { handle, url } = handleForTarget(target)
+    const handle = handleForTarget(target)
     await handle.clearPolicy()
-    console.error(`Cleared the policy on ${url} (capability-only access).`)
+    console.error(
+      `Cleared the policy on ${handle.url} (capability-only access).`
+    )
     return 0
   } catch (err) {
     return reportError({ action: 'clear the policy', err })

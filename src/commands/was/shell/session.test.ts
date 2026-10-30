@@ -62,7 +62,7 @@ describe('resolveCwdChange', () => {
         cwd: [],
         arg: 'https://was.example/space/abc/coll'
       }),
-      { cwd: ['abc', 'coll'], server: 'https://was.example' }
+      { cwd: ['abc', 'coll'], server: 'https://was.example/' }
     )
   })
 

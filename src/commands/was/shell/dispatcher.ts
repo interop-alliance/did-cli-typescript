@@ -9,7 +9,12 @@
  */
 import { Command, CommanderError } from 'commander'
 import { tokenizeShellLine } from './tokenize.js'
-import { formatCwd, resolveCwdChange, type ShellSession } from './session.js'
+import {
+  formatCwd,
+  resolveCwdChange,
+  setSessionServer,
+  type ShellSession
+} from './session.js'
 
 /**
  * A summary of the shell builtins, printed by `help` before commander's own
@@ -231,8 +236,11 @@ export function makeWasShellDispatcher({
           output.write('Usage: connect <url>\n')
           return
         }
-        process.env.WAS_SERVER_URL = args[0]
-        output.write(`server: ${args[0]}\n`)
+        try {
+          output.write(`server: ${setSessionServer(args[0])}\n`)
+        } catch (err) {
+          output.write(`${(err as Error).message}\n`)
+        }
         return
       case 'did':
         if (!args[0]) {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import type { WasClient } from '@interop/was-client'
+import type { PwsClient } from '@interop/pws-client'
 import { makeWasCommand } from './was.js'
 import { setWasClientFactory } from '../was/client.js'
 import { listSpaceRecords, saveSpaceRecord } from '../was/registry.js'
@@ -17,7 +17,7 @@ import {
   saveToDids
 } from '../storage.js'
 import { encodeCapability } from '../zcap/encoding.js'
-import type { IZcap } from '@interop/was-client'
+import type { IZcap } from '@interop/pws-client'
 
 /**
  * Generates a did:key DID with an Ed25519 key and saves its document and
@@ -42,6 +42,7 @@ async function saveTestDid(): Promise<{ did: string }> {
  * Canned responses for the stub client; `null` mimics a 404 miss.
  */
 interface StubResponses {
+  createdSpaceUrl?: string
   collections?: object | null
   describeCollection?: object | null
   resourceListing?: object | null
@@ -59,11 +60,11 @@ interface StubResponses {
 }
 
 /**
- * Builds a stub standing in for the `WasClient` handle graph, recording
+ * Builds a stub standing in for the `PwsClient` handle graph, recording
  * every call so command wiring can be asserted without a server.
  */
 function makeStubClient(responses: StubResponses = {}): {
-  client: WasClient
+  client: PwsClient
   calls: Record<string, unknown[][]>
 } {
   const calls: Record<string, unknown[][]> = {}
@@ -92,7 +93,11 @@ function makeStubClient(responses: StubResponses = {}): {
   const client = {
     async createSpace(desc: { id?: string; name?: string }) {
       record('createSpace', desc)
-      return { id: desc.id ?? 'space-new' }
+      const id = desc.id ?? 'space-new'
+      return {
+        id,
+        url: responses.createdSpaceUrl ?? `https://was.example/space/${id}/`
+      }
     },
     async grant(options: object) {
       record('grant', options)
@@ -109,26 +114,30 @@ function makeStubClient(responses: StubResponses = {}): {
         .split('/')
         .filter(Boolean)
       const [, spaceId, collectionId, resourceId] = segments
+      const spaceUrl = `https://was.example/space/${spaceId}/`
       const space = this.space(spaceId)
       if (resourceId) {
         return {
           ...space.collection(collectionId, zcap).resource(resourceId),
-          spaceId,
+          spaceUrl,
           collectionId
         }
       }
       if (collectionId) {
-        return { ...space.collection(collectionId, zcap), spaceId }
+        return { ...space.collection(collectionId, zcap), spaceUrl }
       }
       return space
     },
     space(spaceId: string) {
       record('space', spaceId)
+      const spaceUrl = `https://was.example/space/${spaceId}/`
       return {
         id: spaceId,
+        url: spaceUrl,
         async createCollection(desc: { id?: string; name?: string }) {
           record('createCollection', desc)
-          return { id: desc.id ?? 'generated-coll' }
+          const id = desc.id ?? 'generated-coll'
+          return { id, url: `${spaceUrl}${id}/` }
         },
         async collections() {
           record('collections')
@@ -167,6 +176,7 @@ function makeStubClient(responses: StubResponses = {}): {
           record('collection', collectionId)
           return {
             id: collectionId,
+            url: `${spaceUrl}${collectionId}/`,
             ...policyMethods('collection'),
             async describe() {
               record('describeCollection')
@@ -211,6 +221,7 @@ function makeStubClient(responses: StubResponses = {}): {
               )
               return {
                 id: resourceId,
+                url: `${spaceUrl}${collectionId}/${resourceId}`,
                 ...policyMethods('resource'),
                 async get() {
                   record('get')
@@ -242,7 +253,7 @@ function makeStubClient(responses: StubResponses = {}): {
       }
     }
   }
-  return { client: client as unknown as WasClient, calls }
+  return { client: client as unknown as PwsClient, calls }
 }
 
 describe('di was', () => {
@@ -560,10 +571,64 @@ describe('di was', () => {
         assert.deepEqual(entry.record, {
           id: 'space-new',
           name: 'Home',
-          server: 'https://was.example',
+          server: 'https://was.example/',
           controller: did
         })
         assert.equal(entry.meta?.handle, 'home')
+      })
+
+      it('reports and records the URL the server named', async () => {
+        const { did } = await saveTestDid()
+        const { client } = makeStubClient({
+          createdSpaceUrl: 'https://public.example/was/space/space-new/'
+        })
+        setWasClientFactory(() => client)
+        await makeWasCommand().parseAsync(
+          [
+            'space',
+            'create',
+            '--server',
+            'http://localhost:3000',
+            '--did',
+            did,
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined)
+        assert.equal(
+          JSON.parse(logs[0]).url,
+          'https://public.example/was/space/space-new/'
+        )
+        const [entry] = await listSpaceRecords()
+        assert.equal(entry.record.server, 'https://public.example/was/')
+      })
+
+      it('still prints a created space --save cannot register', async () => {
+        const { did } = await saveTestDid()
+        const { client } = makeStubClient({
+          createdSpaceUrl: 'https://public.example/custom/abc/'
+        })
+        setWasClientFactory(() => client)
+        await makeWasCommand().parseAsync(
+          [
+            'space',
+            'create',
+            '--server',
+            'https://was.example',
+            '--did',
+            did,
+            '--save'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.equal(
+          JSON.parse(logs[0]).url,
+          'https://public.example/custom/abc/'
+        )
+        assert.match(errors.join('\n'), /Could not register the space/)
+        assert.deepEqual(await listSpaceRecords(), [])
       })
     })
 
@@ -1259,13 +1324,24 @@ describe('di was', () => {
         )
         assert.equal(exitCode, undefined)
         const [grantOptions] = calls.grant[0] as [
-          { to: string; actions: string[]; expires: string; target: string }
+          {
+            to: string
+            actions: string[]
+            expires: string
+            target: string
+            spaceUrl: string
+          }
         ]
         assert.equal(grantOptions.to, 'did:key:z6MkBob')
         assert.deepEqual(grantOptions.actions, ['GET', 'PUT'])
         assert.equal(
           grantOptions.target,
           'https://was.example/space/space-1/docs/'
+        )
+        // Without the Space URL the grant would root at the target itself.
+        assert.equal(
+          grantOptions.spaceUrl,
+          'https://was.example/space/space-1/'
         )
         assert.ok(grantOptions.expires)
         const output = JSON.parse(logs[0])
@@ -1398,7 +1474,9 @@ describe('di was', () => {
             id: 'urn:zcap:delegated:zReceived',
             controller: did,
             invocationTarget: target,
-            parentCapability: `urn:zcap:root:${encodeURIComponent(target)}`
+            parentCapability: `urn:zcap:root:${encodeURIComponent(
+              'https://was.example/space/space-1/'
+            )}`
           } as IZcap
         }
         return { calls, makeZcap }

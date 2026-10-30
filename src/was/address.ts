@@ -13,8 +13,9 @@
  *   segment (so a server mounted under a sub-path keeps its prefix) and the
  *   space id is the segment after it. Collection/resource segments may appear
  *   inside the URL itself or be appended with the same `/<coll>/<res>`
- *   syntax as the other forms. The URL grammar is was-client's
- *   `parseAbsoluteSpaceTarget`.
+ *   syntax as the other forms. A query or fragment is ignored. The URL grammar
+ *   is pws-client's: `baseServerUrlOf` says what a Space URL is on a server,
+ *   and `parseSpaceTarget` reads what lies beneath it.
  *
  * Handles and bare space ids are not distinguished here -- both land in
  * `spaceRef` and are resolved against the registry by the caller. Resource
@@ -27,7 +28,13 @@
  * above.
  */
 
-import { parseAbsoluteSpaceTarget } from '@interop/was-client/paths'
+import {
+  baseServerUrlOf,
+  parseSpaceTarget,
+  spaceIdOfUrl,
+  spacesRepositoryUrl,
+  type ParsedSpacePath
+} from '@interop/pws-client/paths'
 
 /**
  * The relative-path base (the shell's current working directory segments)
@@ -54,7 +61,7 @@ export function setWasAddressBase(segments: string[]): void {
  * written, and the optional collection/resource ids.
  */
 export interface WasAddress {
-  /** Server base URL, present only for the full-URL form. */
+  /** Server base URL in canonical form, present only for the full-URL form. */
   server?: string
   /** The space handle or space id, exactly as the user wrote it. */
   spaceRef: string
@@ -80,6 +87,70 @@ export function tryParseHttpUrl(value: string): URL | undefined {
     return undefined
   }
   return url
+}
+
+/**
+ * The server base URL of a Space URL in a server's layout
+ * (`{base}space/{id}/`). `baseServerUrlOf` also accepts a Spaces Repository
+ * URL, which is not one.
+ *
+ * @param spaceUrl {string}   A URL in canonical container form.
+ * @returns {string | undefined}   Undefined when the URL has no such form.
+ */
+export function serverOfSpaceUrl(spaceUrl: string): string | undefined {
+  try {
+    const baseServerUrl = baseServerUrlOf(spaceUrl)
+    return spacesRepositoryUrl({ baseServerUrl }) === spaceUrl
+      ? undefined
+      : baseServerUrl
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * A Space found in a full WAS URL: its server base URL, its URL, and what the
+ * full URL addresses beneath it.
+ */
+interface LocatedSpace {
+  server: string
+  spaceUrl: string
+  path: ParsedSpacePath
+}
+
+/**
+ * Finds the Space a full WAS URL sits at or beneath, by testing each path
+ * prefix against the server layout. The first prefix that leaves at most a
+ * collection and a resource wins, so a mount path containing a `space` segment
+ * (`/space/was/space/<id>`) parses when the remainder rules out the shorter
+ * prefix. A URL that fits both readings (`/space/a/space/b`) is read as the
+ * unmounted layout: the string alone cannot tell them apart. With no such
+ * prefix, the first Space found is returned with its `sub-resource` path.
+ *
+ * @param url {URL}
+ * @returns {LocatedSpace | undefined}
+ *   Undefined when no prefix of the path is a Space.
+ */
+function locateSpace(url: URL): LocatedSpace | undefined {
+  const target = `${url.origin}${url.pathname}`
+  const segments = url.pathname.split('/').filter(Boolean)
+  let tooDeep: LocatedSpace | undefined
+  for (let end = 2; end <= segments.length; end++) {
+    const spaceUrl = `${url.origin}/${segments.slice(0, end).join('/')}/`
+    const server = serverOfSpaceUrl(spaceUrl)
+    if (server === undefined) {
+      continue
+    }
+    const path = parseSpaceTarget({ spaceUrl, target })
+    if (path === null) {
+      continue
+    }
+    if (path.kind !== 'sub-resource') {
+      return { server, spaceUrl, path }
+    }
+    tooDeep ??= { server, spaceUrl, path }
+  }
+  return tooDeep
 }
 
 /**
@@ -129,15 +200,16 @@ export function parseWasAddress(address: string): WasAddress {
     throw new Error('Invalid WAS address: empty string.')
   }
 
-  if (tryParseHttpUrl(address)) {
-    const parsed = parseAbsoluteSpaceTarget(address)
-    if (parsed === null) {
+  const url = tryParseHttpUrl(address)
+  if (url) {
+    const located = locateSpace(url)
+    if (located === undefined) {
       throw new Error(
         `Invalid WAS space URL "${address}": expected a path of the form ` +
           '/space/<space-id>[/<collection>[/<resource>]].'
       )
     }
-    const { baseUrl, path } = parsed
+    const { server, spaceUrl, path } = located
     if (path.kind === 'sub-resource') {
       throw new Error(
         `Invalid WAS space URL "${address}": expected at most ` +
@@ -145,8 +217,8 @@ export function parseWasAddress(address: string): WasAddress {
       )
     }
     return {
-      server: baseUrl,
-      spaceRef: path.spaceId,
+      server,
+      spaceRef: spaceIdOfUrl(spaceUrl),
       ...(path.kind !== 'space' && { collectionId: path.collectionId }),
       ...(path.kind === 'resource' && { resourceId: path.resourceId })
     }

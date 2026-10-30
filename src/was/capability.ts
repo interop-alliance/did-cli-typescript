@@ -2,23 +2,23 @@
  * Capability-based addressing for the `was` commands (the receiving side of
  * delegation): resolves a `--capability` reference (via the shared
  * `resolveCapabilityInput` resolver in `src/zcap/resolve.ts`) and rebuilds a
- * signed access handle from it with `was.fromCapability()`. The capability's
- * `invocationTarget` determines both the server base URL (read off the target
- * by was-client's `parseAbsoluteSpaceTarget`, sub-path mounts included) and the
- * handle depth (space, collection, or resource), so no path argument is
- * needed. The signing DID falls back from `--did` / `WAS_DID` to the
- * capability's `controller` (the delegatee, who is the one invoking it).
+ * signed access handle from it with `was.fromCapability()`. The client opens
+ * on the Space named by the capability's chain root, wherever the server
+ * serves it, and the `invocationTarget` sets the handle depth (space,
+ * collection, or resource), so no path argument is needed. The signing DID
+ * falls back from `--did` / `WAS_DID` to the capability's `controller` (the
+ * delegatee, who is the one invoking it).
  */
 import type {
   Collection,
   Resource,
   Space,
   IZcap,
-  WasClient
-} from '@interop/was-client'
-import { parseAbsoluteSpaceTarget } from '@interop/was-client/paths'
+  PwsClient
+} from '@interop/pws-client'
+import { spaceUrlOf } from '@interop/pws-client/paths'
 import { resolveCapabilityInput } from '../zcap/resolve.js'
-import { buildWasClient } from './client.js'
+import { buildSpaceClient } from './client.js'
 
 /**
  * The depth a capability handle operates at, implied by the path of its
@@ -30,10 +30,8 @@ export type CapabilityDepth = 'space' | 'collection' | 'resource'
  * The depth-independent fields of a resolved capability target.
  */
 interface ResolvedCapabilityBase {
-  client: WasClient
+  client: PwsClient
   zcap: IZcap
-  /** The server base URL the invocation target sits beneath. */
-  server: string
   /** The resolved signing DID. */
   did: string
   /** The capability's invocation target URL, for messages and output. */
@@ -52,9 +50,8 @@ export type ResolvedCapabilityTarget =
 
 /**
  * Resolves a `--capability` reference into a ready-to-use command target:
- * the capability itself, a signed client for the invocation target's
- * server, and the access handle rebuilt at the depth the capability
- * implies.
+ * the capability itself, a signed client on the Space it is rooted in, and
+ * the access handle rebuilt at the depth the capability implies.
  *
  * @param options {object}
  * @param options.ref {string}   The `--capability` value.
@@ -74,13 +71,15 @@ export async function resolveCapabilityTarget({
     throw new Error(`The capability "${ref}" has no invocationTarget.`)
   }
   const url = zcap.invocationTarget
-  const parsed = parseAbsoluteSpaceTarget(url)
-  if (parsed === null) {
+  let spaceUrl: string
+  try {
+    spaceUrl = spaceUrlOf(zcap)
+  } catch (err) {
     throw new Error(
-      `The capability's invocationTarget is not a WAS Space URL: ${url}`
+      `The capability is not rooted in a WAS Space: ${(err as Error).message}`,
+      { cause: err }
     )
   }
-  const server = parsed.baseUrl
   const didRef =
     did ??
     process.env.WAS_DID ??
@@ -90,18 +89,18 @@ export async function resolveCapabilityTarget({
       'No signing DID for the capability: provide --did or WAS_DID.'
     )
   }
-  const { client, did: resolvedDid } = await buildWasClient({
-    server,
+  const { client, did: resolvedDid } = await buildSpaceClient({
+    spaceUrl,
     did: didRef
   })
   const handle = client.fromCapability(zcap)
-  const base = { client, zcap, server, did: resolvedDid, url }
+  const base = { client, zcap, did: resolvedDid, url }
   // The handle's own shape implies the depth: a Resource carries
-  // `collectionId`, a Collection carries `spaceId`, a Space carries neither.
+  // `collectionId`, a Collection carries `spaceUrl`, a Space carries neither.
   if ('collectionId' in handle) {
     return { ...base, depth: 'resource', handle }
   }
-  if ('spaceId' in handle) {
+  if ('spaceUrl' in handle) {
     return { ...base, depth: 'collection', handle }
   }
   return { ...base, depth: 'space', handle }

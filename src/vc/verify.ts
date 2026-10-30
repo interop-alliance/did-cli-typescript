@@ -2,9 +2,9 @@
  * Credential verification adapter over @interop/verifier-core.
  *
  * A single `verifyCredentialFully` call runs the fork's default suite pipeline
- * (structure, cryptographic signature, revocation/status, issuer registry
- * lookup) plus two custom suites (`expirationSuite`, `issuerDetailsSuite`),
- * returning the unified `CredentialVerificationResult` directly -- it is
+ * (structure, cryptographic signature, validity period, revocation/status,
+ * issuer registry lookup) plus the custom `issuerDetailsSuite`, returning the
+ * unified `CredentialVerificationResult` directly -- it is
  * already dev-friendly (top-level `verified`, per-suite `summary[]`, flat
  * `results[]`). `toSummary` derives a compact flattened object for the CLI's
  * `--summary` flag. All knowledge of the verifier-core contract is isolated to
@@ -15,22 +15,22 @@ import type {
   CredentialVerificationResult,
   CheckResult,
   DocumentLoader,
-  EntityIdentityRegistry
+  EntityIdentityRegistry,
+  ValidityPeriodPayload
 } from '@interop/verifier-core'
-import { expirationSuite } from './suites/expirationSuite.js'
 import { issuerDetailsSuite } from './suites/issuerDetailsSuite.js'
 import { documentLoader } from '../documentLoader.js'
 
 /**
- * Dot-separated check ids emitted by the verifier-core pipeline (and the two
- * custom suites) that the summary reads.
+ * Phase-qualified check ids emitted by the verifier-core pipeline (and the
+ * custom issuer-details suite) that the summary reads.
  */
 const CHECK_ID = {
-  signature: 'proof.signature',
-  status: 'status.bitstring',
-  expiration: 'validity.expiration',
+  signature: 'cryptographic.proof.signature',
+  status: 'cryptographic.status.bitstring',
+  validityPeriod: 'cryptographic.proof.validity-period',
   issuerDetails: 'trust.issuer-details',
-  parsing: 'parsing.envelope'
+  parsing: 'cryptographic.parsing.envelope'
 } as const
 
 /**
@@ -50,7 +50,7 @@ export interface VerificationSummary {
 
 /**
  * Runs full verification on a credential: the default verifier-core pipeline
- * plus the expiration and issuer-details custom suites.
+ * plus the issuer-details custom suite.
  *
  * @param options {object}
  * @param options.credential {object}   The parsed Verifiable Credential.
@@ -70,16 +70,13 @@ export async function verifyCredentialFully({
     // Zod), so the local object passes without a cast.
     credential,
     registries,
-    additionalSuites: [expirationSuite, issuerDetailsSuite],
+    additionalSuites: [issuerDetailsSuite],
     // The shared loader resolves did:webvh (and did:web / did:key) verification
     // methods; verifier-core's default loader knows only did:key + did:web, so
     // without this a did:webvh issuer's signature can never be checked. The
     // local loader is typed independently, so cast to verifier-core's
     // DocumentLoader rather than the blanket `as never`.
-    documentLoader: documentLoader as unknown as DocumentLoader,
-    // verbose so results[] carries EVERY check (incl. successes and the
-    // issuer-details payload), not just failures folded into summary[].
-    verbose: true
+    documentLoader: documentLoader as unknown as DocumentLoader
   })
 }
 
@@ -94,8 +91,7 @@ export function findParseFailure(
   result: CredentialVerificationResult
 ): CheckResult | undefined {
   return result.results.find(
-    check =>
-      check.check === CHECK_ID.parsing && check.outcome.status === 'failure'
+    check => check.id === CHECK_ID.parsing && check.outcome.status === 'failure'
   )
 }
 
@@ -145,13 +141,13 @@ export function toSummary(
   result: CredentialVerificationResult
 ): VerificationSummary {
   const byCheck = (checkId: string): CheckResult | undefined =>
-    result.results.find(check => check.check === checkId)
+    result.results.find(check => check.id === checkId)
 
   return {
     verified: result.verified,
     checks: {
       signature: passed(byCheck(CHECK_ID.signature)),
-      expired: failed(byCheck(CHECK_ID.expiration)),
+      expired: expired(byCheck(CHECK_ID.validityPeriod)),
       revoked: revoked(byCheck(CHECK_ID.status)),
       issuerRecognized: issuerRecognized(byCheck(CHECK_ID.issuerDetails))
     },
@@ -174,15 +170,28 @@ function passed(check: CheckResult | undefined): boolean | undefined {
 }
 
 /**
- * Maps a check to `true` when it failed (e.g. the expiration check), `false`
- * on success, `undefined` when skipped or absent.
+ * Maps the validity-period check to an `expired` boolean: `true` only for an
+ * expiry, since the same check also fails a credential that is not yet valid.
+ * `undefined` when the check was skipped or absent, or the credential states
+ * no expiration date.
  *
  * @param check {CheckResult | undefined}
  * @returns {boolean | undefined}
  */
-function failed(check: CheckResult | undefined): boolean | undefined {
-  const result = passed(check)
-  return result === undefined ? undefined : !result
+function expired(check: CheckResult | undefined): boolean | undefined {
+  if (!check || check.outcome.status === 'skipped') {
+    return undefined
+  }
+  const payload = check.outcome.payload as ValidityPeriodPayload | undefined
+  if (payload?.end === undefined) {
+    return undefined
+  }
+  return (
+    check.outcome.status === 'failure' &&
+    check.outcome.problems.some(
+      problem => problem.type === ProblemTypes.CREDENTIAL_EXPIRED
+    )
+  )
 }
 
 /**

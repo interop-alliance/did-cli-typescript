@@ -5,6 +5,7 @@
  * so the cwd never descends past a collection (resources are leaves you `get`,
  * not directories you enter).
  */
+import { canonicalBaseServerUrl } from '@interop/pws-client/paths'
 import { parseWasAddress, tryParseHttpUrl } from '../../../was/address.js'
 
 /**
@@ -15,6 +16,20 @@ import { parseWasAddress, tryParseHttpUrl } from '../../../was/address.js'
 export interface ShellSession {
   /** The current path segments: `[]`, `[space]`, or `[space, collection]`. */
   cwd: string[]
+}
+
+/**
+ * Sets the session server default in canonical form, so `pwd` prints one form
+ * however the server was given. Throws on a value that cannot be a server base
+ * URL.
+ *
+ * @param server {string}
+ * @returns {string}   The canonical server base URL.
+ */
+export function setSessionServer(server: string): string {
+  const canonical = canonicalBaseServerUrl(server)
+  process.env.WAS_SERVER_URL = canonical
+  return canonical
 }
 
 /**

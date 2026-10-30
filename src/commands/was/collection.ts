@@ -12,8 +12,7 @@ import {
   reportDeleted,
   reportError,
   reportNotFound,
-  resolveCollectionTarget,
-  wasUrl
+  resolveCollectionTarget
 } from './shared.js'
 
 /**
@@ -47,16 +46,11 @@ export async function runCollectionCreate(options: {
         ...(options.name !== undefined && { name: options.name }),
         ...(options.id !== undefined && { id: options.id })
       })
-    const url = wasUrl({
-      server: target.server,
-      spaceId: target.spaceId,
-      collectionId: collection.id
-    })
     console.log(
       JSON.stringify(
         {
           id: collection.id,
-          url,
+          url: collection.url,
           ...(options.name !== undefined && { name: options.name })
         },
         null,
@@ -94,11 +88,10 @@ export async function runCollectionList(options: {
       server: options.server,
       did: options.did
     })
-    const listing = await target.client.space(target.spaceId).collections()
+    const space = target.client.space(target.spaceId)
+    const listing = await space.collections()
     if (listing === null) {
-      return reportNotFound(
-        wasUrl({ server: target.server, spaceId: target.spaceId })
-      )
+      return reportNotFound(space.url)
     }
     printCollectionListing({
       listing,
@@ -127,18 +120,12 @@ export async function runCollectionShow(options: {
 }): Promise<number> {
   try {
     const target = await resolveCollectionTarget(options)
-    const description = await target.client
+    const collection = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
-      .describe()
+    const description = await collection.describe()
     if (description === null) {
-      return reportNotFound(
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId
-        })
-      )
+      return reportNotFound(collection.url)
     }
     console.log(JSON.stringify(description, null, 2))
     return 0
@@ -193,17 +180,11 @@ export async function runCollectionDelete(options: {
 }): Promise<number> {
   try {
     const target = await resolveCollectionTarget(options)
-    await target.client
+    const collection = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
-      .delete()
-    reportDeleted(
-      wasUrl({
-        server: target.server,
-        spaceId: target.spaceId,
-        collectionId: target.collectionId
-      })
-    )
+    await collection.delete()
+    reportDeleted(collection.url)
     return 0
   } catch (err) {
     return reportError({ action: 'delete the collection', err })
@@ -231,18 +212,12 @@ export async function runCollectionBackend(options: {
 }): Promise<number> {
   try {
     const target = await resolveCollectionTarget(options)
-    const backend = await target.client
+    const collection = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
-      .backend()
+    const backend = await collection.backend()
     if (backend === null) {
-      return reportNotFound(
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId
-        })
-      )
+      return reportNotFound(collection.url)
     }
     if (options.json) {
       console.log(JSON.stringify(backend, null, 2))
@@ -282,18 +257,12 @@ export async function runCollectionQuota(options: {
 }): Promise<number> {
   try {
     const target = await resolveCollectionTarget(options)
-    const usage = await target.client
+    const collection = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
-      .quota()
+    const usage = await collection.quota()
     if (usage === null) {
-      return reportNotFound(
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId
-        })
-      )
+      return reportNotFound(collection.url)
     }
     if (options.json) {
       console.log(JSON.stringify(usage, null, 2))

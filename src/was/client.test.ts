@@ -6,13 +6,7 @@ import { tmpdir } from 'node:os'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { saveDidMeta, saveToDids } from '../storage.js'
-import { WasClient } from '@interop/was-client'
-import {
-  buildWasClient,
-  loadWasSigner,
-  resolveWasTarget,
-  setWasClientFactory
-} from './client.js'
+import { buildWasClient, loadWasSigner, resolveWasTarget } from './client.js'
 import { saveSpaceRecord } from './registry.js'
 
 /**
@@ -43,11 +37,6 @@ describe('was client factory', () => {
   let walletDir: string
 
   beforeEach(async () => {
-    // Build the real client without service discovery, which would
-    // otherwise send a HEAD to the (unreachable) example server.
-    setWasClientFactory(({ serverUrl, signer }) =>
-      WasClient.fromSigner({ serverUrl, signer })
-    )
     walletDir = await mkdtemp(join(tmpdir(), 'did-cli-test-wallet-'))
     process.env.WALLET_DIR = walletDir
     delete process.env.WAS_SERVER_URL
@@ -55,7 +44,6 @@ describe('was client factory', () => {
   })
 
   afterEach(async () => {
-    setWasClientFactory()
     delete process.env.WALLET_DIR
     delete process.env.WAS_SERVER_URL
     delete process.env.WAS_DID
@@ -136,10 +124,9 @@ describe('was client factory', () => {
         server: 'https://was.example',
         did
       })
-      assert.equal(server, 'https://was.example')
+      assert.equal(server, 'https://was.example/')
       assert.equal(resolved, did)
-      assert.equal(client.serverUrl, 'https://was.example/spaces/')
-      assert.equal(client.baseUrl, 'https://was.example')
+      assert.equal(client.baseServerUrl, 'https://was.example/')
       assert.equal(client.controllerDid, did)
     })
 
@@ -148,8 +135,7 @@ describe('was client factory', () => {
       process.env.WAS_SERVER_URL = 'https://env.example'
       process.env.WAS_DID = did
       const { client } = await buildWasClient()
-      assert.equal(client.serverUrl, 'https://env.example/spaces/')
-      assert.equal(client.baseUrl, 'https://env.example')
+      assert.equal(client.baseServerUrl, 'https://env.example/')
       assert.equal(client.controllerDid, did)
     })
   })
@@ -171,11 +157,10 @@ describe('was client factory', () => {
       assert.equal(target.spaceId, 'urn:uuid:1234')
       assert.equal(target.collectionId, 'credentials')
       assert.equal(target.resourceId, 'vc-1')
-      assert.equal(target.server, 'https://was.example')
+      assert.equal(target.server, 'https://was.example/')
       assert.equal(target.did, did)
       assert.equal(target.entry?.meta?.handle, 'home')
-      assert.equal(target.client.serverUrl, 'https://was.example/spaces/')
-      assert.equal(target.client.baseUrl, 'https://was.example')
+      assert.equal(target.client.baseServerUrl, 'https://was.example/')
     })
 
     it('takes the server from a full space URL address', async () => {
@@ -184,8 +169,8 @@ describe('was client factory', () => {
         address: 'https://other.example/space/abc/docs',
         did
       })
-      assert.equal(target.server, 'https://other.example')
-      assert.equal(target.client.baseUrl, 'https://other.example')
+      assert.equal(target.server, 'https://other.example/')
+      assert.equal(target.client.baseServerUrl, 'https://other.example/')
       assert.equal(target.spaceId, 'abc')
       assert.equal(target.collectionId, 'docs')
       assert.equal(target.entry, undefined)

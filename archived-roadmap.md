@@ -501,3 +501,46 @@ subcommand, or letting `replace-key` take the listed key when `--purpose` is
 given.
 
 Resolved the open choice with a new subcommand, `did webvh set-purpose`.
+
+### CLI-25: Adapt `vc verify` to `@interop/verifier-core` 4
+
+- status: done
+- done: 2026-10-30
+- priority: high
+- labels: vc, deps
+- acceptance:
+  - [x] `src/vc/verify.ts` typechecks against `@interop/verifier-core` `^4.1.0`
+  - [x] The two `produces a credential whose signature verifies` tests in
+        `src/commands/vc.test.ts` pass
+
+discovered-from: the `@interop/pws-client` rename. The 3.x to 4.x bump removed
+the `verbose` option and the `check` field of `CheckResult`, which
+`src/vc/verify.ts` still uses.
+
+### CLI-15: Keep the server base path when resolving a capability
+
+- status: done
+- done: 2026-10-30
+- priority: medium
+- labels: was, zcap, bug
+- touches:
+  - freewallet -- FW-244 is the other half of the same end-to-end break
+- acceptance:
+  - [x] `resolveCapabilityTarget` derives the server base URL from the
+        capability's `invocationTarget` without discarding its path
+        prefix, so a sub-path deployment (`https://host/was`) resolves to
+        `https://host/was` rather than `https://host`
+  - [x] `fromCapability` then parses the target against the full base, and
+        a sub-path target no longer misparses
+  - [x] A test covers a capability issued on a sub-path deployment
+
+Discovered by FW-227's 2026-08-21 CLI-lens review. Today the server is
+taken as `new URL(invocationTarget).origin`, which drops any base path
+before pws-client strips that same base path to classify the target. Paired
+with freewallet's FW-244; both must land for the agent demo to claim
+sub-path deployments, and FW-227 section 8 question 10 is where the "or
+state bare-origin only" alternative is decided.
+
+Resolved without a derived base URL: `resolveCapabilityTarget` opens the client
+on the Space named by the chain root, with `PwsClient.forSpace`, so no server
+path is discarded. FW-244 retired into freewallet's FW-437, which is still open.

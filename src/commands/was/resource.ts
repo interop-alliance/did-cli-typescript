@@ -11,7 +11,7 @@ import {
   type Collection,
   type Resource,
   type ResourceMetadataCustom
-} from '@interop/was-client'
+} from '@interop/pws-client'
 import { resolveCapabilityTarget } from '../../was/capability.js'
 import { readPayload, writeResourceOutput } from '../../was/io.js'
 import {
@@ -22,7 +22,6 @@ import {
   reportNotFound,
   resolveCollectionTarget,
   resolveResourceTarget,
-  wasUrl,
   withResourceId
 } from './shared.js'
 
@@ -89,13 +88,7 @@ async function resolveResourceHandle({
     .space(target.spaceId)
     .collection(target.collectionId)
     .resource(target.resourceId)
-  const url = wasUrl({
-    server: target.server,
-    spaceId: target.spaceId,
-    collectionId: target.collectionId,
-    resourceId: target.resourceId
-  })
-  return { resource, url }
+  return { resource, url: resource.url }
 }
 
 /**
@@ -426,18 +419,12 @@ export async function runResourceList(options: {
 }): Promise<number> {
   try {
     const target = await resolveCollectionTarget(options)
-    const listing = await target.client
+    const collection = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
-      .list()
+    const listing = await collection.list()
     if (listing === null) {
-      return reportNotFound(
-        wasUrl({
-          server: target.server,
-          spaceId: target.spaceId,
-          collectionId: target.collectionId
-        })
-      )
+      return reportNotFound(collection.url)
     }
     printResourceListing({ listing, json: options.json, plain: options.plain })
     return 0
@@ -462,19 +449,12 @@ export async function runResourceDelete(options: {
 }): Promise<number> {
   try {
     const target = await resolveResourceTarget(options)
-    await target.client
+    const resource = target.client
       .space(target.spaceId)
       .collection(target.collectionId)
       .resource(target.resourceId)
-      .delete()
-    reportDeleted(
-      wasUrl({
-        server: target.server,
-        spaceId: target.spaceId,
-        collectionId: target.collectionId,
-        resourceId: target.resourceId
-      })
-    )
+    await resource.delete()
+    reportDeleted(resource.url)
     return 0
   } catch (err) {
     return reportError({ action: 'delete the resource', err })

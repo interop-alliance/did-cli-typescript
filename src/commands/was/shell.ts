@@ -23,6 +23,7 @@ import { makeShellCompleter } from './shell/completer.js'
 import {
   formatCwd,
   resolveCwdChange,
+  setSessionServer,
   type ShellSession
 } from './shell/session.js'
 
@@ -132,7 +133,12 @@ export async function runWasShell({
   const savedServer = process.env.WAS_SERVER_URL
   const savedDid = process.env.WAS_DID
   if (server !== undefined) {
-    process.env.WAS_SERVER_URL = server
+    try {
+      setSessionServer(server)
+    } catch (err) {
+      output.write(`${(err as Error).message}\n`)
+      return 2
+    }
   }
   if (did !== undefined) {
     process.env.WAS_DID = did

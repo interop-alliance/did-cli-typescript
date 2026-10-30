@@ -1,7 +1,7 @@
 /**
  * `was` command -- Wallet Attached Storage (WAS) operations.
  *
- * Talks to WAS servers via `@interop/was-client`, signing every request with
+ * Talks to WAS servers via `@interop/pws-client`, signing every request with
  * a `did:key` DID stored in the local wallet. Spaces are addressed by a
  * single positional WAS path -- `SPACE[/COLLECTION[/RESOURCE]]` -- where the
  * space part is a local registry handle, a bare space id, or a full space

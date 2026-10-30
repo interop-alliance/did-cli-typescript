@@ -29,8 +29,8 @@ The agent-facing version of this script is the
   ```
 
   The URL must match byte-for-byte, port included -- zcap invocation targets
-  embed it. Use a bare origin: a sub-path deployment
-  (`https://host/was`) does not resolve capabilities correctly yet (CLI-15).
+  embed it. Use a bare origin. The CLI handles a sub-path deployment
+  (`https://host/was`), but Freewallet does not yet (freewallet FW-437).
 
 - **`@interop/did-cli`** on PATH as `di` (or `npx -y @interop/did-cli`), and
   the wallet the user will approve in open in a browser.

@@ -5,7 +5,7 @@
  * The CLI `runGrant` layer only parses options, calls `grantAccess`, and
  * prints -- this module owns the cross-module assembly/encoding/persistence.
  */
-import { type WasClient } from '@interop/was-client'
+import { type PwsClient } from '@interop/pws-client'
 import { resolveDidRef } from '../meta.js'
 import { sanitizeStorageId, saveToCollection } from '../storage.js'
 import { encodeCapability } from '../zcap/encoding.js'
@@ -46,8 +46,9 @@ function normalizeActions(actions: string[]): WasAction[] {
  * caller to print.
  *
  * @param options {object}
- * @param options.client {WasClient}   The signing WAS client.
+ * @param options.client {PwsClient}   The signing WAS client.
  * @param options.target {string}   The invocation target URL.
+ * @param options.spaceUrl {string}   The Space the grant is rooted in.
  * @param options.to {string}   The delegatee DID or stored-DID handle.
  * @param options.actions {string[]}   Requested actions (HTTP verbs).
  * @param [options.ttl] {string}   Time-to-live for expiration (default 1y).
@@ -61,6 +62,7 @@ function normalizeActions(actions: string[]): WasAction[] {
 export async function grantAccess({
   client,
   target,
+  spaceUrl,
   to,
   actions,
   ttl,
@@ -69,8 +71,9 @@ export async function grantAccess({
   handle,
   description
 }: {
-  client: WasClient
+  client: PwsClient
   target: string
+  spaceUrl: string
   to: string
   actions: string[]
   ttl?: string
@@ -79,7 +82,7 @@ export async function grantAccess({
   handle?: string
   description?: string
 }): Promise<{
-  delegatedCapability: Awaited<ReturnType<WasClient['grant']>>
+  delegatedCapability: Awaited<ReturnType<PwsClient['grant']>>
   encoded: string
   savedPath?: string
 }> {
@@ -93,7 +96,8 @@ export async function grantAccess({
     to: delegatee,
     actions: normalizedActions,
     expires: expiresAt,
-    target
+    target,
+    spaceUrl
   })
   const encoded = encodeCapability(delegatedCapability)
   if (!save) {

@@ -12,23 +12,37 @@
 
 ### Changed
 
-- Bumped the `@interop/*` dependencies, including `@interop/was-client`
-  `^0.97.1`. The `was` commands build the client from the Spaces Repository
-  URL (`<server>/spaces/`); `--server`, `WAS_SERVER_URL` and the registry's
-  `server` field remain the server base URL.
-- `--capability` reads the server base URL off the invocation target, so a WAS
-  server mounted under a sub-path works. A target without a `/space/` segment
-  fails with "not a WAS Space URL".
+- Bumped the `@interop/*` dependencies, and replaced `@interop/was-client` with
+  its renamed successor `@interop/pws-client` `^0.104.0`. The `was` commands
+  build the client from the server base URL, which `--server`,
+  `WAS_SERVER_URL` and the registry's `server` field carry.
+- `--capability` opens the client on the Space named by the capability's chain
+  root, so a server mounted under a sub-path and a single fixed Space both
+  work. A chain that does not start at a root capability, or whose root cannot
+  be a Space URL, fails with "not rooted in a WAS Space" and names the root.
+- `was grant` roots a delegation in the addressed Space at every depth.
 - Removed the service-discovery workaround against a space-owned URL; the
-  client discovers from the Spaces Repository URL, which the server answers.
+  client reads the service description at `<server>/service`.
 - Space and collection URLs in output and capability targets are now built by
-  was-client's path builders, so containers carry the canonical trailing
+  pws-client's path builders, so containers carry the canonical trailing
   slash (`/space/<id>/`, `/space/<id>/<collection>/`). Resource URLs are
   unchanged.
 - A full space URL address keeps a sub-path mount in the server base URL
-  (`https://host/was/space/<id>` gives `https://host/was`).
-- Collection listings tell a tombstone apart with was-client's
-  `isCollectionTombstoneSummary` (requires `@interop/was-client` 0.98.0).
+  (`https://host/was/space/<id>` gives `https://host/was/`) and ignores any
+  query or fragment.
+- The server base URL is in canonical form with its trailing slash in `was`
+  output, the registry and the shell, however it was given. `connect` and
+  `was shell --server` refuse a value that cannot be one.
+- `was space create` reports and records the Space URL the server named in
+  `Location`. With `--save`, a URL that is not at `{server}space/{id}/` is
+  printed but not registered, and the command exits 1.
+- Collection listings tell a tombstone apart with pws-client's
+  `isCollectionTombstoneSummary`.
+- `vc verify` is adapted to `@interop/verifier-core` 4. Rows in `results` carry
+  a phase-qualified `id` in place of `check`.
+- `vc verify` reads expiry from verifier-core's `proof.validity-period` check,
+  replacing the local expiration suite, so an expired or not-yet-valid
+  credential has `verified: false` and exits 1.
 
 ## 0.17.0 - 2026-09-30
 

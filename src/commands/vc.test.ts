@@ -180,10 +180,10 @@ describe('did vc issue', () => {
    * Writes the unsigned credential (welcomeCredential without its `proof`, with
    * the issuer set to the test DID) to a file and returns its path.
    */
-  async function writeUnsignedCredential(): Promise<string> {
+  async function writeUnsignedCredential(extra: object = {}): Promise<string> {
     const { proof, ...unsigned } = welcomeCredential
     void proof
-    const credential = { ...unsigned, issuer: did }
+    const credential = { ...unsigned, issuer: did, ...extra }
     const file = join(dir, 'unsigned.json')
     await writeFile(file, JSON.stringify(credential), 'utf8')
     return file
@@ -266,6 +266,30 @@ describe('did vc issue', () => {
       registries: []
     })
     assert.equal(toSummary(result).checks.signature, true)
+  })
+
+  it('reports an expired credential, with its signature intact', async () => {
+    const file = await writeUnsignedCredential({
+      validUntil: '2099-01-01T00:00:00Z'
+    })
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as object
+    mock.timers.enable({ apis: ['Date'], now: Date.parse('2100-01-01') })
+    const result = await verifyCredentialFully({
+      credential: signed,
+      registries: []
+    }).finally(() => mock.timers.reset())
+    const summary = toSummary(result)
+    assert.equal(summary.verified, false)
+    assert.equal(summary.checks.signature, true)
+    assert.equal(summary.checks.expired, true)
+  })
+
+  it('returns exit code 2 for a structurally malformed credential', async () => {
+    const file = join(dir, 'malformed.json')
+    await writeFile(file, JSON.stringify({ issuer: 'did:example:1' }), 'utf8')
+    assert.equal(await runVerify(file, {}), 2)
   })
 
   it('sets the issuer to the signing DID when none is present', async () => {

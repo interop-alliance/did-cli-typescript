@@ -1,12 +1,12 @@
 /**
  * Unit tests for `reportError`: HTTP status/reason and server-provided problem
- * details are surfaced for `WasError`s, while plain errors keep the bare
+ * details are surfaced for `PwsError`s, while plain errors keep the bare
  * message and the input-error exit code. Also covers the `runAndExit` reporter
  * seam that keeps the command tree shell-safe.
  */
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { WasError } from '@interop/was-client'
+import { PwsError } from '@interop/pws-client'
 import { reportError, runAndExit, setRunAndExitReporter } from './shared.js'
 
 describe('reportError', () => {
@@ -23,10 +23,10 @@ describe('reportError', () => {
     mock.restoreAll()
   })
 
-  it('appends the HTTP status and reason phrase for a WasError', () => {
+  it('appends the HTTP status and reason phrase for a PwsError', () => {
     const code = reportError({
       action: 'put the resource',
-      err: new WasError('Request error', { status: 415 })
+      err: new PwsError('Request error', { status: 415 })
     })
     assert.equal(code, 1)
     assert.equal(
@@ -39,7 +39,7 @@ describe('reportError', () => {
   it('appends server-provided problem details after the status', () => {
     const code = reportError({
       action: 'create the space',
-      err: new WasError('Validation failed', {
+      err: new PwsError('Validation failed', {
         status: 400,
         details: ['name is required']
       })
@@ -52,10 +52,10 @@ describe('reportError', () => {
     )
   })
 
-  it('omits the status suffix when a WasError carries no status', () => {
+  it('omits the status suffix when a PwsError carries no status', () => {
     reportError({
       action: 'put the resource',
-      err: new WasError('Server URL is required')
+      err: new PwsError('Server URL is required')
     })
     assert.equal(
       errors[0],

@@ -1,6 +1,27 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseWasAddress, setWasAddressBase } from './address.js'
+import {
+  parseWasAddress,
+  serverOfSpaceUrl,
+  setWasAddressBase
+} from './address.js'
+
+describe('serverOfSpaceUrl', () => {
+  it('returns the server base URL of a Space URL', () => {
+    assert.equal(
+      serverOfSpaceUrl('https://was.example/mount/space/abc/'),
+      'https://was.example/mount/'
+    )
+  })
+
+  it('rejects a Spaces Repository URL', () => {
+    assert.equal(serverOfSpaceUrl('https://was.example/spaces/'), undefined)
+  })
+
+  it('rejects a URL outside the server layout', () => {
+    assert.equal(serverOfSpaceUrl('https://was.example/custom/abc/'), undefined)
+  })
+})
 
 describe('parseWasAddress', () => {
   describe('handle / bare id form', () => {
@@ -48,14 +69,14 @@ describe('parseWasAddress', () => {
 
     it('parses a bare space URL', () => {
       assert.deepEqual(parseWasAddress(spaceUrl), {
-        server: 'https://was.example',
+        server: 'https://was.example/',
         spaceRef: '81246131-69a4-45ab-9bff-9c946b59cf2e'
       })
     })
 
     it('parses collection/resource segments inside the URL', () => {
       assert.deepEqual(parseWasAddress(`${spaceUrl}/credentials/vc-1`), {
-        server: 'https://was.example',
+        server: 'https://was.example/',
         spaceRef: '81246131-69a4-45ab-9bff-9c946b59cf2e',
         collectionId: 'credentials',
         resourceId: 'vc-1'
@@ -66,7 +87,7 @@ describe('parseWasAddress', () => {
       assert.deepEqual(
         parseWasAddress('http://localhost:8080/space/abc/docs'),
         {
-          server: 'http://localhost:8080',
+          server: 'http://localhost:8080/',
           spaceRef: 'abc',
           collectionId: 'docs'
         }
@@ -75,9 +96,55 @@ describe('parseWasAddress', () => {
 
     it('keeps a sub-path mount in the server base URL', () => {
       assert.deepEqual(parseWasAddress('https://host.example/was/space/abc'), {
-        server: 'https://host.example/was',
+        server: 'https://host.example/was/',
         spaceRef: 'abc'
       })
+    })
+
+    it('keeps a sub-path mount that has a space segment of its own', () => {
+      assert.deepEqual(
+        parseWasAddress('https://host.example/space/was/space/abc/docs/vc-1'),
+        {
+          server: 'https://host.example/space/was/',
+          spaceRef: 'abc',
+          collectionId: 'docs',
+          resourceId: 'vc-1'
+        }
+      )
+    })
+
+    it('reads a URL that fits two layouts as the unmounted one', () => {
+      assert.deepEqual(
+        parseWasAddress('https://host.example/space/a/space/b'),
+        {
+          server: 'https://host.example/',
+          spaceRef: 'a',
+          collectionId: 'space',
+          resourceId: 'b'
+        }
+      )
+    })
+
+    it('ignores a query or fragment', () => {
+      assert.deepEqual(parseWasAddress('https://was.example/space/abc?x=1'), {
+        server: 'https://was.example/',
+        spaceRef: 'abc'
+      })
+      assert.deepEqual(
+        parseWasAddress('https://was.example/space/abc/docs#frag'),
+        {
+          server: 'https://was.example/',
+          spaceRef: 'abc',
+          collectionId: 'docs'
+        }
+      )
+    })
+
+    it('rejects a Spaces Repository URL', () => {
+      assert.throws(
+        () => parseWasAddress('https://was.example/mount/spaces/abc'),
+        /expected a path of the form/
+      )
     })
 
     it('rejects a URL without a /space/<id> path', () => {
@@ -163,7 +230,7 @@ describe('parseWasAddress', () => {
     it('leaves a full space URL untouched by the base', () => {
       setWasAddressBase(['demo', 'did'])
       assert.deepEqual(parseWasAddress('https://was.example/space/abc/coll'), {
-        server: 'https://was.example',
+        server: 'https://was.example/',
         spaceRef: 'abc',
         collectionId: 'coll'
       })

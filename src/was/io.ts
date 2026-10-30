@@ -12,7 +12,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import type { Readable } from 'node:stream'
-import type { Json, JsonArray, JsonObject } from '@interop/was-client'
+import type { Json, JsonArray, JsonObject } from '@interop/pws-client'
 
 const OCTET_STREAM = 'application/octet-stream'
 
