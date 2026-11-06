@@ -37,6 +37,7 @@ import {
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../keys/ecdsa.js'
+import { exportStoredKey } from '../keys/export.js'
 import { deriveSeed } from '../keys/seed.js'
 import { runAndExit } from './was/shared.js'
 import {
@@ -130,10 +131,7 @@ export async function runCreate(options: {
       const keyPair = await Ed25519VerificationKey.generate({
         seed: seedBytes
       })
-      const exported = await keyPair.export({
-        publicKey: true,
-        secretKey: true
-      })
+      const exported = await exportStoredKey(keyPair)
       if (options.save) {
         const now = new Date()
         const date = now.toISOString().slice(0, 10)
@@ -181,10 +179,7 @@ export async function runCreate(options: {
       }
       warnIfNotVcIssuanceCapable({ curve })
       const keyPair = await EcdsaMultikey.generate({ curve })
-      const exported = await keyPair.export({
-        publicKey: true,
-        secretKey: true
-      })
+      const exported = await exportStoredKey(keyPair)
       if (options.save) {
         const now = new Date()
         const date = now.toISOString().slice(0, 10)
@@ -221,10 +216,7 @@ export async function runCreate(options: {
         return 1
       }
       const keyPair = await X25519KeyAgreementKey2020.generate()
-      const exported = await keyPair.export({
-        publicKey: true,
-        privateKey: true
-      })
+      const exported = await exportStoredKey(keyPair)
       if (options.save) {
         const now = new Date()
         const date = now.toISOString().slice(0, 10)

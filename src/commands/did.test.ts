@@ -311,6 +311,204 @@ describe('di did', () => {
       }
     })
 
+    describe('did:peer', () => {
+      it('creates a did:peer:4 long form with the short form in alsoKnownAs', async () => {
+        await makeDidCommand().parseAsync(['create', 'peer'], { from: 'user' })
+        const parsed = JSON.parse(logs[0])
+        assert.match(parsed.id, /^did:peer:4zQm[1-9A-HJ-NP-Za-km-z]+:z/)
+        const { didDocument } = parsed
+        assert.equal(didDocument.id, parsed.id)
+        const shortForm = parsed.id.slice(0, parsed.id.lastIndexOf(':'))
+        assert.deepEqual(didDocument.alsoKnownAs, [shortForm])
+        assert.equal(didDocument.verificationMethod.length, 1)
+        const vm = didDocument.verificationMethod[0]
+        assert.equal(vm.type, 'Multikey')
+        assert.equal(vm.id, `${parsed.id}#${vm.publicKeyMultibase}`)
+        assert.equal(vm.controller, parsed.id)
+        for (const purpose of [
+          'authentication',
+          'assertionMethod',
+          'capabilityDelegation',
+          'capabilityInvocation'
+        ]) {
+          assert.deepEqual(didDocument[purpose], [vm.id])
+        }
+        assert.equal(didDocument.keyAgreement, undefined)
+      })
+
+      it('derives the same DID from the same seed', async () => {
+        await makeDidCommand().parseAsync(['create', 'peer', '--with-seed'], {
+          from: 'user'
+        })
+        const first = JSON.parse(logs[0])
+        assert.ok(first.secretKeySeed.startsWith('z'))
+        logs.length = 0
+        const saved = process.env.SECRET_KEY_SEED
+        process.env.SECRET_KEY_SEED = first.secretKeySeed
+        try {
+          await makeDidCommand().parseAsync(['create', 'peer'], {
+            from: 'user'
+          })
+        } finally {
+          if (saved === undefined) {
+            delete process.env.SECRET_KEY_SEED
+          } else {
+            process.env.SECRET_KEY_SEED = saved
+          }
+        }
+        assert.equal(JSON.parse(logs[0]).id, first.id)
+      })
+
+      it('--key-agreement adds a derived X25519 keyAgreement key', async () => {
+        await makeDidCommand().parseAsync(
+          ['create', 'peer', '--key-agreement'],
+          { from: 'user' }
+        )
+        const { id, didDocument } = JSON.parse(logs[0])
+        assert.equal(didDocument.verificationMethod.length, 2)
+        const agreement = didDocument.verificationMethod.find(
+          (vm: { type: string }) => vm.type === 'X25519KeyAgreementKey2020'
+        )
+        assert.ok(agreement, 'expected an X25519 verification method')
+        assert.equal(agreement.controller, id)
+        assert.deepEqual(didDocument.keyAgreement, [agreement.id])
+      })
+
+      it('rejects --key-agreement for other methods', async () => {
+        await makeDidCommand().parseAsync(
+          ['create', 'key', '--key-agreement'],
+          {
+            from: 'user'
+          }
+        )
+        assert.equal(exitCode, 1)
+        assert.equal(
+          errors[0],
+          '--key-agreement is only supported for did:peer'
+        )
+      })
+
+      it('rejects --url and the did:webvh-only flags', async () => {
+        await makeDidCommand().parseAsync(
+          ['create', 'peer', '--url', 'https://example.com'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.equal(
+          errors[0],
+          '--url is only supported for did:web, did:webvh'
+        )
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(
+          [
+            'create',
+            'peer',
+            '--no-prerotation',
+            '--watcher',
+            'https://w.example'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.equal(
+          errors[0],
+          '--prerotation, --watcher is only supported for did:webvh'
+        )
+      })
+
+      it('list and key show report the long form, not the storage id', async () => {
+        const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+        process.env.DIDS_DIR = didsDir
+        try {
+          await makeDidCommand().parseAsync(['create', 'peer', '--save'], {
+            from: 'user'
+          })
+          const { id, didDocument } = JSON.parse(logs[0])
+          const shortForm = didDocument.alsoKnownAs[0]
+          assert.deepEqual(await storedDids(didsDir), [shortForm])
+
+          logs.length = 0
+          await makeDidCommand().parseAsync(['list', '--plain'], {
+            from: 'user'
+          })
+          assert.deepEqual(logs, [id])
+
+          logs.length = 0
+          await makeDidCommand().parseAsync(['list', '--json'], {
+            from: 'user'
+          })
+          const [entry] = JSON.parse(logs.join('\n'))
+          assert.equal(entry.did, id)
+          assert.equal(entry.method, 'peer')
+        } finally {
+          await rm(didsDir, { recursive: true })
+        }
+      })
+
+      it('rejects --key-agreement with --type ecdsa', async () => {
+        await makeDidCommand().parseAsync(
+          ['create', 'peer', '--type', 'ecdsa', '--key-agreement'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('--type ecdsa'))
+      })
+
+      it('creates an ecdsa did:peer', async () => {
+        await makeDidCommand().parseAsync(
+          ['create', 'peer', '--type', 'ecdsa'],
+          { from: 'user' }
+        )
+        const { didDocument } = JSON.parse(logs[0])
+        const vm = didDocument.verificationMethod[0]
+        assert.equal(vm.type, 'Multikey')
+        // p256 verification methods carry the zDna multibase-multikey prefix
+        assert.match(vm.publicKeyMultibase, /^zDna/)
+      })
+
+      it('--save files the DID under its short form with keys keyed by method id', async () => {
+        const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+        process.env.DIDS_DIR = didsDir
+        try {
+          await makeDidCommand().parseAsync(
+            ['create', 'peer', '--key-agreement', '--save', '--handle', 'p'],
+            { from: 'user' }
+          )
+          const { id, didDocument } = JSON.parse(logs[0])
+          const shortForm = didDocument.alsoKnownAs[0]
+          const docPath = errors[0].slice('DID saved to '.length)
+          assert.equal(docPath, join(didsDir, 'peer', `${shortForm}.json`))
+          const stored = await readJson(docPath)
+          assert.equal(stored.id, id)
+          assert.deepEqual(await storedDids(didsDir), [shortForm])
+
+          const keys = await readJson<Record<string, Record<string, string>>>(
+            docPath.replace(/\.json$/, '.keys.json')
+          )
+          assert.deepEqual(
+            Object.keys(keys).sort(),
+            didDocument.verificationMethod
+              .map((vm: { id: string }) => vm.id)
+              .sort()
+          )
+          const [signing] = didDocument.verificationMethod.filter(
+            (vm: { type: string }) => vm.type === 'Multikey'
+          )
+          assert.ok(keys[signing.id].secretKeyMultibase)
+          const [agreement] = didDocument.verificationMethod.filter(
+            (vm: { type: string }) => vm.type === 'X25519KeyAgreementKey2020'
+          )
+          assert.ok(keys[agreement.id].privateKeyMultibase)
+
+          const meta = await readJson(docPath.replace(/\.json$/, '.meta.json'))
+          assert.equal(meta.handle, 'p')
+        } finally {
+          await rm(didsDir, { recursive: true })
+        }
+      })
+    })
+
     it('creates an ecdsa did:web from --url', async () => {
       await makeDidCommand().parseAsync(
         ['create', 'web', '--type', 'ecdsa', '--url', 'https://example.com'],
@@ -2190,6 +2388,71 @@ describe('di did', () => {
       assert.equal(JSON.parse(logs.join('\n')).id, did)
     })
 
+    it('resolves a did:peer long form offline', async () => {
+      await makeDidCommand().parseAsync(['create', 'peer'], { from: 'user' })
+      const { id, didDocument } = JSON.parse(logs[0])
+      logs.length = 0
+
+      await makeDidCommand().parseAsync(['get', id], { from: 'user' })
+      const document = JSON.parse(logs.join('\n'))
+      assert.equal(document.id, id)
+      assert.deepEqual(
+        document.verificationMethod,
+        didDocument.verificationMethod
+      )
+      logs.length = 0
+
+      const keyId = didDocument.verificationMethod[0].id
+      await makeDidCommand().parseAsync(['get', keyId], { from: 'user' })
+      const method = JSON.parse(logs.join('\n'))
+      assert.equal(method.id, keyId)
+      assert.equal(method.controller, id)
+    })
+
+    it('resolves a saved did:peer short form from local storage', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', 'peer', '--save'], {
+          from: 'user'
+        })
+        const { id, didDocument } = JSON.parse(logs[0])
+        const shortForm = didDocument.alsoKnownAs[0]
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['get', shortForm], { from: 'user' })
+        const document = JSON.parse(logs.join('\n'))
+        // Resolved through the stored long form; the node ids carry the
+        // short form the resolution was asked for, and alsoKnownAs points
+        // back at the long form.
+        assert.equal(document.id, shortForm)
+        assert.deepEqual(document.alsoKnownAs, [id])
+        assert.equal(
+          document.verificationMethod[0].publicKeyMultibase,
+          didDocument.verificationMethod[0].publicKeyMultibase
+        )
+        assert.notEqual(document.id, id)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('fails on a did:peer short form that was never saved', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', 'peer'], { from: 'user' })
+        const shortForm = JSON.parse(logs[0]).didDocument.alsoKnownAs[0]
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['get', shortForm], { from: 'user' })
+        assert.equal(exitCode, 1)
+        assert.ok(errors[0].includes('Could not resolve'))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
     it('exits with error when the DID cannot be resolved', async () => {
       await makeDidCommand().parseAsync(['get', 'did:key:zNotAValidKey'], {
         from: 'user'
@@ -2707,6 +2970,74 @@ describe('di did', () => {
   })
 
   describe('remove', () => {
+    it('removes a did:peer by long form, short form, or handle', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        for (const refOf of [
+          (id: string, _short: string) => id,
+          (_id: string, short: string) => short,
+          () => 'peer-handle'
+        ]) {
+          logs.length = 0
+          errors.length = 0
+          await makeDidCommand().parseAsync(
+            ['create', 'peer', '--save', '--handle', 'peer-handle'],
+            { from: 'user' }
+          )
+          const { id, didDocument } = JSON.parse(logs[0])
+          const shortForm = didDocument.alsoKnownAs[0]
+          logs.length = 0
+          errors.length = 0
+
+          // `show` by the same reference loads the stored long form document.
+          await makeDidCommand().parseAsync(['show', refOf(id, shortForm)], {
+            from: 'user'
+          })
+          assert.equal(JSON.parse(logs.join('\n')).id, id)
+          logs.length = 0
+
+          await makeDidCommand().parseAsync(['remove', refOf(id, shortForm)], {
+            from: 'user'
+          })
+          assert.equal(exitCode, undefined)
+          assert.ok(
+            errors.every(line =>
+              line.startsWith(`Removed ${join(didsDir, 'peer', shortForm)}`)
+            ),
+            errors.join('\n')
+          )
+          assert.deepEqual(await storedDids(didsDir), [])
+        }
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('removes a stored document that has no id', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(['create', '--save'], {
+          from: 'user'
+        })
+        const did = JSON.parse(logs[0]).id
+        const docPath = join(didsDir, 'key', `${did}.json`)
+        const stored = await readJson(docPath)
+        delete stored.id
+        await writeFile(docPath, JSON.stringify(stored))
+        logs.length = 0
+        errors.length = 0
+
+        await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
+
+        assert.equal(exitCode, undefined)
+        assert.deepEqual(await storedDids(didsDir), [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
     it('removes the DID document, keys file, and metadata sidecar', async () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir

@@ -37,7 +37,9 @@ export function makeDidCommand(): Command {
 
   did
     .command('create [method]')
-    .description('Create a new DID (method: key, web, webvh) [default: key]')
+    .description(
+      'Create a new DID (method: key, web, webvh, peer) [default: key]'
+    )
     .option(
       '-t, --type <type>',
       'key type (supported: ed25519, ecdsa)',
@@ -100,6 +102,11 @@ export function makeDidCommand(): Command {
         '(default: the library default)'
     )
     .option(
+      '--key-agreement',
+      'did:peer only: also derive an X25519 keyAgreement key from the ' +
+        'Ed25519 verification key (reuses its key material for encryption)'
+    )
+    .option(
       '--with-seed',
       'include the secret key seed in output (generated if SECRET_KEY_SEED is not set)'
     )
@@ -130,6 +137,7 @@ export function makeDidCommand(): Command {
           verificationKey?: string
           purpose?: string[]
           vmIdFragment?: string
+          keyAgreement?: boolean
           withSeed?: boolean
           save?: boolean
           handle?: string
