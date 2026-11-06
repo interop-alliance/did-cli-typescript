@@ -1,5 +1,31 @@
 # History
 
+## 0.19.0 - TBD
+
+### Added
+
+- `did create peer` creates a `did:peer` numalgo 4 DID. It supports
+  `--type ed25519` (seed-derivable) and `--type ecdsa`. The new
+  `--key-agreement` option also derives an X25519 `keyAgreement` key from the
+  Ed25519 key. It is rejected for other methods and with `--type ecdsa`.
+- `did get` resolves `did:peer` offline. A long form resolves from the DID
+  itself. A short form resolves from the locally stored did:peer DIDs.
+- With `--save`, `did:peer` artifacts are filed under the short form, because
+  a long form exceeds the file name limit. The stored document keeps the long
+  form as its `id`. `did show`, `did meta`, and `did remove` accept either
+  form. `did list`, `key list`, and `key show` report the long form.
+
+### Changed
+
+- `did create` rejects flags given for a method they do not apply to: `--url`
+  outside did:web and did:webvh, and the did:webvh-only flags (`--prerotation`,
+  `--portable`, `--witness`, `--witness-threshold`, `--watcher`,
+  `--verification-key`, `--purpose`, `--vm-id-fragment`) for other methods.
+  Previously they were silently ignored.
+
+- Added the `@interop/did-method-peer` dependency and bumped the other
+  `@interop/*` dependencies.
+
 ## 0.18.0 - 2026-10-30
 
 ### Added

@@ -8,7 +8,8 @@ import {
   writeFile
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { isLongForm, longToShort } from '@interop/did-method-peer/codec'
 
 /**
  * Mode for every file this module writes: readable and writable by the owner
@@ -328,12 +329,43 @@ export function methodOf(did: string): string {
 }
 
 /**
+ * The file name stem a DID's stored artifacts use. For every method this is
+ * the DID itself. A did:peer numalgo 4 long form carries its whole document
+ * and runs to several hundred characters, past the 255-byte file name limit,
+ * so a did:peer DID is stored under its short form (`did:peer:4zQm...`, the
+ * hash alone). Either form maps to the same files; the stored document keeps
+ * the long form as its `id`.
+ *
+ * @param did {string}
+ * @returns {string}
+ */
+export function didStorageId(did: string): string {
+  return isLongForm(did) ? longToShort({ did }) : did
+}
+
+/**
+ * The path of one stored artifact of a DID: `<dids dir>/<method>/<storage
+ * id><suffix>`, e.g. suffix `.json` for the document or `.keys.json` for its
+ * keys file.
+ *
+ * @param options {object}
+ * @param options.did {string}
+ * @param options.suffix {string}   File name suffix including the extension.
+ * @returns {string}
+ */
+function didFilePath({ did, suffix }: { did: string; suffix: string }): string {
+  return join(getDidsDir(), methodOf(did), `${didStorageId(did)}${suffix}`)
+}
+
+/**
  * List the DIDs saved in local storage, across all method subdirectories.
  *
  * Each saved DID is stored as `<did>.json` (the DID document) alongside a
  * `<did>.keys.json` key file and an optional `<did>.meta.json` metadata
  * sidecar; only the first is reported, and the DID is its file name without
- * the `.json` extension. Returns an empty array if no DIDs have been saved
+ * the `.json` extension. A did:peer DID is filed under its short form (see
+ * `didStorageId`), so its document is read to report the long form `id` that
+ * every other command uses. Returns an empty array if no DIDs have been saved
  * yet.
  *
  * @returns {Promise<string[]>}
@@ -364,7 +396,13 @@ export async function listDids(): Promise<string[]> {
       ) {
         continue
       }
-      dids.push(fileName.slice(0, -'.json'.length))
+      const storageId = fileName.slice(0, -'.json'.length)
+      if (methodEntry.name === 'peer') {
+        const { id } = await loadDidDocument<{ id: string }>(storageId)
+        dids.push(id)
+      } else {
+        dids.push(storageId)
+      }
     }
   }
   return dids.sort()
@@ -380,8 +418,7 @@ export async function listDids(): Promise<string[]> {
  * @returns {Promise<T>}
  */
 export async function loadDidDocument<T = unknown>(did: string): Promise<T> {
-  const method = methodOf(did)
-  const filePath = join(getDidsDir(), method, `${did}.json`)
+  const filePath = didFilePath({ did, suffix: '.json' })
   return JSON.parse(await readFile(filePath, 'utf8')) as T
 }
 
@@ -395,8 +432,7 @@ export async function loadDidDocument<T = unknown>(did: string): Promise<T> {
  * @returns {Promise<T>}
  */
 export async function loadDidKeys<T = unknown>(did: string): Promise<T> {
-  const method = methodOf(did)
-  const filePath = join(getDidsDir(), method, `${did}.keys.json`)
+  const filePath = didFilePath({ did, suffix: '.keys.json' })
   return JSON.parse(await readFile(filePath, 'utf8')) as T
 }
 
@@ -412,8 +448,7 @@ export async function loadDidMeta({
 }: {
   did: string
 }): Promise<ItemMetadata | undefined> {
-  const method = methodOf(did)
-  const filePath = join(getDidsDir(), method, `${did}.meta.json`)
+  const filePath = didFilePath({ did, suffix: '.meta.json' })
   try {
     return JSON.parse(await readFile(filePath, 'utf8')) as ItemMetadata
   } catch (err) {
@@ -457,21 +492,19 @@ export async function removeDidFiles({
 }: {
   did: string
 }): Promise<string[]> {
-  const method = methodOf(did)
-  const dir = join(getDidsDir(), method)
   const removed: string[] = []
-  const docPath = join(dir, `${did}.json`)
+  const docPath = didFilePath({ did, suffix: '.json' })
   await unlink(docPath)
   removed.push(docPath)
-  for (const suffix of ['keys', 'update-keys', 'meta']) {
-    const sidecarPath = join(dir, `${did}.${suffix}.json`)
+  for (const suffix of ['.keys.json', '.update-keys.json', '.meta.json']) {
+    const sidecarPath = didFilePath({ did, suffix })
     if (await unlinkIfExists(sidecarPath)) {
       removed.push(sidecarPath)
     }
   }
   // did:webvh additionally stores a `.jsonl` history log; only that method has
   // one, so unlink it conditionally.
-  const logPath = join(dir, `${did}.jsonl`)
+  const logPath = didFilePath({ did, suffix: '.jsonl' })
   if (await unlinkIfExists(logPath)) {
     removed.push(logPath)
   }
@@ -493,25 +526,24 @@ export async function didStorageFiles({
 }: {
   did: string
 }): Promise<{ label: string; path: string; exists: boolean }[]> {
-  const method = methodOf(did)
-  const dir = join(getDidsDir(), method)
-  const candidates: { label: string; path: string }[] = [
-    { label: 'document', path: join(dir, `${did}.json`) },
-    { label: 'keys', path: join(dir, `${did}.keys.json`) },
-    { label: 'metadata', path: join(dir, `${did}.meta.json`) },
+  const candidates: { label: string; suffix: string }[] = [
+    { label: 'document', suffix: '.json' },
+    { label: 'keys', suffix: '.keys.json' },
+    { label: 'metadata', suffix: '.meta.json' },
     // did:webvh-only artifacts; omitted from the listing when absent.
-    { label: 'log', path: join(dir, `${did}.jsonl`) },
-    { label: 'update-keys', path: join(dir, `${did}.update-keys.json`) }
+    { label: 'log', suffix: '.jsonl' },
+    { label: 'update-keys', suffix: '.update-keys.json' }
   ]
   const files: { label: string; path: string; exists: boolean }[] = []
-  for (const candidate of candidates) {
+  for (const { label, suffix } of candidates) {
+    const path = didFilePath({ did, suffix })
     let exists = true
     try {
-      await stat(candidate.path)
+      await stat(path)
     } catch {
       exists = false
     }
-    files.push({ ...candidate, exists })
+    files.push({ label, path, exists })
   }
   return files
 }
@@ -536,10 +568,8 @@ export async function saveDidLog({
   did: string
   log: object[]
 }): Promise<string> {
-  const method = methodOf(did)
-  const dir = join(getDidsDir(), method)
-  await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
-  const filePath = join(dir, `${did}.jsonl`)
+  const filePath = didFilePath({ did, suffix: '.jsonl' })
+  await mkdir(dirname(filePath), { recursive: true, mode: STORED_DIR_MODE })
   const serialized = log.map(entry => JSON.stringify(entry)).join('\n') + '\n'
   await writeFileAtomic(filePath, serialized)
   return filePath
@@ -555,9 +585,7 @@ export async function saveDidLog({
  * @returns {Promise<string>}
  */
 export async function loadDidLog(did: string): Promise<string> {
-  const method = methodOf(did)
-  const filePath = join(getDidsDir(), method, `${did}.jsonl`)
-  return readFile(filePath, 'utf8')
+  return readFile(didFilePath({ did, suffix: '.jsonl' }), 'utf8')
 }
 
 /**
@@ -614,8 +642,7 @@ export async function saveDidUpdateKeys({
  * @returns {Promise<WebvhUpdateKeys>}
  */
 export async function loadDidUpdateKeys(did: string): Promise<WebvhUpdateKeys> {
-  const method = methodOf(did)
-  const filePath = join(getDidsDir(), method, `${did}.update-keys.json`)
+  const filePath = didFilePath({ did, suffix: '.update-keys.json' })
   const text = await readFile(filePath, 'utf8')
   try {
     return JSON.parse(text) as WebvhUpdateKeys
@@ -649,7 +676,8 @@ export async function saveToDids({
 }): Promise<string> {
   const dir = join(getDidsDir(), method)
   await mkdir(dir, { recursive: true, mode: STORED_DIR_MODE })
-  const fileName = suffix ? `${did}.${suffix}.json` : `${did}.json`
+  const storageId = didStorageId(did)
+  const fileName = suffix ? `${storageId}.${suffix}.json` : `${storageId}.json`
   const filePath = join(dir, fileName)
   await writeFileAtomic(filePath, JSON.stringify(data, null, 2))
   return filePath

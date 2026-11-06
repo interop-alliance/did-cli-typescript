@@ -1,11 +1,13 @@
 /**
- * DID creation and key addition: `runCreate` (key, web, webvh) and `runAddKey`
+ * DID creation and key addition: `runCreate` (key, web, webvh, peer) and `runAddKey`
  * (add a verification key to a stored did:web). Both share the ECDSA-curve,
  * non-deterministic-seed-guard, and output helpers at the top of this module;
  * seed derivation comes from `../../keys/seed.js` and the webvh signer/sidecar
  * plumbing is reused from `./webvh-update.js`.
  */
+import type { AbstractKeyPair } from '@interop/data-integrity-core'
 import { driver } from '@interop/did-method-key'
+import * as didPeer from '@interop/did-method-peer'
 import * as didWeb from '@interop/did-web-resolver'
 import {
   createDID,
@@ -28,6 +30,7 @@ import {
   SUPPORTED_ECDSA_CURVES,
   warnIfNotVcIssuanceCapable
 } from '../../keys/ecdsa.js'
+import { exportStoredKey } from '../../keys/export.js'
 import { deriveSeed } from '../../keys/seed.js'
 import { exportUpdateKey, generateStagedKey } from '../../keys/webvh-update.js'
 import { requireSaveForMetaFlags } from '../collection-command.js'
@@ -169,43 +172,117 @@ export async function saveDidArtifacts({
 }
 
 /**
- * Reject the did:webvh-only document key options (`--verification-key`,
- * `--purpose`, `--vm-id-fragment`) for any other DID method. Prints the error
- * and returns true when one of them was wrongly supplied.
+ * Reject method-scoped `did create` flags given for a DID method they do not
+ * apply to. A flag counts as given when its value is not undefined. Prints one
+ * error per set of methods (listing the rejected flags that share it) and
+ * returns true when any flag was wrongly supplied.
  *
  * @param options {object}
- * @param options.method {string}
- * @param [options.verificationKey] {string}
- * @param [options.purpose] {string[]}
- * @param [options.vmIdFragment] {string}
- * @returns {boolean}   true when a webvh-only option was rejected.
+ * @param options.method {string}   The resolved DID method being created.
+ * @param options.flags {{ flag: string, value: unknown, methods: string[] }[]}
+ *   Each flag with its value and the methods it applies to.
+ * @returns {boolean}   true when a flag was rejected.
  */
-function rejectWebvhOnlyOptions({
+function rejectFlagsOutsideMethod({
   method,
-  verificationKey,
-  purpose,
-  vmIdFragment
+  flags
 }: {
   method: string
-  verificationKey?: string
-  purpose?: string[]
-  vmIdFragment?: string
+  flags: { flag: string; value: unknown; methods: string[] }[]
 }): boolean {
-  if (method === 'webvh') {
-    return false
+  const rejectedByMethods = new Map<string, string[]>()
+  for (const { flag, value, methods } of flags) {
+    if (value === undefined || methods.includes(method)) {
+      continue
+    }
+    const supported = methods.map(name => `did:${name}`).join(', ')
+    rejectedByMethods.set(supported, [
+      ...(rejectedByMethods.get(supported) ?? []),
+      flag
+    ])
   }
-  const given = Object.entries({
-    '--verification-key': verificationKey,
-    '--purpose': purpose,
-    '--vm-id-fragment': vmIdFragment
-  })
-    .filter(([, value]) => value !== undefined)
-    .map(([flag]) => flag)
-  if (given.length === 0) {
-    return false
+  for (const [supported, rejected] of rejectedByMethods) {
+    console.error(`${rejected.join(', ')} is only supported for ${supported}`)
   }
-  console.error(`${given.join(', ')} is only supported for did:webvh`)
-  return true
+  return rejectedByMethods.size > 0
+}
+
+/**
+ * The verification key pair `did create` generates for did:key, did:web, and
+ * did:peer.
+ */
+type VerificationKeyPair =
+  Ed25519VerificationKey | Awaited<ReturnType<typeof EcdsaMultikey.generate>>
+
+/**
+ * Generate the verification key pair for a new did:key, did:web, or did:peer
+ * from the shared `--type`, `--curve`, and `--with-seed` options. Ed25519 keys
+ * are derived from the seed; ECDSA keys are non-deterministic and reject
+ * `--with-seed`. Prints the error and returns undefined when the options are
+ * invalid.
+ *
+ * @param options {object}
+ * @param options.type {string}   Key type (ed25519 or ecdsa).
+ * @param options.curve {string}   ECDSA curve, for `--type ecdsa`.
+ * @param [options.withSeed] {boolean}   Include/derive the secret key seed.
+ * @returns {Promise<{ keyPair: VerificationKeyPair, secretKeySeed?: string } | undefined>}
+ */
+async function generateVerificationKeyPair({
+  type,
+  curve,
+  withSeed
+}: {
+  type: string
+  curve: string
+  withSeed?: boolean
+}): Promise<
+  { keyPair: VerificationKeyPair; secretKeySeed?: string } | undefined
+> {
+  switch (type) {
+    case 'ed25519': {
+      const { secretKeySeed, seedBytes } = await deriveSeed({ withSeed })
+      const keyPair = await Ed25519VerificationKey.generate({
+        seed: seedBytes
+      })
+      return { keyPair, secretKeySeed }
+    }
+    case 'ecdsa': {
+      if (rejectSeedForNonDeterministic({ withSeed, keyLabel: 'ecdsa' })) {
+        return undefined
+      }
+      const resolvedCurve = resolveEcdsaCurveOrReport(curve)
+      if (!resolvedCurve) {
+        return undefined
+      }
+      return { keyPair: await EcdsaMultikey.generate({ curve: resolvedCurve }) }
+    }
+    default:
+      console.error(`Unknown key type: ${type}. Supported: ed25519, ecdsa`)
+      return undefined
+  }
+}
+
+/**
+ * Export every generated key pair (keyed by verification method id) for the
+ * stored keys file, and collect their `publicKeyMultibase` fingerprints.
+ *
+ * @param keyPairs {Map<string, AbstractKeyPair>}
+ * @returns {Promise<{ exportedKeys: Record<string, unknown>, fingerprints: (string | undefined)[] }>}
+ */
+async function exportStoredKeys(
+  keyPairs: Map<string, AbstractKeyPair>
+): Promise<{
+  exportedKeys: Record<string, unknown>
+  fingerprints: (string | undefined)[]
+}> {
+  const exportedKeys: Record<string, unknown> = {}
+  const fingerprints: (string | undefined)[] = []
+  for (const [methodId, keyPair] of keyPairs) {
+    const exportedKey = await exportStoredKey(keyPair)
+    exportedKeys[methodId] = exportedKey
+    fingerprints.push(exportedKey.publicKeyMultibase)
+  }
+  return { exportedKeys, fingerprints }
 }
 
 /**
@@ -285,11 +362,66 @@ function printDidOutput({
 }
 
 /**
- * Create a new DID of the given method (key, web, or webvh), optionally saving
- * its document, keys, and metadata to local storage, and print it to stdout.
+ * Finish `did create` for a statically generated DID (key, web, peer): save
+ * the document, keys file, and metadata when `--save` was given, then print
+ * the result.
  *
  * @param options {object}
- * @param [options.method] {string}   DID method: key (default), web, or webvh.
+ * @param options.method {string}
+ * @param options.didDocument {{ id: string }}
+ * @param options.exportedKeys {object}   The keys file contents.
+ * @param options.fingerprints {(string | undefined)[]}
+ * @param [options.secretKeySeed] {string}   Echoed back with `--with-seed`.
+ * @param options.options {object}   The `--save`, `--with-seed`, `--handle`,
+ *   and `--description` values of the create command.
+ * @returns {Promise<number>}   The process exit code (always 0).
+ */
+async function finishCreate({
+  method,
+  didDocument,
+  exportedKeys,
+  fingerprints,
+  secretKeySeed,
+  options
+}: {
+  method: string
+  didDocument: { id: string }
+  exportedKeys: object
+  fingerprints: (string | undefined)[]
+  secretKeySeed?: string
+  options: {
+    withSeed?: boolean
+    save?: boolean
+    handle?: string
+    description?: string
+  }
+}): Promise<number> {
+  if (options.save) {
+    await saveDidArtifacts({
+      method,
+      didDocument,
+      exportedKeys,
+      fingerprints,
+      handle: options.handle,
+      description: options.description
+    })
+  }
+  printDidOutput({
+    id: didDocument.id,
+    didDocument,
+    secretKeySeed: options.withSeed ? secretKeySeed : undefined
+  })
+  return 0
+}
+
+/**
+ * Create a new DID of the given method (key, web, webvh, or peer), optionally
+ * saving its document, keys, and metadata to local storage, and print it to
+ * stdout.
+ *
+ * @param options {object}
+ * @param [options.method] {string}   DID method: key (default), web, webvh,
+ *   or peer.
  * @param options.type {string}   Key type (ed25519 or ecdsa).
  * @param options.curve {string}   ECDSA curve, for --type ecdsa.
  * @param [options.url] {string}   HTTPS url (required for did:web/did:webvh).
@@ -304,6 +436,8 @@ function printDidOutput({
  *   relationships (default: `DEFAULT_VERIFICATION_PURPOSES`).
  * @param [options.vmIdFragment] {string}   did:webvh verification method id
  *   fragment mode: short or multibase (default: the library default).
+ * @param [options.keyAgreement] {boolean}   did:peer: also derive an X25519
+ *   keyAgreement key from the Ed25519 verification key.
  * @param [options.withSeed] {boolean}   Include/derive the secret key seed.
  * @param [options.save] {boolean}   Save the DID to local storage.
  * @param [options.handle] {string}   Short tag stored in the metadata sidecar.
@@ -323,6 +457,7 @@ export async function runCreate(options: {
   verificationKey?: string
   purpose?: string[]
   vmIdFragment?: string
+  keyAgreement?: boolean
   withSeed?: boolean
   save?: boolean
   handle?: string
@@ -332,202 +467,90 @@ export async function runCreate(options: {
   if (!requireSaveForMetaFlags(options)) {
     return 1
   }
-  if (rejectWebvhOnlyOptions({ method, ...options })) {
+  const webvh = ['webvh']
+  if (
+    rejectFlagsOutsideMethod({
+      method,
+      flags: [
+        { flag: '--url', value: options.url, methods: ['web', 'webvh'] },
+        { flag: '--prerotation', value: options.prerotation, methods: webvh },
+        { flag: '--portable', value: options.portable, methods: webvh },
+        { flag: '--witness', value: options.witness, methods: webvh },
+        {
+          flag: '--witness-threshold',
+          value: options.witnessThreshold,
+          methods: webvh
+        },
+        { flag: '--watcher', value: options.watcher, methods: webvh },
+        {
+          flag: '--verification-key',
+          value: options.verificationKey,
+          methods: webvh
+        },
+        { flag: '--purpose', value: options.purpose, methods: webvh },
+        {
+          flag: '--vm-id-fragment',
+          value: options.vmIdFragment,
+          methods: webvh
+        },
+        {
+          flag: '--key-agreement',
+          value: options.keyAgreement,
+          methods: ['peer']
+        }
+      ]
+    })
+  ) {
     return 1
   }
   switch (method) {
     case 'key': {
-      switch (options.type) {
-        case 'ed25519': {
-          const { secretKeySeed, seedBytes } = await deriveSeed({
-            withSeed: options.withSeed
-          })
-          const keyPair = await Ed25519VerificationKey.generate({
-            seed: seedBytes
-          })
-
-          const didDriver = driver()
-          didDriver.use({ keyPairClass: Ed25519VerificationKey })
-          const { didDocument } = await didDriver.fromKeyPair({
-            verificationKeyPair: keyPair
-          })
-
-          if (options.save) {
-            const exported = await keyPair.export({
-              publicKey: true,
-              secretKey: true
-            })
-            await saveDidArtifacts({
-              method: 'key',
-              didDocument,
-              exportedKeys: exported,
-              fingerprints: [
-                (exported as { publicKeyMultibase?: string }).publicKeyMultibase
-              ],
-              handle: options.handle,
-              description: options.description
-            })
-          }
-
-          printDidOutput({
-            id: didDocument.id,
-            didDocument,
-            secretKeySeed: options.withSeed ? secretKeySeed : undefined
-          })
-          return 0
-        }
-        case 'ecdsa': {
-          if (
-            rejectSeedForNonDeterministic({
-              withSeed: options.withSeed,
-              keyLabel: 'ecdsa'
-            })
-          ) {
-            return 1
-          }
-          const curve = resolveEcdsaCurveOrReport(options.curve)
-          if (!curve) {
-            return 1
-          }
-          const keyPair = await EcdsaMultikey.generate({ curve })
-
-          const didDriver = driver()
-          const { didDocument } = await didDriver.fromKeyPair({
-            verificationKeyPair: keyPair
-          })
-
-          if (options.save) {
-            const exported = await keyPair.export({
-              publicKey: true,
-              secretKey: true
-            })
-            await saveDidArtifacts({
-              method: 'key',
-              didDocument,
-              exportedKeys: exported,
-              fingerprints: [
-                (exported as { publicKeyMultibase?: string }).publicKeyMultibase
-              ],
-              handle: options.handle,
-              description: options.description
-            })
-          }
-
-          printDidOutput({ id: didDocument.id, didDocument })
-          return 0
-        }
-        default:
-          console.error(
-            `Unknown key type: ${options.type}. Supported: ed25519, ecdsa`
-          )
-          return 1
+      const generated = await generateVerificationKeyPair(options)
+      if (!generated) {
+        return 1
       }
+      const { keyPair, secretKeySeed } = generated
+
+      const didDriver = driver()
+      didDriver.use({ keyPairClass: Ed25519VerificationKey })
+      const { didDocument } = await didDriver.fromKeyPair({
+        verificationKeyPair: keyPair
+      })
+      // did:key stores its single key unkeyed, not in a map by method id.
+      const exportedKey = await exportStoredKey(keyPair)
+      return finishCreate({
+        method: 'key',
+        didDocument,
+        exportedKeys: exportedKey,
+        fingerprints: [exportedKey.publicKeyMultibase],
+        secretKeySeed,
+        options
+      })
     }
     case 'web': {
-      switch (options.type) {
-        case 'ed25519': {
-          if (!options.url) {
-            console.error(
-              'did:web requires --url (e.g. --url https://example.com)'
-            )
-            return 1
-          }
-          const { secretKeySeed, seedBytes } = await deriveSeed({
-            withSeed: options.withSeed
-          })
-
-          const didWebDriver = didWeb.driver()
-          didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
-          const { didDocument, keyPairs } = await didWebDriver.generate({
-            url: options.url,
-            seed: seedBytes
-          })
-
-          if (options.save) {
-            const exported: Record<string, unknown> = {}
-            const fingerprints: (string | undefined)[] = []
-            for (const [methodId, keyPair] of keyPairs) {
-              const exportedKey = (await keyPair.export({
-                publicKey: true,
-                secretKey: true
-              })) as { publicKeyMultibase?: string }
-              exported[methodId] = exportedKey
-              fingerprints.push(exportedKey.publicKeyMultibase)
-            }
-            await saveDidArtifacts({
-              method: 'web',
-              didDocument,
-              exportedKeys: exported,
-              fingerprints,
-              handle: options.handle,
-              description: options.description
-            })
-          }
-
-          printDidOutput({
-            id: didDocument.id,
-            didDocument,
-            secretKeySeed: options.withSeed ? secretKeySeed : undefined
-          })
-          return 0
-        }
-        case 'ecdsa': {
-          if (!options.url) {
-            console.error(
-              'did:web requires --url (e.g. --url https://example.com)'
-            )
-            return 1
-          }
-          if (
-            rejectSeedForNonDeterministic({
-              withSeed: options.withSeed,
-              keyLabel: 'ecdsa'
-            })
-          ) {
-            return 1
-          }
-          const curve = resolveEcdsaCurveOrReport(options.curve)
-          if (!curve) {
-            return 1
-          }
-          const keyPair = await EcdsaMultikey.generate({ curve })
-
-          const didWebDriver = didWeb.driver()
-          const { didDocument, keyPairs } = await didWebDriver.generate({
-            url: options.url,
-            verificationKeyPair: keyPair
-          })
-
-          if (options.save) {
-            const exported: Record<string, unknown> = {}
-            const fingerprints: (string | undefined)[] = []
-            for (const [methodId, savedKey] of keyPairs) {
-              const exportedKey = (await savedKey.export({
-                publicKey: true,
-                secretKey: true
-              })) as { publicKeyMultibase?: string }
-              exported[methodId] = exportedKey
-              fingerprints.push(exportedKey.publicKeyMultibase)
-            }
-            await saveDidArtifacts({
-              method: 'web',
-              didDocument,
-              exportedKeys: exported,
-              fingerprints,
-              handle: options.handle,
-              description: options.description
-            })
-          }
-
-          printDidOutput({ id: didDocument.id, didDocument })
-          return 0
-        }
-        default:
-          console.error(
-            `Unknown key type: ${options.type}. ` + `Supported: ed25519, ecdsa`
-          )
-          return 1
+      if (!options.url) {
+        console.error('did:web requires --url (e.g. --url https://example.com)')
+        return 1
       }
+      const generated = await generateVerificationKeyPair(options)
+      if (!generated) {
+        return 1
+      }
+      const { keyPair, secretKeySeed } = generated
+
+      const didWebDriver = didWeb.driver()
+      didWebDriver.use({ keyPairClass: Ed25519VerificationKey })
+      const { didDocument, keyPairs } = await didWebDriver.generate({
+        url: options.url,
+        verificationKeyPair: keyPair
+      })
+      return finishCreate({
+        method: 'web',
+        didDocument,
+        ...(await exportStoredKeys(keyPairs)),
+        secretKeySeed,
+        options
+      })
     }
     case 'webvh': {
       if (!options.url) {
@@ -709,9 +732,7 @@ export async function runCreate(options: {
         docKey.id = docVmId
         const exportedDoc = isExternalDocKey
           ? undefined
-          : ((await docKey.export({ publicKey: true, secretKey: true })) as {
-              publicKeyMultibase?: string
-            })
+          : await exportStoredKey(docKey)
         await saveDidArtifacts({
           method: 'webvh',
           didDocument: result.doc as { id: string },
@@ -743,8 +764,44 @@ export async function runCreate(options: {
       })
       return 0
     }
+    case 'peer': {
+      // did:peer:4 is statically resolvable: the long form carries the whole
+      // document, so no URL is needed.
+      if (options.keyAgreement && options.type !== 'ed25519') {
+        console.error(
+          '--key-agreement derives an X25519 key from an Ed25519 key; ' +
+            `it is not supported with --type ${options.type}`
+        )
+        return 1
+      }
+      const generated = await generateVerificationKeyPair(options)
+      if (!generated) {
+        return 1
+      }
+      const { keyPair, secretKeySeed } = generated
+
+      // Deriving an X25519 key agreement key reuses the Ed25519 key's
+      // material for encryption, so it is opt-in (--key-agreement).
+      const didPeerDriver = didPeer.driver()
+      didPeerDriver.use({
+        keyPairClass: Ed25519VerificationKey,
+        enableEncryptionKeyDerivation: options.keyAgreement === true
+      })
+      const { didDocument, keyPairs } = await didPeerDriver.generate({
+        verificationKeyPair: keyPair
+      })
+      return finishCreate({
+        method: 'peer',
+        didDocument,
+        ...(await exportStoredKeys(keyPairs)),
+        secretKeySeed,
+        options
+      })
+    }
     default:
-      console.error(`Unknown method: ${method}. Supported: key, web, webvh`)
+      console.error(
+        `Unknown method: ${method}. Supported: key, web, webvh, peer`
+      )
       return 1
   }
 }
@@ -848,7 +905,7 @@ export async function runAddKey(options: {
     keyPair = await X25519KeyAgreementKey2020.generate()
   }
 
-  const keyPairs = new Map<string, any>()
+  const keyPairs = new Map<string, AbstractKeyPair>()
   try {
     await didWebDriver.addVerificationMethod({
       didDocument,
@@ -861,19 +918,10 @@ export async function runAddKey(options: {
     return 1
   }
 
-  // Merge the new key into the stored keys file (keyed by VM id). X25519
-  // keys export their private half as `privateKeyMultibase`, the other
-  // suites as `secretKeyMultibase`.
-  const addedFingerprints: (string | undefined)[] = []
-  for (const [methodId, addedKey] of keyPairs) {
-    const exportedKey = (await addedKey.export(
-      options.type === 'x25519'
-        ? { publicKey: true, privateKey: true }
-        : { publicKey: true, secretKey: true }
-    )) as { publicKeyMultibase?: string }
-    exportedKeys[methodId] = exportedKey
-    addedFingerprints.push(exportedKey.publicKeyMultibase)
-  }
+  // Merge the new key into the stored keys file (keyed by VM id).
+  const { exportedKeys: addedKeys, fingerprints: addedFingerprints } =
+    await exportStoredKeys(keyPairs)
+  Object.assign(exportedKeys, addedKeys)
   const docPath = await saveToDids({
     method: 'web',
     did,
