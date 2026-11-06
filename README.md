@@ -30,8 +30,9 @@ servers, all from the terminal and backed by a local file-based wallet.
 
 ### Features
 
-- **DIDs** -- create, resolve, and manage `did:key`, `did:web`, and `did:webvh`
-  DIDs (with `did:webvh` key pre-rotation, rotation, and history logs).
+- **DIDs** -- create, resolve, and manage `did:key`, `did:web`, `did:webvh`, and
+  `did:peer` DIDs (with `did:webvh` key pre-rotation, rotation, and history
+  logs).
 - **Keys** -- generate and store Ed25519, ECDSA, X25519, and HMAC key pairs,
   with deterministic seed-based generation.
 - **Verifiable Credentials** -- issue (sign), verify, and import VCs, including
@@ -63,7 +64,7 @@ Help is available with the `--help/-h` command line option:
 ### Command Summary
 
 ```
-di did create [method]          create a DID (key | web | webvh; default key)
+di did create [method]          create a DID (key | web | webvh | peer; default key)
 di did add-key <did>            add a verification method to a stored DID
 di did add-service <did>        add a service entry to a stored did:web/webvh
 di did remove-service <did>     remove a service entry from a stored did:web/webvh
@@ -689,6 +690,50 @@ under `assertionMethod` only, without the admin ever holding its secret:
   --vm-id-fragment multibase --save
 ```
 
+#### Create a did:peer DID
+
+Generate a `did:peer` DID (numalgo 4). It takes no `--url`. The long form,
+`did:peer:4{hash}:{encoded document}`, carries the whole DID document, so it
+resolves offline with no network access:
+
+```
+./di did create peer
+{
+  "id": "did:peer:4zQm...:z...",
+  "didDocument": {
+    "id": "did:peer:4zQm...:z...",
+    "alsoKnownAs": ["did:peer:4zQm..."],
+    "verificationMethod": [ ... ],
+    ...
+  }
+}
+```
+
+The verification key is wired into `authentication`, `assertionMethod`,
+`capabilityDelegation`, and `capabilityInvocation`. Its method id fragment is
+the key fingerprint (`#z6Mk...`). The document's `alsoKnownAs` carries the
+short form, `did:peer:4{hash}`.
+
+`--type ed25519` (the default) and `--type ecdsa --curve ...` work as for
+`did:key`. Ed25519 keys are seed-derivable, so `--with-seed` works too.
+
+Pass `--key-agreement` to also derive an X25519 `keyAgreement` key from the
+Ed25519 key. It is off by default because it reuses one key's material for
+both signing and encryption. The option is only valid for `did:peer`, and it
+is rejected with `--type ecdsa`:
+
+```
+./di did create peer --key-agreement
+```
+
+With `--save`, the DID is written under `dids/peer/`, and its keys are keyed
+by verification method id in `<short form>.keys.json`, as for `did:web`. The
+X25519 key, when present, exports `privateKeyMultibase`. File names use the
+short form because a long form runs past 800 characters and exceeds the
+255-byte file name limit. The stored document keeps the long form as its `id`.
+`did show`, `did meta`, and `did remove` accept either form, or a handle.
+`did list`, `key list`, and `key show` report the long form.
+
 #### Rotate a did:webvh update key
 
 Rotate the update (authorization) key of a locally stored `did:webvh` DID with
@@ -917,7 +962,11 @@ did:key:z6Mks...
 Resolve a DID to its DID document through the security document loader. Unlike
 `did show` (which reads local storage), `did get` resolves live: did:key is
 resolved offline, did:web is fetched over HTTPS, and did:webvh is resolved by
-fetching and verifying its history log over HTTPS. Pass a DID URL (a
+fetching and verifying its history log over HTTPS. did:peer is resolved
+offline too. A long form resolves from the DID itself. A short form is looked
+up among the locally stored did:peer DIDs, so any DID created with `--save`
+resolves by short form. A short form that was not created here fails with
+`notFound`. Resolving a foreign long form persists nothing. Pass a DID URL (a
 `did#fragment` key id) to dereference straight to its verification method:
 
 ```

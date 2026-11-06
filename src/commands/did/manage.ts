@@ -360,6 +360,7 @@ export async function runRemove(options: { didRef: string }): Promise<number> {
     return 1
   }
   let didDocument: {
+    id?: string
     verificationMethod?: { publicKeyMultibase?: string }[]
   }
   try {
@@ -368,7 +369,10 @@ export async function runRemove(options: { didRef: string }): Promise<number> {
     console.error(`No locally stored DID found for ${didRef}`)
     return 1
   }
-  const docDid = did ?? didRef
+  // The document id, not the reference: a did:peer DID may be referenced by
+  // its short form while its associations were recorded under the long form.
+  // A document without an id falls back to the reference it was loaded by.
+  const docDid = didDocument.id ?? did ?? didRef
   // Scrub the cached key-to-DID associations of any matching wallet keys
   // before the DID document (the source of truth) is deleted.
   for (const method of didDocument.verificationMethod ?? []) {

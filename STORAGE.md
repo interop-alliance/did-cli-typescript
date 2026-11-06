@@ -45,6 +45,12 @@ For `did:webvh` DIDs there are two more, alongside the above:
   staged next key. These are distinct from the document signing keys in
   `<did>.keys.json` and are what `did webvh rotate-keys` advances.
 
+`did:peer` DIDs are the exception to the naming above. Their files use the
+short form (`did:peer:4zQm....json`, `.keys.json`, `.meta.json`) because a long
+form is over 800 characters and exceeds the 255-byte file name limit. The
+stored document keeps the long form as its `id`, and listings report that
+long form rather than the file name.
+
 To see these paths at runtime for a specific DID (rather than reconstructing
 them by hand), run `di did meta <did>`: it prints a `Location:` block listing
 each artifact's on-disk path (document, keys, metadata, and for `did:webvh` the
@@ -94,7 +100,7 @@ optional and omitted when unset:
   handle exit with an error when it is ambiguous.
 - `description` -- longer free-text description.
 - `dids` (keys only) -- a cache of the locally stored DIDs whose documents
-  reference the key. The value actually *displayed* by `key list` / `key show`
+  reference the key. The value actually _displayed_ by `key list` / `key show`
   is always re-derived by scanning the saved DID documents for the key's
   `publicKeyMultibase`, so the cache being stale is harmless. It is refreshed
   whenever `did create --save` / `did add-key` saves a matching key, and on
