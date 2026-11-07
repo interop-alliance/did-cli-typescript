@@ -14,6 +14,9 @@
   a long form exceeds the file name limit. The stored document keeps the long
   form as its `id`. `did show`, `did meta`, and `did remove` accept either
   form. `did list`, `key list`, and `key show` report the long form.
+- `vc issue` signs with a saved `did:peer` DID given by its long form, short
+  form, or handle. The issued credential names the long form, so it verifies
+  offline.
 
 ### Changed
 

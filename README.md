@@ -1212,6 +1212,15 @@ cryptosuite does not support P-521 (key creation warns about this). A suite that
 does not match the key type (e.g. `--suite eddsa-rdfc-2022` for an ECDSA key) is
 rejected. ECDSA credentials round-trip through `vc verify` (below).
 
+A saved `did:peer` DID (see `did create peer --save`) issues the same way. Pass
+`--did` as the long form, the short form (`did:peer:4zQm...`), or a handle. The
+issued credential names the long form as its `issuer` and in the proof's
+`verificationMethod`, so it verifies offline with no lookup of local storage:
+
+```
+./di vc issue credential.json --did did:peer:4zQm...
+```
+
 Pass `--save` to also store the issued credential in local wallet storage
 (`~/.config/did-cli-wallet/credentials/` by default, or `$WALLET_DIR` if set);
 `--save`

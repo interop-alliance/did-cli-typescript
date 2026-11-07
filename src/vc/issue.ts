@@ -9,8 +9,10 @@
  * match the signing DID when present (otherwise issuance is aborted) -- a
  * credential cannot be issued by a DID other than the one named as its issuer.
  * The signing key is read from the DID's `<did>.keys.json` file (the secret key
- * store written by `id create --save`). All knowledge of the @interop/vc and
- * suite contracts is isolated to this file.
+ * store written by `did create --save`). A did:peer DID may be given by either
+ * form; its stored document carries the long form, which becomes the issuer.
+ * All knowledge of the @interop/vc and suite contracts is isolated to this
+ * file.
  */
 import { Ed25519Signature2020, eddsaRdfc2022 } from '@interop/ed25519-signature'
 import { ecdsaRdfc2019 } from '@interop/ecdsa-signature'

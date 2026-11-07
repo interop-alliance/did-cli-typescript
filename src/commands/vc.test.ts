@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { driver } from '@interop/did-method-key'
 import * as didWeb from '@interop/did-web-resolver'
+import * as didPeer from '@interop/did-method-peer'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import {
@@ -15,7 +16,7 @@ import {
   runIssue,
   runVerify
 } from './vc.js'
-import { saveDidMeta, saveToDids } from '../storage.js'
+import { didStorageId, saveDidMeta, saveToDids } from '../storage.js'
 import { toSummary, verifyCredentialFully } from '../vc/verify.js'
 import { welcomeCredential } from '../vc/fixtures/welcomeCredential.js'
 
@@ -121,6 +122,40 @@ async function createSavedDidWeb(): Promise<{ did: string; keyId: string }> {
   await saveToDids({ method: 'web', did, data: didDocument })
   await saveToDids({ method: 'web', did, suffix: 'keys', data: exported })
   return { did, keyId: didDocument.assertionMethod[0] as string }
+}
+
+/**
+ * Generates a did:peer (numalgo 4), saves its DID document and
+ * `<did>.keys.json` to the (temp) DIDs storage dir under the short form, and
+ * returns the long form id, the short form, and the assertionMethod key id --
+ * mirroring what `did create peer --save` does. Like did:web, the saved key
+ * file is a map keyed by verification-method id.
+ */
+async function createSavedDidPeer(): Promise<{
+  did: string
+  shortForm: string
+  keyId: string
+}> {
+  const didPeerDriver = didPeer.driver()
+  didPeerDriver.use({ keyPairClass: Ed25519VerificationKey })
+  const { didDocument, keyPairs } = await didPeerDriver.generate({
+    verificationKeyPair: await Ed25519VerificationKey.generate()
+  })
+  const did = didDocument.id as string
+  const exported: Record<string, unknown> = {}
+  for (const [methodId, keyPair] of keyPairs) {
+    exported[methodId] = await keyPair.export({
+      publicKey: true,
+      secretKey: true
+    })
+  }
+  await saveToDids({ method: 'peer', did, data: didDocument })
+  await saveToDids({ method: 'peer', did, suffix: 'keys', data: exported })
+  return {
+    did,
+    shortForm: didStorageId(did),
+    keyId: didDocument.assertionMethod[0] as string
+  }
 }
 
 /**
@@ -459,6 +494,109 @@ describe('did vc issue with ecdsa', () => {
   })
 
   it('produces a credential whose signature verifies', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as object
+    const result = await verifyCredentialFully({
+      credential: signed,
+      registries: []
+    })
+    assert.equal(toSummary(result).checks.signature, true)
+  })
+})
+
+describe('did vc issue with did:peer', () => {
+  let logs: string[]
+  let errors: string[]
+  let dir: string
+  let originalDidsDir: string | undefined
+  let did: string
+  let shortForm: string
+  let keyId: string
+
+  beforeEach(async () => {
+    logs = []
+    errors = []
+    mock.method(console, 'log', (...args: unknown[]) =>
+      logs.push(args.join(' '))
+    )
+    mock.method(console, 'error', (...args: unknown[]) =>
+      errors.push(args.join(' '))
+    )
+    dir = await mkdtemp(join(tmpdir(), 'did-cli-sign-peer-test-'))
+    originalDidsDir = process.env.DIDS_DIR
+    process.env.DIDS_DIR = dir
+    ;({ did, shortForm, keyId } = await createSavedDidPeer())
+  })
+
+  afterEach(async () => {
+    mock.restoreAll()
+    if (originalDidsDir === undefined) {
+      delete process.env.DIDS_DIR
+    } else {
+      process.env.DIDS_DIR = originalDidsDir
+    }
+    await rm(dir, { recursive: true })
+  })
+
+  /**
+   * Writes the unsigned credential (welcomeCredential without its `proof` and
+   * `issuer`) to a file and returns its path.
+   */
+  async function writeUnsignedCredential(): Promise<string> {
+    const { proof, issuer, ...unsigned } = welcomeCredential
+    void proof
+    void issuer
+    const file = join(dir, 'unsigned.json')
+    await writeFile(file, JSON.stringify(unsigned), 'utf8')
+    return file
+  }
+
+  it('signs with the long form and sets it as the issuer', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as {
+      issuer: string
+      proof: Record<string, string>
+    }
+    assert.equal(signed.issuer, did)
+    assert.equal(signed.proof.cryptosuite, 'eddsa-rdfc-2022')
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('signs when the DID is given by its short form', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did: shortForm })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as {
+      issuer: string
+      proof: Record<string, string>
+    }
+    // The stored document carries the long form, so that is the issuer.
+    assert.equal(signed.issuer, did)
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('signs when the DID is given by its metadata handle', async () => {
+    await saveDidMeta({ did, meta: { handle: 'peer-issuer' } })
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did: 'peer-issuer' })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { issuer: string }
+    assert.equal(signed.issuer, did)
+  })
+
+  it('signs when an explicit, authorized --key is given', async () => {
+    const file = await writeUnsignedCredential()
+    const code = await runIssue(file, { did, key: keyId })
+    assert.equal(code, 0)
+    const signed = JSON.parse(logs[0]) as { proof: Record<string, string> }
+    assert.equal(signed.proof.verificationMethod, keyId)
+  })
+
+  it('produces a credential whose signature verifies offline', async () => {
     const file = await writeUnsignedCredential()
     const code = await runIssue(file, { did })
     assert.equal(code, 0)
