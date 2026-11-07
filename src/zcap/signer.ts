@@ -5,9 +5,11 @@
  * legacy did-cli respectively:
  *
  * - Stored DID (`--did`): the DID document and its secret key are read from
- *   local storage (`~/.config/did-cli-wallet/dids/`, the store written by `id create --save`),
- *   exactly as `vc issue` loads its signing key. For `did:key` the single key
- *   serves the `capabilityDelegation` relationship.
+ *   local storage (`~/.config/did-cli-wallet/dids/`, the store written by
+ *   `did create --save`), exactly as `vc issue` loads its signing key. The key
+ *   authorized by the document's `capabilityDelegation` relationship is
+ *   selected from the keys file (a single key for did:key, a map keyed by
+ *   verification method id for did:web, did:webvh and did:peer).
  * - Env seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`): the `did:key` is
  *   regenerated from the seed, its id is checked against `--controller`, and the
  *   `capabilityDelegation` key is used to sign.
@@ -16,8 +18,13 @@ import { decodeSecretKeySeed } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import { createSigner } from '@interop/ed25519-signature'
-import type { ISigner } from '@interop/data-integrity-core'
-import { loadDidDocument, loadDidKeys, type StoredKeyPair } from '../storage.js'
+import type { IDidDocument, ISigner } from '@interop/data-integrity-core'
+import {
+  loadDidDocument,
+  loadDidKeys,
+  selectStoredKey,
+  type StoredKeys
+} from '../storage.js'
 
 /**
  * A key pair that can produce a signer, as returned by `methodFor`.
@@ -48,9 +55,19 @@ export async function loadDelegationSigner({
   controller?: string
 }): Promise<ISigner> {
   if (did) {
-    await loadDidDocument(did)
-    const keysData = await loadDidKeys<StoredKeyPair>(did)
-    const keyPair = await Ed25519VerificationKey.from(keysData)
+    const didDocument = await loadDidDocument<IDidDocument>(did)
+    const method = driver().publicMethodFor({
+      didDocument,
+      purpose: 'capabilityDelegation'
+    }) as { id: string }
+    const keysData = await loadDidKeys<StoredKeys>(did)
+    const storedKey = selectStoredKey({ keysData, keyId: method.id })
+    if (!storedKey) {
+      throw new Error(
+        `No stored secret key found for key id ${method.id} in DID ${did}`
+      )
+    }
+    const keyPair = await Ed25519VerificationKey.from(storedKey)
     return createSigner(keyPair)
   }
 

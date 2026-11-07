@@ -25,7 +25,13 @@ import { DataIntegrityProof } from '@interop/data-integrity-proof'
 import { issue, type IssueCredentialOptions } from '@interop/vc'
 import type { IDidDocument } from '@interop/data-integrity-core'
 import { documentLoader } from '../documentLoader.js'
-import { loadDidDocument, loadDidKeys, type StoredKeyPair } from '../storage.js'
+import {
+  loadDidDocument,
+  loadDidKeys,
+  selectStoredKey,
+  type StoredKeyPair,
+  type StoredKeys
+} from '../storage.js'
 import { isEcdsaPublicKeyMultibase } from '../keys/ecdsa.js'
 
 /**
@@ -96,38 +102,6 @@ function reconcileIssuer({
         'Remove existing issuer, or pass in a matching DID.'
     )
   }
-}
-
-/**
- * The two on-disk shapes of a `<did>.keys.json` file: a single exported key pair
- * (written by `id create --save` for did:key), or a map of exported key pairs
- * keyed by verification-method id (written by `id create web --save` and
- * `id add-key` for did:web, which may carry more than one key).
- */
-type StoredKeys = StoredKeyPair | Record<string, StoredKeyPair>
-
-/**
- * Resolves the exported key pair for `keyId` out of a loaded `<did>.keys.json`,
- * accommodating both the single-key (did:key) and the keyed-map (did:web)
- * storage shapes.
- *
- * @param options {object}
- * @param options.keysData {StoredKeys}   The parsed key file contents.
- * @param options.keyId {string}   The verification method id to find.
- * @returns {StoredKeyPair | undefined}   The matching key pair, or undefined.
- */
-function selectStoredKey({
-  keysData,
-  keyId
-}: {
-  keysData: StoredKeys
-  keyId: string
-}): StoredKeyPair | undefined {
-  if ((keysData as StoredKeyPair).id === keyId) {
-    return keysData as StoredKeyPair
-  }
-  const entry = (keysData as Record<string, StoredKeyPair>)[keyId]
-  return entry?.id === keyId ? entry : undefined
 }
 
 /**

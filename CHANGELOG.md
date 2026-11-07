@@ -23,6 +23,16 @@
   `--verification-key`, `--purpose`, `--vm-id-fragment`) for other methods.
   Previously they were silently ignored.
 
+### Fixed
+
+- `zcap delegate --did` now selects the stored key authorized by the DID
+  document's `capabilityDelegation` relationship. It previously only worked for
+  did:key, whose keys file holds a single key; did:web, did:webvh and did:peer
+  keys files are maps keyed by verification method id and failed to load.
+- `did remove` deletes files by the reference it was given rather than by the
+  stored document's `id`, so a document whose `id` disagrees with its file
+  name cannot remove another DID's files.
+
 - Added the `@interop/did-method-peer` dependency and bumped the other
   `@interop/*` dependencies.
 

@@ -8,11 +8,13 @@ import { makeZcapCommand } from './zcap.js'
 import { decodeCapability } from '../zcap/encoding.js'
 
 /**
- * Creates a stored did:key in `didsDir` (with its seed) and returns the DID and
- * the multibase secret key seed.
+ * Creates a stored DID in `didsDir` (with its seed) and returns the DID and
+ * the multibase secret key seed. The method defaults to did:key; passing
+ * `['peer']` creates a did:peer:4 instead.
  */
 async function createStoredDid(
-  didsDir: string
+  didsDir: string,
+  methodArgs: string[] = []
 ): Promise<{ did: string; seed: string }> {
   const logs: string[] = []
   const restore = console.log
@@ -20,9 +22,10 @@ async function createStoredDid(
   const prevDids = process.env.DIDS_DIR
   process.env.DIDS_DIR = didsDir
   try {
-    await makeDidCommand().parseAsync(['create', '--save', '--with-seed'], {
-      from: 'user'
-    })
+    await makeDidCommand().parseAsync(
+      ['create', ...methodArgs, '--save', '--with-seed'],
+      { from: 'user' }
+    )
   } finally {
     console.log = restore
     if (prevDids === undefined) {
@@ -228,6 +231,41 @@ describe('did zcap', () => {
         )
         assert.ok(Date.parse(delegatedCapability.expires) > Date.now())
         assert.deepEqual(decodeCapability(encoded), delegatedCapability)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('delegates from a stored did:peer (--did), whose keys file is a map', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        const { did } = await createStoredDid(didsDir, ['peer'])
+        const { did: delegatee } = await createStoredDid(didsDir)
+
+        await makeZcapCommand().parseAsync(
+          [
+            'delegate',
+            '--did',
+            did,
+            '--delegatee',
+            delegatee,
+            '--url',
+            'https://example.com/documents'
+          ],
+          { from: 'user' }
+        )
+
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const { delegatedCapability } = JSON.parse(logs[0])
+        assert.equal(delegatedCapability.controller, delegatee)
+        assert.ok(
+          delegatedCapability.proof.verificationMethod.startsWith(`${did}#`)
+        )
+        assert.equal(
+          delegatedCapability.proof.proofPurpose,
+          'capabilityDelegation'
+        )
       } finally {
         await rm(didsDir, { recursive: true })
       }
