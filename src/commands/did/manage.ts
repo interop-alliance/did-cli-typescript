@@ -369,9 +369,10 @@ export async function runRemove(options: { didRef: string }): Promise<number> {
     console.error(`No locally stored DID found for ${didRef}`)
     return 1
   }
-  // The document id, not the reference: a did:peer DID may be referenced by
-  // its short form while its associations were recorded under the long form.
-  // A document without an id falls back to the reference it was loaded by.
+  // Associations are scrubbed under the document id, not the reference: a
+  // did:peer DID may be referenced by its short form while its associations
+  // were recorded under the long form. A document without an id falls back to
+  // the reference it was loaded by.
   const docDid = didDocument.id ?? did ?? didRef
   // Scrub the cached key-to-DID associations of any matching wallet keys
   // before the DID document (the source of truth) is deleted.
@@ -383,7 +384,9 @@ export async function runRemove(options: { didRef: string }): Promise<number> {
       })
     }
   }
-  const removed = await removeDidFiles({ did: docDid })
+  // Files are removed by the reference the document was loaded from, so a
+  // document whose id disagrees with its file name cannot delete another DID.
+  const removed = await removeDidFiles({ did: did ?? didRef })
   for (const filePath of removed) {
     console.error(`Removed ${filePath}`)
   }

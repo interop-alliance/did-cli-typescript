@@ -112,6 +112,37 @@ export interface StoredKeyPair {
 }
 
 /**
+ * The two on-disk shapes of a `<did>.keys.json` file: a single exported key pair
+ * (written by `did create --save` for did:key), or a map of exported key pairs
+ * keyed by verification-method id (written for did:web, did:webvh and did:peer,
+ * which may carry more than one key).
+ */
+export type StoredKeys = StoredKeyPair | Record<string, StoredKeyPair>
+
+/**
+ * Resolves the exported key pair for `keyId` out of a loaded `<did>.keys.json`,
+ * accommodating both the single-key (did:key) and the keyed-map storage shapes.
+ *
+ * @param options {object}
+ * @param options.keysData {StoredKeys}   The parsed key file contents.
+ * @param options.keyId {string}   The verification method id to find.
+ * @returns {StoredKeyPair | undefined}   The matching key pair, or undefined.
+ */
+export function selectStoredKey({
+  keysData,
+  keyId
+}: {
+  keysData: StoredKeys
+  keyId: string
+}): StoredKeyPair | undefined {
+  if ((keysData as StoredKeyPair).id === keyId) {
+    return keysData as StoredKeyPair
+  }
+  const entry = (keysData as Record<string, StoredKeyPair>)[keyId]
+  return entry?.id === keyId ? entry : undefined
+}
+
+/**
  * List the storage IDs of all items saved in a wallet collection.
  *
  * The storage ID of an item is its file name without the `.json` extension --

@@ -3008,6 +3008,7 @@ describe('di did', () => {
             errors.join('\n')
           )
           assert.deepEqual(await storedDids(didsDir), [])
+          assert.deepEqual(await readdir(join(didsDir, 'peer')), [])
         }
       } finally {
         await rm(didsDir, { recursive: true })
