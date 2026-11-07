@@ -22,6 +22,10 @@
   `--portable`, `--witness`, `--witness-threshold`, `--watcher`,
   `--verification-key`, `--purpose`, `--vm-id-fragment`) for other methods.
   Previously they were silently ignored.
+- Stored-key import and signer construction shared by `vc issue` and `zcap
+delegate` moved into one helper module (`src/keys/stored-key.ts`).
+- Added the `@interop/did-method-peer` dependency and bumped the other
+  `@interop/*` dependencies.
 
 ### Fixed
 
@@ -29,12 +33,15 @@
   document's `capabilityDelegation` relationship. It previously only worked for
   did:key, whose keys file holds a single key; did:web, did:webvh and did:peer
   keys files are maps keyed by verification method id and failed to load.
+- `zcap delegate --did` signs with a stored ecdsa key (`did create --type
+ecdsa --save`) instead of failing to import it as an Ed25519 key. ECDSA keys
+  produce a `DataIntegrityProof` with the `ecdsa-jcs-2019` cryptosuite;
+  Ed25519 keys still produce `Ed25519Signature2020` proofs. web-spaces-server
+  accepts only the Ed25519 proofs, so Space capabilities still need an ed25519
+  delegator.
 - `did remove` deletes files by the reference it was given rather than by the
   stored document's `id`, so a document whose `id` disagrees with its file
   name cannot remove another DID's files.
-
-- Added the `@interop/did-method-peer` dependency and bumped the other
-  `@interop/*` dependencies.
 
 ## 0.18.0 - 2026-10-30
 

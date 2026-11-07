@@ -1,51 +1,59 @@
 /**
- * Loads the `capabilityDelegation` signer used to sign delegated capabilities.
+ * Loads the `capabilityDelegation` signer used to sign delegated capabilities,
+ * paired with the signature suite class that matches the key's type.
  *
  * Two key-sourcing modes are supported, mirroring the rest of the CLI and the
  * legacy did-cli respectively:
  *
  * - Stored DID (`--did`): the DID document and its secret key are read from
  *   local storage (`~/.config/did-cli-wallet/dids/`, the store written by
- *   `did create --save`), exactly as `vc issue` loads its signing key. The key
- *   authorized by the document's `capabilityDelegation` relationship is
- *   selected from the keys file (a single key for did:key, a map keyed by
- *   verification method id for did:web, did:webvh and did:peer).
+ *   `did create --save`), exactly as `vc issue` loads its signing key. The
+ *   DID document's `capabilityDelegation` relationship names the key, which is
+ *   then picked out of the keys file (a single key pair for did:key, a map
+ *   keyed by verification-method id for did:web, did:webvh and did:peer). The
+ *   stored key's type selects the suite: an ecdsa key signs with
+ *   `ecdsa-jcs-2019`, an ed25519 key with `Ed25519Signature2020`.
  * - Env seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`): the `did:key` is
  *   regenerated from the seed, its id is checked against `--controller`, and the
  *   `capabilityDelegation` key is used to sign.
  */
 import { decodeSecretKeySeed } from '@digitalcredentials/bnid'
 import { driver } from '@interop/did-method-key'
+import { EcdsaJcs2019 } from '@interop/ecdsa-signature'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
-import { createSigner } from '@interop/ed25519-signature'
+import { createSigner, Ed25519Signature2020 } from '@interop/ed25519-signature'
 import type { IDidDocument, ISigner } from '@interop/data-integrity-core'
+import type { SignatureSuiteClass } from '@interop/data-integrity-proof'
 import {
-  loadDidDocument,
-  loadDidKeys,
-  selectStoredKey,
-  type StoredKeys
-} from '../storage.js'
+  keyIdForPurpose,
+  loadStoredSigner,
+  type KeyType
+} from '../keys/stored-key.js'
+import { loadDidDocument } from '../storage.js'
 
 /**
- * A key pair that can produce a signer, as returned by `methodFor`.
+ * The suite class `ZcapClient` signs a delegation with, per stored key type.
  */
-interface SignableKeyPair {
-  signer(): ISigner
+const SUITE_CLASS: Record<KeyType, SignatureSuiteClass> = {
+  ed25519: Ed25519Signature2020,
+  ecdsa: EcdsaJcs2019
 }
 
 /**
  * Loads the delegation signer for `zcap delegate`.
  *
  * When `did` is given, the signer is loaded from the locally-stored DID and its
- * secret key file. Otherwise the `ZCAP_CONTROLLER_KEY_SEED` environment variable
- * is required and the `did:key` is regenerated from it, with `controller` used
- * to verify the regenerated DID matches the caller's expectation.
+ * secret key file, and the suite class follows the key's type. Otherwise the
+ * `ZCAP_CONTROLLER_KEY_SEED` environment variable is required and the `did:key`
+ * is regenerated from it, with `controller` used to verify the regenerated DID
+ * matches the caller's expectation.
  *
  * @param options {object}
  * @param [options.did] {string}   The id of a locally-stored DID to sign with.
  * @param [options.controller] {string}   The expected controller DID, required
  *   (and verified) when signing via `ZCAP_CONTROLLER_KEY_SEED`.
- * @returns {Promise<ISigner>}   The `capabilityDelegation` signer.
+ * @returns {Promise<{signer: ISigner, SuiteClass: SignatureSuiteClass}>}   The
+ *   `capabilityDelegation` signer and its suite class.
  */
 export async function loadDelegationSigner({
   did,
@@ -53,22 +61,15 @@ export async function loadDelegationSigner({
 }: {
   did?: string
   controller?: string
-}): Promise<ISigner> {
+}): Promise<{ signer: ISigner; SuiteClass: SignatureSuiteClass }> {
   if (did) {
     const didDocument = await loadDidDocument<IDidDocument>(did)
-    const method = driver().publicMethodFor({
+    const keyId = keyIdForPurpose({
       didDocument,
       purpose: 'capabilityDelegation'
-    }) as { id: string }
-    const keysData = await loadDidKeys<StoredKeys>(did)
-    const storedKey = selectStoredKey({ keysData, keyId: method.id })
-    if (!storedKey) {
-      throw new Error(
-        `No stored secret key found for key id ${method.id} in DID ${did}`
-      )
-    }
-    const keyPair = await Ed25519VerificationKey.from(storedKey)
-    return createSigner(keyPair)
+    })
+    const { signer, keyType } = await loadStoredSigner({ did, keyId })
+    return { signer, SuiteClass: SUITE_CLASS[keyType] }
   }
 
   const secretKeySeed = process.env.ZCAP_CONTROLLER_KEY_SEED
@@ -95,8 +96,9 @@ export async function loadDelegationSigner({
         `does not match --controller (${controller}).`
     )
   }
-  const delegationKey = (
-    methodFor as (options: { purpose: string }) => SignableKeyPair
-  )({ purpose: 'capabilityDelegation' })
-  return createSigner(delegationKey)
+  const delegationKey = methodFor({ purpose: 'capabilityDelegation' })
+  return {
+    signer: createSigner(delegationKey),
+    SuiteClass: SUITE_CLASS.ed25519
+  }
 }

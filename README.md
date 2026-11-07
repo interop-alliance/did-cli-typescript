@@ -1420,6 +1420,13 @@ capability's controller). The delegation is signed with the delegator's
 
 - **A locally-stored DID (`--did`)** -- the DID must have been saved with
   `di did create --save`; this is the preferred mode and mirrors `vc issue`.
+  The DID document's `capabilityDelegation` key signs (did:key, did:web and
+  did:webvh DIDs all work). The key's type picks the proof: an ed25519 key
+  signs an `Ed25519Signature2020` proof, an ecdsa key (`--type ecdsa`) signs a
+  `DataIntegrityProof` with the `ecdsa-jcs-2019` cryptosuite. Note that
+  web-spaces-server verifies delegation proofs with `Ed25519Signature2020` and
+  `eddsa-jcs-2022` only, so a capability chain for a Space must be delegated
+  from an ed25519 DID; the ecdsa path is for other zcap consumers.
 - **A secret key seed (`ZCAP_CONTROLLER_KEY_SEED` + `--controller`)** -- the
   `did:key` is re-derived from the seed and checked against `--controller`.
 

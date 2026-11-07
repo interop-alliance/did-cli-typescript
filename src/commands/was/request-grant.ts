@@ -14,6 +14,7 @@
  */
 import { driver } from '@interop/did-method-key'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
+import type { IDidDocument } from '@interop/data-integrity-core'
 import type { IZcap } from '@interop/data-integrity-core/zcap'
 import {
   loadDidMeta,
@@ -55,12 +56,12 @@ const DEFAULT_HANDLE = 'agent'
  * would otherwise file another key under the same handle and make later
  * lookups of that handle ambiguous.
  *
- * @returns {Promise<{did: string, keyPair: Ed25519VerificationKey, didDocument: object}>}
+ * @returns {Promise<{did: string, keyPair: Ed25519VerificationKey, didDocument: IDidDocument}>}
  */
 async function mintAgentKey(): Promise<{
   did: string
   keyPair: Ed25519VerificationKey
-  didDocument: object
+  didDocument: IDidDocument
 }> {
   const keyPair = await Ed25519VerificationKey.generate()
   const didDriver = driver()
@@ -68,7 +69,7 @@ async function mintAgentKey(): Promise<{
   const { didDocument } = await didDriver.fromKeyPair({
     verificationKeyPair: keyPair
   })
-  return { did: (didDocument as { id: string }).id, keyPair, didDocument }
+  return { did: didDocument.id, keyPair, didDocument }
 }
 
 /**
@@ -78,7 +79,7 @@ async function mintAgentKey(): Promise<{
  *
  * @param options {object}
  * @param options.keyPair {Ed25519VerificationKey}
- * @param options.didDocument {object}
+ * @param options.didDocument {IDidDocument}
  * @param options.handle {string}
  * @param [options.description] {string}
  * @returns {Promise<void>}
@@ -90,7 +91,7 @@ async function saveAgentDid({
   description
 }: {
   keyPair: Ed25519VerificationKey
-  didDocument: object
+  didDocument: IDidDocument
   handle: string
   description?: string
 }): Promise<void> {

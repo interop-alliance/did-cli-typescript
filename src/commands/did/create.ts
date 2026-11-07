@@ -16,6 +16,7 @@ import {
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
+import type { IDidDocument } from '@interop/data-integrity-core'
 import {
   loadDidDocument,
   loadDidKeys,
@@ -146,13 +147,13 @@ export async function saveDidArtifacts({
   description
 }: {
   method: string
-  didDocument: object
+  didDocument: IDidDocument
   exportedKeys: object
   fingerprints: (string | undefined)[]
   handle?: string
   description?: string
 }): Promise<void> {
-  const did = (didDocument as { id: string }).id
+  const did = didDocument.id
   const docPath = await saveToDids({ method, did, data: didDocument })
   await saveToDids({ method, did, suffix: 'keys', data: exportedKeys })
   const meta: ItemMetadata = { created: new Date().toISOString() }
@@ -368,7 +369,7 @@ function printDidOutput({
  *
  * @param options {object}
  * @param options.method {string}
- * @param options.didDocument {{ id: string }}
+ * @param options.didDocument {IDidDocument}
  * @param options.exportedKeys {object}   The keys file contents.
  * @param options.fingerprints {(string | undefined)[]}
  * @param [options.secretKeySeed] {string}   Echoed back with `--with-seed`.
@@ -385,7 +386,7 @@ async function finishCreate({
   options
 }: {
   method: string
-  didDocument: { id: string }
+  didDocument: IDidDocument
   exportedKeys: object
   fingerprints: (string | undefined)[]
   secretKeySeed?: string
@@ -716,11 +717,7 @@ export async function runCreate(options: {
         // Persist the document key V keyed by its document verification
         // method id (so it can be selected for signing), and set its id
         // to match.
-        const docVmId = (
-          result.doc as {
-            verificationMethod?: { id: string }[]
-          }
-        ).verificationMethod?.[0]?.id
+        const docVmId = result.doc.verificationMethod?.[0]?.id
         if (!docVmId) {
           console.error(
             'Created did:webvh document is missing a verification method id'
@@ -733,9 +730,11 @@ export async function runCreate(options: {
         const exportedDoc = isExternalDocKey
           ? undefined
           : await exportStoredKey(docKey)
+        // did-method-webvh types its document as `DIDDoc`, with every field
+        // optional; the created document is a full DID document.
         await saveDidArtifacts({
           method: 'webvh',
-          didDocument: result.doc as { id: string },
+          didDocument: result.doc as IDidDocument,
           exportedKeys: exportedDoc ? { [docVmId]: exportedDoc } : {},
           fingerprints: [exportedDoc?.publicKeyMultibase],
           handle: options.handle,

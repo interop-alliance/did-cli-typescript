@@ -11,6 +11,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
+import type { IKeyAgreementKeyPair2020 } from '@interop/data-integrity-core'
 import { documentLoader } from '../documentLoader.js'
 import { listCollection, loadFromCollection } from '../storage.js'
 import { resolveKeyRef } from '../meta.js'
@@ -46,14 +47,6 @@ interface VerificationMethodNode {
  */
 export type KeyAgreementKey = InstanceType<typeof X25519KeyAgreementKey2020> & {
   id: string
-}
-
-/** A stored X25519 key pair, as persisted by `key create --type x25519`. */
-interface StoredKeyAgreementKey {
-  id?: string
-  type?: string
-  publicKeyMultibase?: string
-  privateKeyMultibase?: string
 }
 
 /**
@@ -235,7 +228,7 @@ export async function resolveRecipient({
   if (!resolved?.key.publicKeyMultibase) {
     throw new Error(`Could not resolve recipient "${ref}".`)
   }
-  const stored = resolved.key as StoredKeyAgreementKey
+  const stored = resolved.key as IKeyAgreementKeyPair2020
   if (stored.type !== KEY_AGREEMENT_TYPE) {
     throw new Error(`Wallet key "${ref}" is not an ${KEY_AGREEMENT_TYPE} key.`)
   }
@@ -287,7 +280,7 @@ export async function loadKeyAgreementKey({
   if (!resolved) {
     throw new Error(`No locally stored key found for "${ref}".`)
   }
-  const stored = resolved.key as StoredKeyAgreementKey
+  const stored = resolved.key as IKeyAgreementKeyPair2020
   if (stored.type !== KEY_AGREEMENT_TYPE) {
     throw new Error(`Wallet key "${ref}" is not an ${KEY_AGREEMENT_TYPE} key.`)
   }
@@ -319,7 +312,7 @@ export async function autoSelectKeyAgreementKey({
   const storageIds = await listCollection('keys')
   const matches: KeyAgreementKey[] = []
   for (const storageId of storageIds) {
-    const stored = await loadFromCollection<StoredKeyAgreementKey>({
+    const stored = await loadFromCollection<IKeyAgreementKeyPair2020>({
       collection: 'keys',
       storageId
     })

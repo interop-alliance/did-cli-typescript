@@ -3,18 +3,21 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { DataIntegrityProof } from '@interop/data-integrity-proof'
+import { createVerifyCryptosuite } from '@interop/ecdsa-signature'
 import { makeDidCommand } from './did.js'
 import { makeZcapCommand } from './zcap.js'
+import { documentLoader } from '../documentLoader.js'
 import { decodeCapability } from '../zcap/encoding.js'
 
 /**
- * Creates a stored DID in `didsDir` (with its seed) and returns the DID and
- * the multibase secret key seed. The method defaults to did:key; passing
- * `['peer']` creates a did:peer:4 instead.
+ * Creates a stored DID in `didsDir` with the given `did` command arguments
+ * (by default a seeded did:key) and returns the DID and, when seeded, the
+ * multibase secret key seed.
  */
 async function createStoredDid(
   didsDir: string,
-  methodArgs: string[] = []
+  createArgs: string[] = ['create', '--save', '--with-seed']
 ): Promise<{ did: string; seed: string }> {
   const logs: string[] = []
   const restore = console.log
@@ -22,10 +25,7 @@ async function createStoredDid(
   const prevDids = process.env.DIDS_DIR
   process.env.DIDS_DIR = didsDir
   try {
-    await makeDidCommand().parseAsync(
-      ['create', ...methodArgs, '--save', '--with-seed'],
-      { from: 'user' }
-    )
+    await makeDidCommand().parseAsync(createArgs, { from: 'user' })
   } finally {
     console.log = restore
     if (prevDids === undefined) {
@@ -67,6 +67,42 @@ async function createSavedRootZcap({
   }
   await makeZcapCommand().parseAsync(args, { from: 'user' })
   return `urn:zcap:root:${encodeURIComponent(url)}`
+}
+
+/**
+ * Delegates a capability for https://example.com/documents from a stored DID
+ * created with `createArgs` to a freshly created stored did:key, and checks the
+ * parts of the printed delegation that do not depend on the delegator's key
+ * type. Returns the delegator's id and the delegated capability.
+ */
+async function delegateFromStoredDid({
+  didsDir,
+  createArgs,
+  logs
+}: {
+  didsDir: string
+  createArgs: string[]
+  logs: string[]
+}): Promise<{ did: string; delegatedCapability: Record<string, any> }> {
+  const { did } = await createStoredDid(didsDir, createArgs)
+  const { did: delegatee } = await createStoredDid(didsDir)
+  await makeZcapCommand().parseAsync(
+    [
+      'delegate',
+      '--did',
+      did,
+      '--delegatee',
+      delegatee,
+      '--url',
+      'https://example.com/documents'
+    ],
+    { from: 'user' }
+  )
+  const { delegatedCapability } = JSON.parse(logs[0])
+  assert.equal(delegatedCapability.controller, delegatee)
+  assert.equal(delegatedCapability.proof.proofPurpose, 'capabilityDelegation')
+  assert.ok(delegatedCapability.proof.verificationMethod.startsWith(`${did}#`))
+  return { did, delegatedCapability }
 }
 
 describe('did zcap', () => {
@@ -240,7 +276,12 @@ describe('did zcap', () => {
       const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
       process.env.DIDS_DIR = didsDir
       try {
-        const { did } = await createStoredDid(didsDir, ['peer'])
+        const { did } = await createStoredDid(didsDir, [
+          'create',
+          'peer',
+          '--save',
+          '--with-seed'
+        ])
         const { did: delegatee } = await createStoredDid(didsDir)
 
         await makeZcapCommand().parseAsync(
@@ -268,6 +309,58 @@ describe('did zcap', () => {
         )
       } finally {
         await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('delegates from a stored ecdsa did:key with ecdsa-jcs-2019', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'zcap-dids-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        const { delegatedCapability } = await delegateFromStoredDid({
+          didsDir,
+          createArgs: ['create', '--type', 'ecdsa', '--save'],
+          logs
+        })
+        const { proof, ...document } = delegatedCapability
+        assert.equal(proof.type, 'DataIntegrityProof')
+        assert.equal(proof.cryptosuite, 'ecdsa-jcs-2019')
+
+        // Round-trip: the proof must verify against the published did:key.
+        const suite = new DataIntegrityProof({
+          cryptosuite: createVerifyCryptosuite()
+        })
+        const result = await suite.verifyProof({
+          proof,
+          document,
+          documentLoader
+        })
+        assert.equal(result.verified, true, result.error?.message)
+      } finally {
+        delete process.env.DIDS_DIR
+        await rm(didsDir, { recursive: true, force: true })
+      }
+    })
+
+    it('delegates from a stored did:web (keyed-map keys file)', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'zcap-dids-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        const { did, delegatedCapability } = await delegateFromStoredDid({
+          didsDir,
+          createArgs: [
+            'create',
+            'web',
+            '--url',
+            'https://example.com',
+            '--save'
+          ],
+          logs
+        })
+        assert.equal(did, 'did:web:example.com')
+        assert.equal(delegatedCapability.proof.type, 'Ed25519Signature2020')
+      } finally {
+        delete process.env.DIDS_DIR
+        await rm(didsDir, { recursive: true, force: true })
       }
     })
 

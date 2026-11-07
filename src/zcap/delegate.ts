@@ -7,14 +7,15 @@
  * capability chain, and signs it with the delegator's `capabilityDelegation`
  * key. For a first-level delegation the parent is the root capability generated
  * from the invocation target; for further (attenuated) delegation a decoded
- * parent capability is passed instead. The signing key is resolved from a stored
- * DID or `ZCAP_CONTROLLER_KEY_SEED` (see `loadDelegationSigner`).
+ * parent capability is passed instead. The signing key and the suite class it
+ * signs with are resolved from a stored DID or `ZCAP_CONTROLLER_KEY_SEED` (see
+ * `loadDelegationSigner`): ed25519 keys produce an `Ed25519Signature2020`
+ * proof, ecdsa keys an `ecdsa-jcs-2019` Data Integrity proof.
  *
  * The document loader is `@interop/security-document-loader`'s loader, which
  * already bundles the zcap JSON-LD context (and the ed25519-2020 suite context),
  * so it can be passed to `ZcapClient` as-is.
  */
-import { Ed25519Signature2020 } from '@interop/ed25519-signature'
 import { ZcapClient } from '@interop/ezcap'
 import type { IDelegatedZcap, IZcap } from '@interop/data-integrity-core/zcap'
 import { documentLoader } from '../documentLoader.js'
@@ -71,9 +72,12 @@ export async function delegateCapability({
   ttl?: string
   expires?: string
 }): Promise<{ delegatedCapability: IDelegatedZcap; encoded: string }> {
-  const delegationSigner = await loadDelegationSigner({ did, controller })
+  const { signer: delegationSigner, SuiteClass } = await loadDelegationSigner({
+    did,
+    controller
+  })
   const client = new ZcapClient({
-    SuiteClass: Ed25519Signature2020,
+    SuiteClass,
     delegationSigner,
     documentLoader
   })
