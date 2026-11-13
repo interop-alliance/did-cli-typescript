@@ -1989,7 +1989,7 @@ key saved without a handle needs `--handle`. `WAS_DID` is not consulted here,
 so a run without `--did` always mints.
 
 Options are `--collection <name>` (default `web`), `--action <verb...>` (default
-`GET HEAD PUT POST`), `--reason <text>` (shown to the user at the consent step),
+`GET PUT POST`), `--reason <text>` (shown to the user at the consent step),
 `--name <name>` (what the agent calls itself, shown to the user beside its
 key), `--wallet <url>` (a wallet base URL to print an approval deep link for),
 `--timeout <seconds>` (default 600, matching the server's exchange

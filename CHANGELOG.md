@@ -2,6 +2,13 @@
 
 ## 0.19.0 - TBD
 
+### Changed
+
+- Breaking: `was request-grant` no longer accepts `HEAD` as an `--action`. The
+  action vocabulary is `GET`, `PUT`, `POST` and `DELETE`, and the default is
+  `GET PUT POST`. A HEAD request's invocation names `GET`. `HEAD` gets the same
+  unknown-action error as any other verb outside the vocabulary.
+
 ### Added
 
 - `did create peer` creates a `did:peer` numalgo 4 DID. It supports

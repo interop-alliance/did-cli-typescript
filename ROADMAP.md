@@ -174,6 +174,40 @@ stays in the install tree beside `pws-client`. Blocked until both packages
 publish versions that depend on `@interop/pws-client`. Nothing in `src/`
 imports `@interop/wallet-core`, so its dependency may be removable instead.
 
+### CLI-27: Adopt the next breaking `@interop/did-method-webvh` release
+
+- status: todo
+- priority: medium
+- labels: deps, webvh
+- acceptance:
+  - [ ] `@interop/did-method-webvh` is bumped to the release that follows
+        5.18.2 and carries the changes below
+  - [ ] Code and tests compile against `meta.ttl` as a string, and against
+        `didDocumentMetadata.ttl` and `didDocumentMetadata.witness.threshold`
+        as strings in `resolveDID` output
+  - [ ] `--witness-threshold` still sends a JSON integer to `createDID`
+  - [ ] Stored fixture logs and test logs resolve under the stricter parameter
+        check
+
+discovered-from: a port of three upstream `didwebvh-ts` changes into the
+library. Wait for the library to be published to npm before starting.
+
+The release changes four behaviors:
+
+- `deactivateDID` writes `updateKeys: []` and throws while pre-rotation is
+  active. The caller must first call `updateDID` with `nextKeyHashes: []`.
+- Resolution rejects a log entry with a parameter that did:webvh 1.0 does not
+  define, including the legacy `witnesses`/`witnessThreshold` pair.
+- A witness `threshold` must be a JSON integer. A string such as `"2"` is
+  rejected in a log and in `createDID`/`updateDID` input.
+- `ttl` is a string in resolution metadata, and `witness.threshold` is a
+  string in the `resolveDID` result. `DEFAULT_TTL_SECONDS` is `'3600'`.
+
+A first look found little exposure. The CLI has no deactivate command, reads
+neither `ttl` nor `witness.threshold` from metadata, and `create` already
+parses `--witness-threshold` to an integer. A future `did webvh deactivate`
+command must stop pre-rotation with its own log entry before it deactivates.
+
 ## Someday / Maybe
 
 Items with no current trigger; parked here so the active sections stay
