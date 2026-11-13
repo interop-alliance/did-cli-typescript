@@ -33,7 +33,7 @@ function makeZcap({
     parentCapability: 'urn:zcap:root:encoded-space-url',
     controller,
     invocationTarget: `${SERVER}/space/abc/web`,
-    allowedAction: ['GET', 'HEAD', 'POST', 'PUT'],
+    allowedAction: ['GET', 'POST', 'PUT'],
     expires: '2027-01-01T00:00:00Z',
     proof: { type: 'Ed25519Signature2020' }
   }
@@ -122,7 +122,7 @@ describe('buildCapabilityRequest', () => {
     assert.equal(queries[0]?.type, 'AuthorizationCapabilityQuery')
   })
 
-  it('defaults to the web collection and GET/HEAD/PUT/POST', () => {
+  it('defaults to the web collection and GET/PUT/POST', () => {
     const request = buildCapabilityRequest({ controller: 'did:key:z6MkAgent' })
     const [query] = request.query as {
       capabilityQuery: {
@@ -132,7 +132,7 @@ describe('buildCapabilityRequest', () => {
     }[]
     const [detail] = query!.capabilityQuery
     assert.equal(detail?.invocationTarget.name, 'web')
-    assert.deepEqual(detail?.allowedAction, ['GET', 'HEAD', 'PUT', 'POST'])
+    assert.deepEqual(detail?.allowedAction, ['GET', 'PUT', 'POST'])
   })
 
   it('rejects an unknown action verb', () => {
@@ -373,7 +373,7 @@ describe('was request-grant', () => {
         'site',
         '--action',
         'GET',
-        'head'
+        'put'
       ],
       { from: 'user' }
     )
@@ -394,7 +394,7 @@ describe('was request-grant', () => {
     ).request.verifiablePresentationRequest.query
     const [detail] = query!.capabilityQuery
     assert.equal(detail!.invocationTarget.name, 'site')
-    assert.deepEqual(detail!.allowedAction, ['GET', 'HEAD'])
+    assert.deepEqual(detail!.allowedAction, ['GET', 'PUT'])
   })
 
   it('sends the agent name as the VPR root agent member with --name', async () => {
@@ -416,6 +416,21 @@ describe('was request-grant', () => {
     assert.deepEqual(verifiablePresentationRequest.agent, {
       name: 'research-bot'
     })
+  })
+
+  it('rejects HEAD as an action before opening any exchange', async () => {
+    const requests = setUpExchangeStub({
+      response: { verifiablePresentation: { zcap: [makeZcap()] } }
+    })
+    await makeWasCommand().parseAsync(
+      ['request-grant', '--exchange', SERVER, '--action', 'GET', 'head'],
+      { from: 'user' }
+    )
+    assert.equal(exitCode, 2)
+    assert.equal(
+      requests.filter(request => request.method === 'POST').length,
+      0
+    )
   })
 
   it('rejects an invalid --name before opening any exchange', async () => {

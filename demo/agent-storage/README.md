@@ -114,7 +114,7 @@ overwrite, until the write grant expires (seven days).
   that name, the wallet cannot satisfy the request and the approval comes back
   granting nothing.
 - `--action <verb...>` narrows or widens the request (default
-  `GET HEAD PUT POST`). The wallet caps what it grants by what the collection
+  `GET PUT POST`). The wallet caps what it grants by what the collection
   allows, so asking for more does not get more.
 - `--timeout <seconds>` waits longer than the default ten minutes -- though the
   server drops the exchange at ten minutes either way, so a longer wait only

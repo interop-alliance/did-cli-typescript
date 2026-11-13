@@ -37,14 +37,13 @@ export const PUBLIC_COLLECTION_TYPE = 'https://w3id.org/byoe#public-collection'
 export const DEFAULT_COLLECTION = 'web'
 
 /** The actions the request asks for when `--action` is not given. */
-export const DEFAULT_ACTIONS = ['GET', 'HEAD', 'PUT', 'POST']
+export const DEFAULT_ACTIONS = ['GET', 'PUT', 'POST']
 
 /**
- * The actions a capability request may name. A superset of the verbs
- * `was grant` signs (it adds `HEAD`), because the wallet -- not this CLI -- is
- * the authority on what it is willing to delegate.
+ * The actions a capability request may name: the four-token PWS action
+ * vocabulary. `HEAD` is not an action. A HEAD request's invocation names `GET`.
  */
-const REQUESTABLE_ACTIONS = ['GET', 'HEAD', 'PUT', 'POST', 'DELETE'] as const
+const REQUESTABLE_ACTIONS = ['GET', 'PUT', 'POST', 'DELETE'] as const
 
 /**
  * How long to wait for the user to approve before giving up: the server's

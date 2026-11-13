@@ -879,7 +879,7 @@ export function makeWasCommand(): Command {
     )
     .option(
       '--action <verb...>',
-      'requested action(s): GET, HEAD, PUT, POST, DELETE (lowercase accepted)'
+      'requested action(s): GET, PUT, POST, DELETE (lowercase accepted)'
     )
     .option('--reason <text>', 'why access is wanted, shown to the user')
     .option(
