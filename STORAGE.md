@@ -45,6 +45,10 @@ For `did:webvh` DIDs there are two more, alongside the above:
   staged next key. These are distinct from the document signing keys in
   `<did>.keys.json` and are what `did webvh rotate-keys` advances.
 
+`did:vh` DIDs are stored under `dids/vh/` with the same five files as
+`did:webvh` (`<did>.json`, `.keys.json`, `.meta.json`, `.jsonl`,
+`.update-keys.json`). The `.jsonl` history log is the source of truth.
+
 `did:peer` DIDs are the exception to the naming above. Their files use the
 short form (`did:peer:4zQm....json`, `.keys.json`, `.meta.json`) because a long
 form is over 800 characters and exceeds the 255-byte file name limit. The
@@ -53,7 +57,7 @@ long form rather than the file name.
 
 To see these paths at runtime for a specific DID (rather than reconstructing
 them by hand), run `di did meta <did>`: it prints a `Location:` block listing
-each artifact's on-disk path (document, keys, metadata, and for `did:webvh` the
+each artifact's on-disk path (document, keys, metadata, and for `did:webvh` and `did:vh` the
 `.jsonl` log and update-keys sidecar) to stderr, alongside the metadata JSON.
 
 You can override the storage mechanism for each ledger method (to store JSON

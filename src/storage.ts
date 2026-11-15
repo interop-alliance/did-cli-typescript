@@ -607,16 +607,27 @@ export async function saveDidLog({
 }
 
 /**
- * Load the raw did:webvh history log (`.jsonl`) saved for a DID.
+ * Load the raw history log (`.jsonl`) saved for a DID, treating an absent file
+ * as `undefined`. Any other read failure (e.g. EACCES, EISDIR) is rethrown, so
+ * an unreadable log is not mistaken for a missing one.
  *
  * Returns the file's raw text (newline-delimited JSON), suitable for feeding to
  * `resolveDIDFromLog` after splitting on newlines.
  *
  * @param did {string}
- * @returns {Promise<string>}
+ * @returns {Promise<string | undefined>} undefined when no log is stored.
  */
-export async function loadDidLog(did: string): Promise<string> {
-  return readFile(didFilePath({ did, suffix: '.jsonl' }), 'utf8')
+export async function loadDidLogIfExists(
+  did: string
+): Promise<string | undefined> {
+  try {
+    return await readFile(didFilePath({ did, suffix: '.jsonl' }), 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw err
+  }
 }
 
 /**

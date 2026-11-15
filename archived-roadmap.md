@@ -544,3 +544,45 @@ state bare-origin only" alternative is decided.
 Resolved without a derived base URL: `resolveCapabilityTarget` opens the client
 on the Space named by the chain root, with `PwsClient.forSpace`, so no server
 path is discarded. FW-244 retired into freewallet's FW-437, which is still open.
+
+### CLI-28: did:vh support
+
+- status: done
+- done: 2026-11-13
+- priority: high
+- labels: vh, webvh
+- acceptance:
+  - [x] `di did create vh` creates a `did:vh:<scid>` DID through the
+        `@interop/did-method-webvh/vh` entry points, taking the did:webvh
+        options except `--url` and `--portable`
+  - [x] `--save` stores the document, keys, history log, update keys and
+        metadata under `dids/vh/`
+  - [x] `rotate-keys`, `replace-key`, `set-purpose`, `add-service` and
+        `remove-service` append entries to a stored did:vh log
+  - [x] `did show` resolves a stored did:vh from its log
+  - [x] `did get` and the shared document loader resolve a did:vh from its
+        stored log, or from the location a `src` DID URL parameter names
+  - [x] Command tests cover the above
+
+did:vh is did:webvh with the location removed from the DID (DIF did:vh
+Editors Draft). The update machinery in `src/commands/did/webvh-update.ts`
+picks the library entry points by DID method. The did-io driver for did:vh
+lives in `src/didVhDriver.ts`, because the library does not ship one yet.
+Follow-ups: CLI-29, CLI-30, CLI-31.
+
+### CLI-31: Use an upstream did:vh did-io driver
+
+- status: done
+- done: 2026-11-13
+- priority: low
+- labels: vh, deps
+
+discovered-from: CLI-28. `@interop/did-method-webvh` ships
+`createDidWebvhDriver` but no did:vh counterpart, so `src/didVhDriver.ts`
+carries its own driver, including the fragment lookup. Blocked until the
+library exports a did:vh driver that takes a log source callback. Then the
+local driver shrinks to the stored-log lookup.
+
+Resolved: `@interop/did-method-webvh` exports `createDidVhDriver` from its
+`/vh/driver` subpath. `src/documentLoader.ts` registers it with a `loadLog`
+callback that reads the stored log, and `src/didVhDriver.ts` is removed.

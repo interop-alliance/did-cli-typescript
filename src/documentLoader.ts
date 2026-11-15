@@ -5,21 +5,24 @@
  *
  * Per project convention, DID/JSON-LD resolution always goes through
  * `@interop/security-document-loader`, never a hand-rolled loader. The loader's
- * default resolver only knows did:key and did:web, so the did:webvh and
+ * default resolver only knows did:key and did:web, so the did:webvh, did:vh and
  * did:peer drivers are registered onto a copy of the defaults -- keeping those
  * dependencies out of the shared loader package itself. A bare DID resolves to
  * its DID document; a `did#fragment` URL is dereferenced straight to its
  * verification-method node. Works for did:key and did:peer (offline), did:web,
- * and did:webvh (both fetched). Built once and reused.
+ * and did:webvh (both fetched). A did:vh DID resolves from its locally stored
+ * log, or from the location its `src` DID URL parameter names. Built once and
+ * reused.
  */
 import {
   createDefaultDidResolver,
   securityLoader
 } from '@interop/security-document-loader'
 import { createDidWebvhDriver } from '@interop/did-method-webvh/driver'
+import { createDidVhDriver } from '@interop/did-method-webvh/vh/driver'
 import * as didPeer from '@interop/did-method-peer'
 import type { DidMethodDriver } from '@interop/did-io'
-import { loadDidDocument } from './storage.js'
+import { loadDidDocument, loadDidLogIfExists } from './storage.js'
 
 /**
  * The did:peer long form store the shared resolver consults for a short form
@@ -50,6 +53,16 @@ const didResolver = createDefaultDidResolver()
 // `DidMethodDriver`, but only reads `.method` (and later calls `.get`) for
 // resolution; the webvh driver implements just that resolution subset.
 didResolver.use(createDidWebvhDriver() as unknown as DidMethodDriver)
+// A did:vh DID names no location. Without a `src` DID URL parameter the only
+// log source this CLI has is the log saved in local storage.
+didResolver.use(
+  createDidVhDriver({
+    loadLog: async ({ did }) => {
+      const didLog = await loadDidLogIfExists(did)
+      return didLog === undefined ? undefined : { didLog }
+    }
+  }) as unknown as DidMethodDriver
+)
 didResolver.use(
   didPeer.driver({ longFormStore: storedLongForms, rememberOnResolve: false })
 )

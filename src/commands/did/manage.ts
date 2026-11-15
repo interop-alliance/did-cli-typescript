@@ -20,7 +20,7 @@ import { removeKeyDidAssociation, resolveDidRef } from '../../meta.js'
 import { renderTable } from '../../table.js'
 import { documentLoader } from '../../documentLoader.js'
 import { applyMetaEdits } from '../collection-command.js'
-import { resolveStoredWebvh } from './webvh-update.js'
+import { isLogBackedDid, resolveStoredWebvh } from './webvh-update.js'
 
 /**
  * Resolve a DID to its DID document, or a DID URL to its verification method,
@@ -73,14 +73,14 @@ export async function runShow(options: {
   }
   const targetDid = did ?? didRef
 
-  // For did:webvh the history log is the source of truth, so resolve the
+  // For did:webvh and did:vh the history log is the source of truth, so resolve the
   // current document (and its accumulated parameters) from it rather than
   // trusting the stored snapshot. A DID with no stored log falls through
   // to the stored document below.
   let webvhMeta:
     Awaited<ReturnType<typeof resolveDIDFromLog>>['meta'] | undefined
   let resolvedDoc: Record<string, unknown> | undefined
-  if (targetDid.startsWith('did:webvh:')) {
+  if (isLogBackedDid(targetDid)) {
     let resolved: Awaited<ReturnType<typeof resolveStoredWebvh>>
     try {
       resolved = await resolveStoredWebvh(targetDid)
@@ -115,8 +115,8 @@ export async function runShow(options: {
     const keyCount = Array.isArray(didDocument.verificationMethod)
       ? didDocument.verificationMethod.length
       : 0
-    // Parameters resolved from the did:webvh log (absent for other
-    // methods, and for a webvh DID with no stored log).
+    // Parameters resolved from the did:webvh or did:vh log (absent for other
+    // methods, and for a DID with no stored log).
     const witnessCount = webvhMeta?.witness?.witnesses?.length ?? 0
     const watcherCount = webvhMeta?.watchers?.length ?? 0
     if (options.json) {
@@ -130,7 +130,10 @@ export async function runShow(options: {
         ...(webvhMeta && {
           versionId: webvhMeta.versionId,
           updated: webvhMeta.updated,
-          portable: webvhMeta.portable,
+          // did:vh has no location to move from, so it has no `portable`.
+          ...(webvhMeta.portable !== undefined && {
+            portable: webvhMeta.portable
+          }),
           prerotation: webvhMeta.prerotation,
           deactivated: webvhMeta.deactivated,
           updateKeys: webvhMeta.updateKeys.length,
@@ -150,10 +153,15 @@ export async function runShow(options: {
       ['Keys', String(keyCount)]
     ]
     if (webvhMeta) {
+      // did:vh has no `portable`, so it gets no Portable row.
+      const portableRows =
+        webvhMeta.portable === undefined
+          ? []
+          : [['Portable', webvhMeta.portable ? 'yes' : 'no']]
       rows.push(
         ['Version', webvhMeta.versionId],
         ['Updated', webvhMeta.updated],
-        ['Portable', webvhMeta.portable ? 'yes' : 'no'],
+        ...portableRows,
         ['Prerotation', webvhMeta.prerotation ? 'yes' : 'no'],
         ['Deactivated', webvhMeta.deactivated ? 'yes' : 'no'],
         ['Update keys', String(webvhMeta.updateKeys.length)],

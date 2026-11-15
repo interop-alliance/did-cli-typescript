@@ -30,8 +30,8 @@ servers, all from the terminal and backed by a local file-based wallet.
 
 ### Features
 
-- **DIDs** -- create, resolve, and manage `did:key`, `did:web`, `did:webvh`, and
-  `did:peer` DIDs (with `did:webvh` key pre-rotation, rotation, and history
+- **DIDs** -- create, resolve, and manage `did:key`, `did:web`, `did:webvh`,
+  `did:vh`, and `did:peer` DIDs (with `did:webvh` key pre-rotation, rotation, and history
   logs).
 - **Keys** -- generate and store Ed25519, ECDSA, X25519, and HMAC key pairs,
   with deterministic seed-based generation.
@@ -64,10 +64,10 @@ Help is available with the `--help/-h` command line option:
 ### Command Summary
 
 ```
-di did create [method]          create a DID (key | web | webvh | peer; default key)
+di did create [method]          create a DID (key | web | webvh | vh | peer; default key)
 di did add-key <did>            add a verification method to a stored DID
-di did add-service <did>        add a service entry to a stored did:web/webvh
-di did remove-service <did>     remove a service entry from a stored did:web/webvh
+di did add-service <did>        add a service entry to a stored did:web/webvh/vh
+di did remove-service <did>     remove a service entry from a stored did:web/webvh/vh
 di did webvh rotate-keys <did>  rotate a stored did:webvh update (auth) key
 di did webvh replace-key <did>  replace a stored did:webvh document verification key
 di did webvh set-purpose <did>  change a stored did:webvh key's verification relationships
@@ -690,6 +690,36 @@ under `assertionMethod` only, without the admin ever holding its secret:
   --vm-id-fragment multibase --save
 ```
 
+#### Create a did:vh DID
+
+`did:vh` is `did:webvh` with the location removed from the DID. A DID is
+`did:vh:<scid>`, so it names no domain and takes no `--url`. It follows the
+[DIF did:vh Editors Draft](https://identity.foundation/didvh/next/), which
+builds on the [VH-Log spec](https://swcurran.github.io/VH-Log/next/). The
+library API is unstable while the spec is an Editors Draft.
+
+```
+./di did create vh --save --handle my-vh
+```
+
+It takes the `did:webvh` options (`--prerotation`/`--no-prerotation`,
+`--watcher`, `--verification-key`, `--purpose`, `--vm-id-fragment`,
+`--with-seed`). `--url` and `--portable`/`--no-portable` are rejected. Only
+Ed25519 keys are supported. Pre-rotation is on by default.
+
+With `--save`, the artifacts are written under `dids/vh/`, with the same five
+files as `did:webvh`. The history log (`<did>.jsonl`) is the source of truth.
+
+The `did webvh` subcommands (`rotate-keys`, `replace-key`, `set-purpose`) and
+`did add-service` / `did remove-service` accept `did:vh` DIDs. `did vh` is an
+alias of the `did webvh` group. No served log is checked for a `did:vh`,
+because the DID names no location. `--offline` has no effect, and no network
+request is made.
+
+Witnesses are not yet supported for `did:vh`, so `--witness` and
+`--witness-threshold` are rejected. The CLI does not generate or store witness
+proofs, and a `did:vh` that declares witnesses does not resolve without them.
+
 #### Create a did:peer DID
 
 Generate a `did:peer` DID (numalgo 4). It takes no `--url`. The long form,
@@ -966,7 +996,13 @@ fetching and verifying its history log over HTTPS. did:peer is resolved
 offline too. A long form resolves from the DID itself. A short form is looked
 up among the locally stored did:peer DIDs, so any DID created with `--save`
 resolves by short form. A short form that was not created here fails with
-`notFound`. Resolving a foreign long form persists nothing. Pass a DID URL (a
+`notFound`. Resolving a foreign long form persists nothing.
+A saved did:vh resolves from its locally stored log with no network request.
+For any other did:vh, pass a log source as
+`did get 'did:vh:<scid>?src=<percent-encoded https URL>'`. The log is fetched
+from `<src>/did.jsonl`, plus `<src>/did-witness.json` when witnesses are
+required. A did:vh that is neither stored nor given a `src` fails with a "No DID
+log source" error. Pass a DID URL (a
 `did#fragment` key id) to dereference straight to its verification method:
 
 ```
@@ -1011,7 +1047,7 @@ Aliases: `view`, `cat`.
 For a `did:webvh` DID the document is **resolved from its stored history log**
 (`<did>.jsonl`) -- the source of truth -- rather than the saved snapshot, so the
 output reflects every appended log entry. If no log is stored the saved snapshot
-is shown instead.
+is shown instead. A stored `did:vh` DID is resolved from its log the same way.
 
 Pass `--meta` to show the DID's metadata instead of the DID document:
 
@@ -1049,7 +1085,8 @@ Watchers     0
 ```
 
 `--meta --json` prints the same metadata as a JSON object (the `did:webvh`
-fields are included there too).
+fields are included there too). For a `did:vh` DID, `--meta` shows the log
+parameters without a `Portable` row.
 
 #### Edit DID metadata
 
@@ -1220,6 +1257,10 @@ issued credential names the long form as its `issuer` and in the proof's
 ```
 ./di vc issue credential.json --did did:peer:4zQm...
 ```
+
+A saved `did:vh` DID issues the same way and signs with the stored document
+key. `vc verify` verifies such a credential when the issuer's log is in local
+storage. A verifier without the log cannot resolve a bare `did:vh` issuer.
 
 Pass `--save` to also store the issued credential in local wallet storage
 (`~/.config/did-cli-wallet/credentials/` by default, or `$WALLET_DIR` if set);

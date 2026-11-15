@@ -35,14 +35,17 @@ async function readJson<T = Record<string, unknown>>(path: string): Promise<T> {
 
 /**
  * Read the `parameters` of the first (creation) entry of a stored did:webvh
- * history log -- where create-time options like portable / witness / watchers
- * land.
+ * or did:vh history log -- where create-time options like portable / witness /
+ * watchers land.
  */
 async function firstLogParameters(
   didsDir: string,
   did: string
 ): Promise<Record<string, unknown>> {
-  const logText = await readFile(join(didsDir, 'webvh', `${did}.jsonl`), 'utf8')
+  const logText = await readFile(
+    join(didsDir, did.split(':')[1], `${did}.jsonl`),
+    'utf8'
+  )
   return JSON.parse(logText.split('\n')[0]).parameters
 }
 
@@ -413,7 +416,7 @@ describe('di did', () => {
         assert.equal(exitCode, 1)
         assert.equal(
           errors[0],
-          '--prerotation, --watcher is only supported for did:webvh'
+          '--prerotation, --watcher is only supported for did:webvh, did:vh'
         )
       })
 
@@ -3810,6 +3813,530 @@ describe('di did', () => {
       } finally {
         await rm(didsDir, { recursive: true })
       }
+    })
+  })
+
+  describe('did:vh', () => {
+    const vhPattern = /^did:vh:[1-9A-HJ-NP-Za-km-z]{46}$/
+
+    /**
+     * Create a saved did:vh DID under a fresh temp DIDS_DIR, returning the dir
+     * and the DID. Each call yields a fresh DID (the resolver memoizes by DID).
+     */
+    async function createSavedVh(
+      extraArgs: string[] = []
+    ): Promise<{ didsDir: string; did: string; logPath: string }> {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      await makeDidCommand().parseAsync(
+        ['create', 'vh', '--save', ...extraArgs],
+        {
+          from: 'user'
+        }
+      )
+      const did = JSON.parse(logs[0]).id
+      logs.length = 0
+      errors.length = 0
+      return { didsDir, did, logPath: join(didsDir, 'vh', `${did}.jsonl`) }
+    }
+
+    async function logLines(logPath: string): Promise<string[]> {
+      const text = await readFile(logPath, 'utf8')
+      return text.split('\n').filter(line => line.trim() !== '')
+    }
+
+    /**
+     * Fail the test if anything tries to reach the network.
+     */
+    function forbidFetch() {
+      return mock.method(globalThis, 'fetch', async () => {
+        throw new Error('unexpected network access for did:vh')
+      })
+    }
+
+    it('creates a did:vh with the key wired into all relationships', async () => {
+      await makeDidCommand().parseAsync(['create', 'vh'], { from: 'user' })
+      const parsed = JSON.parse(logs[0])
+      assert.match(parsed.id, vhPattern)
+      assert.equal(parsed.didDocument.id, parsed.id)
+      const doc = parsed.didDocument
+      assert.equal(doc.verificationMethod.length, 1)
+      const vmId = doc.verificationMethod[0].id
+      for (const relationship of [
+        'authentication',
+        'assertionMethod',
+        'capabilityDelegation',
+        'capabilityInvocation'
+      ]) {
+        assert.deepEqual(doc[relationship], [vmId], relationship)
+      }
+    })
+
+    it('rejects --url', async () => {
+      await makeDidCommand().parseAsync(
+        ['create', 'vh', '--url', 'https://example.com'],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.equal(errors[0], '--url is only supported for did:web, did:webvh')
+    })
+
+    it('rejects --portable and --no-portable', async () => {
+      for (const flag of ['--portable', '--no-portable']) {
+        exitCode = undefined
+        errors.length = 0
+        await makeDidCommand().parseAsync(['create', 'vh', flag], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1, flag)
+        assert.ok(
+          errors[0].includes('--portable is only supported for did:webvh'),
+          errors[0]
+        )
+      }
+    })
+
+    it('rejects --type ecdsa', async () => {
+      await makeDidCommand().parseAsync(['create', 'vh', '--type', 'ecdsa'], {
+        from: 'user'
+      })
+      assert.equal(exitCode, 1)
+      assert.ok(errors[0].includes('did:vh only supports --type ed25519'))
+    })
+
+    it('rejects --witness and --witness-threshold', async () => {
+      const witness = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        for (const flags of [
+          ['--witness', witness],
+          ['--witness', witness, '--witness-threshold', '1'],
+          ['--witness-threshold', '1']
+        ]) {
+          exitCode = undefined
+          errors.length = 0
+          await makeDidCommand().parseAsync(
+            ['create', 'vh', '--save', ...flags],
+            { from: 'user' }
+          )
+          assert.equal(exitCode, 1, flags.join(' '))
+          assert.ok(
+            errors[0].includes('not yet supported for did:vh'),
+            errors[0]
+          )
+        }
+        // Nothing was created or saved.
+        assert.deepEqual(logs, [])
+        assert.deepEqual(await readdir(didsDir), [])
+      } finally {
+        delete process.env.DIDS_DIR
+        await rm(didsDir, { recursive: true, force: true })
+      }
+    })
+
+    it('--save writes the doc, log, keys, update-keys, and meta files', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        await makeDidCommand().parseAsync(
+          ['create', 'vh', '--save', '--handle', 'x'],
+          { from: 'user' }
+        )
+        const did = JSON.parse(logs[0]).id
+        assert.match(did, vhPattern)
+        const files = (await readdir(join(didsDir, 'vh'))).sort()
+        assert.deepEqual(files, [
+          `${did}.json`,
+          `${did}.jsonl`,
+          `${did}.keys.json`,
+          `${did}.meta.json`,
+          `${did}.update-keys.json`
+        ])
+        const parameters = await firstLogParameters(didsDir, did)
+        assert.equal(parameters.method, 'did:vh:1.0')
+        assert.ok(!('portable' in parameters))
+        assert.ok(Array.isArray(parameters.nextKeyHashes))
+        assert.equal((parameters.nextKeyHashes as unknown[]).length, 1)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('show --meta --json reports log parameters without portable', async () => {
+      const { didsDir, did } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(['show', did, '--meta', '--json'], {
+          from: 'user'
+        })
+        const parsed = JSON.parse(logs[0])
+        assert.equal(parsed.did, did)
+        assert.equal(parsed.method, 'vh')
+        assert.equal(parsed.prerotation, true)
+        assert.equal(parsed.deactivated, false)
+        assert.equal(parsed.updateKeys, 1)
+        assert.match(parsed.versionId, /^1-/)
+        assert.ok(!('portable' in parsed))
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('webvh rotate-keys works offline and appends a log entry', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        const fetchMock = forbidFetch()
+        await makeDidCommand().parseAsync(['webvh', 'rotate-keys', did, '-y'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 0)
+        assert.equal((await logLines(logPath)).length, 2)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('the vh group alias rotates keys too', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        const fetchMock = forbidFetch()
+        await makeDidCommand().parseAsync(['vh', 'rotate-keys', did, '--yes'], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 0)
+        assert.equal((await logLines(logPath)).length, 2)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('add-service appends a log entry and show lists the service', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        const fetchMock = forbidFetch()
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'files',
+            '--type',
+            'T',
+            '--endpoint',
+            'https://e.example',
+            '-y'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(fetchMock.mock.callCount(), 0)
+        assert.equal((await logLines(logPath)).length, 2)
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['show', did, '--json'], {
+          from: 'user'
+        })
+        const shown = JSON.parse(logs.join('\n'))
+        const doc = shown.didDocument ?? shown
+        assert.ok(
+          doc.service.some((service: { id: string }) =>
+            service.id.endsWith('#files')
+          ),
+          logs.join('\n')
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('add-service works after rotate-keys --stop-prerotation', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'rotate-keys', did, '--stop-prerotation', '--yes'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'files',
+            '--type',
+            'T',
+            '--endpoint',
+            'https://e.example',
+            '-y'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal((await logLines(logPath)).length, 3)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('webvh set-purpose succeeds', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(
+          ['webvh', 'set-purpose', did, '--purpose', 'assertionMethod', '-y'],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal((await logLines(logPath)).length, 2)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('webvh replace-key succeeds', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        const newKey = await Ed25519VerificationKey.generate()
+        await makeDidCommand().parseAsync(
+          [
+            'webvh',
+            'replace-key',
+            did,
+            '--verification-key',
+            newKey.publicKeyMultibase,
+            '-y'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal((await logLines(logPath)).length, 2)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('get resolves a saved did:vh from its stored log, and dereferences a fragment', async () => {
+      const { didsDir, did } = await createSavedVh()
+      try {
+        const fetchMock = forbidFetch()
+        await makeDidCommand().parseAsync(['get', did], { from: 'user' })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const document = JSON.parse(logs.join('\n'))
+        assert.equal(document.id, did)
+        const vmId = document.verificationMethod[0].id
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['get', vmId], { from: 'user' })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const method = JSON.parse(logs.join('\n'))
+        assert.equal(method.id, vmId)
+        assert.equal(method.type, 'Multikey')
+        assert.equal(fetchMock.mock.callCount(), 0)
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('get exits 1 for an unsaved did:vh', async () => {
+      const didsDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      process.env.DIDS_DIR = didsDir
+      try {
+        const unsaved = `did:vh:${'Q'.repeat(46)}`
+        await makeDidCommand().parseAsync(['get', unsaved], { from: 'user' })
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.join('\n').includes('No DID log source'),
+          errors.join('\n')
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('get resolves a did:vh from the location its src parameter names', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      const emptyDir = await mkdtemp(join(tmpdir(), 'did-cli-test-'))
+      try {
+        const logText = await readFile(logPath, 'utf8')
+        // The DID is not in this storage, so only `src` can supply the log.
+        process.env.DIDS_DIR = emptyDir
+        const requested: string[] = []
+        mock.method(globalThis, 'fetch', async (url: string) => {
+          requested.push(String(url))
+          return String(url) === 'https://example.com/dids/did.jsonl'
+            ? new Response(logText)
+            : new Response('', { status: 404 })
+        })
+        const src = encodeURIComponent('https://example.com/dids')
+        await makeDidCommand().parseAsync(['get', `${did}?src=${src}`], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        assert.equal(JSON.parse(logs.join('\n')).id, did)
+        assert.deepEqual(requested, ['https://example.com/dids/did.jsonl'])
+      } finally {
+        await rm(didsDir, { recursive: true })
+        await rm(emptyDir, { recursive: true })
+      }
+    })
+
+    it('get dereferences a service fragment of a did:vh', async () => {
+      const { didsDir, did } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'files',
+            '--type',
+            'Example',
+            '--endpoint',
+            'https://files.example',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        logs.length = 0
+
+        await makeDidCommand().parseAsync(['get', `${did}#files`], {
+          from: 'user'
+        })
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        const service = JSON.parse(logs.join('\n'))
+        assert.equal(service.id, `${did}#files`)
+        assert.equal(service.serviceEndpoint, 'https://files.example')
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('get exits 1 when the last entry of a stored did:vh log is invalid', async () => {
+      const { didsDir, did, logPath } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(
+          [
+            'add-service',
+            did,
+            '--id',
+            'files',
+            '--type',
+            'Example',
+            '--endpoint',
+            'https://files.example',
+            '--yes'
+          ],
+          { from: 'user' }
+        )
+        assert.equal(exitCode, undefined, errors.join('\n'))
+        logs.length = 0
+        const lines = await logLines(logPath)
+        const last = JSON.parse(lines[lines.length - 1])
+        const { proofValue } = last.proof[0]
+        const flipped = proofValue.endsWith('2') ? '3' : '2'
+        last.proof[0].proofValue = proofValue.slice(0, -1) + flipped
+        lines[lines.length - 1] = JSON.stringify(last)
+        await writeFile(logPath, lines.join('\n') + '\n')
+
+        await makeDidCommand().parseAsync(['get', did], { from: 'user' })
+        assert.equal(exitCode, 1)
+        assert.equal(logs.length, 0)
+        assert.ok(
+          errors.join('\n').includes('failed verification'),
+          errors.join('\n')
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('get refuses a did:vh DID URL path without reading storage', async () => {
+      const { didsDir, did } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(['get', `${did}/whois`], {
+          from: 'user'
+        })
+        assert.equal(exitCode, 1)
+        assert.ok(
+          errors.join('\n').includes('no DID URL path handling'),
+          errors.join('\n')
+        )
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('remove deletes the history log too', async () => {
+      const { didsDir, did } = await createSavedVh()
+      try {
+        await makeDidCommand().parseAsync(['remove', did], { from: 'user' })
+        assert.equal(exitCode, undefined)
+        assert.ok(errors.some(line => line.endsWith('.jsonl')))
+        assert.deepEqual(await readdir(join(didsDir, 'vh')), [])
+      } finally {
+        await rm(didsDir, { recursive: true })
+      }
+    })
+
+    it('rotate-keys, replace-key, and set-purpose reject did:key with the updated message', async () => {
+      const newKey = await Ed25519VerificationKey.generate()
+      const attempts = [
+        ['webvh', 'rotate-keys', 'did:key:z6MkfakeKey', '--yes'],
+        [
+          'webvh',
+          'replace-key',
+          'did:key:z6MkfakeKey',
+          '--verification-key',
+          newKey.publicKeyMultibase,
+          '--yes'
+        ],
+        [
+          'webvh',
+          'set-purpose',
+          'did:key:z6MkfakeKey',
+          '--purpose',
+          'assertionMethod',
+          '--yes'
+        ]
+      ]
+      for (const args of attempts) {
+        exitCode = undefined
+        errors.length = 0
+        await makeDidCommand().parseAsync(args, { from: 'user' })
+        assert.equal(exitCode, 1, args[1])
+        assert.ok(
+          errors.join('\n').includes('only supported for did:webvh and did:vh'),
+          errors.join('\n')
+        )
+      }
+    })
+
+    it('add-service rejects did:key with the updated message', async () => {
+      await makeDidCommand().parseAsync(
+        [
+          'add-service',
+          'did:key:z6MkfakeKey',
+          '--id',
+          'x',
+          '--type',
+          'T',
+          '--endpoint',
+          'https://e.example',
+          '-y'
+        ],
+        { from: 'user' }
+      )
+      assert.equal(exitCode, 1)
+      assert.ok(
+        errors
+          .join('\n')
+          .includes(
+            'add-service/remove-service are only supported for did:web, did:webvh and did:vh DIDs'
+          ),
+        errors.join('\n')
+      )
     })
   })
 })

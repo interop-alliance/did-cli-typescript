@@ -13,16 +13,19 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import {
+  createDID,
   deriveNextKeyHash,
   getFileUrl,
   resolveDIDFromLog,
   updateDID,
   type DIDLog
 } from '@interop/did-method-webvh'
+import * as didVh from '@interop/did-method-webvh/vh'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import {
-  loadDidLog,
+  loadDidLogIfExists,
   loadDidUpdateKeys,
+  methodOf,
   saveDidLog,
   saveDidUpdateKeys,
   saveToDids,
@@ -37,6 +40,78 @@ import {
   generateStagedKey,
   loadUpdateKey
 } from '../../keys/webvh-update.js'
+
+/**
+ * The library entry points for each log-backed DID method. did:vh shares the
+ * did:webvh log format but has no location in the DID, so its log is authored
+ * and resolved through the library's did:vh entry points. `hasLocation` says
+ * whether the DID names the address its log is served from. Only such a DID
+ * takes the location options at creation and has a served log for the
+ * fast-forward check to fetch.
+ */
+const LOG_METHODS = {
+  webvh: { hasLocation: true, createDID, updateDID, resolveDIDFromLog },
+  vh: {
+    hasLocation: false,
+    createDID: didVh.createDID,
+    updateDID: didVh.updateDID,
+    resolveDIDFromLog: didVh.resolveDIDFromLog
+  }
+} as const
+
+/**
+ * Whether `did` is authored by appending entries to a history log, which is
+ * true of did:webvh and did:vh. These are the DIDs the update commands
+ * (rotate-keys, replace-key, set-purpose, and the service edits) accept.
+ *
+ * @param did {string}
+ * @returns {boolean}
+ */
+export function isLogBackedDid(did: string): boolean {
+  return Object.hasOwn(LOG_METHODS, methodOf(did))
+}
+
+/**
+ * Select the library entry points for a log-backed DID method. This is the
+ * one place that tells did:vh apart from did:webvh. Any method other than
+ * `vh` gets the did:webvh entry points.
+ *
+ * @param method {string} the DID method name (`webvh` or `vh`), e.g. from
+ *   `methodOf(did)`.
+ * @returns the `{ hasLocation, createDID, updateDID, resolveDIDFromLog }` set.
+ */
+export function logMethodFor(
+  method: string
+): (typeof LOG_METHODS)[keyof typeof LOG_METHODS] {
+  return method === 'vh' ? LOG_METHODS.vh : LOG_METHODS.webvh
+}
+
+/**
+ * Select the library entry points for the method of a did:webvh or did:vh
+ * DID.
+ *
+ * @param did {string}
+ * @returns the same set as `logMethodFor`.
+ */
+function logMethodForDid(did: string): ReturnType<typeof logMethodFor> {
+  return logMethodFor(methodOf(did))
+}
+
+/**
+ * Select the library entry points for the method of the DID a history log
+ * belongs to, read from the `state.id` of the log's last entry.
+ *
+ * @param log {DIDLog}
+ * @returns the same set as `logMethodFor`.
+ * @throws {Error} if the log is empty or its last entry names no DID.
+ */
+export function logMethodForLog(log: DIDLog): ReturnType<typeof logMethodFor> {
+  const did = log[log.length - 1]?.state?.id
+  if (typeof did !== 'string') {
+    throw new Error('The DID log has no entry that names its DID.')
+  }
+  return logMethodForDid(did)
+}
 
 /**
  * Parse a raw did:webvh history log (newline-delimited JSON) into the entry
@@ -62,7 +137,7 @@ export function parseDidLog(logText: string): DIDLog {
         typeof entry.versionId !== 'string'
       ) {
         throw new Error(
-          `Line ${index + 1} is not a did:webvh log entry (expected an ` +
+          `Line ${index + 1} is not a DID log entry (expected an ` +
             'object with a string versionId).'
         )
       }
@@ -199,10 +274,11 @@ export async function assertFastForward({
  * update, asserting it is updatable. The log is the source of truth for a
  * stored did:webvh, so its absence is what "not locally stored" means. Unless
  * `offline` is set, the fast-forward check (`assertFastForward`) runs against
- * the served log.
+ * the served log. A did:vh DID names no location to fetch a served log from,
+ * so the fast-forward check does not run for it.
  *
  * @param options {object}
- * @param options.targetDid {string} the resolved did:webvh DID.
+ * @param options.targetDid {string} the resolved did:webvh or did:vh DID.
  * @param options.action {string} verb used in error messages (e.g.
  *   `rotate keys`, `update services`).
  * @param [options.offline] {boolean} skip the fast-forward check.
@@ -223,16 +299,16 @@ export async function resolveWebvhForUpdate({
   doc: Awaited<ReturnType<typeof resolveDIDFromLog>>['doc']
   meta: Awaited<ReturnType<typeof resolveDIDFromLog>>['meta']
 }> {
-  let logText: string
-  try {
-    logText = await loadDidLog(targetDid)
-  } catch {
-    throw new Error(`No locally stored did:webvh found for ${targetDid}`)
+  const logText = await loadDidLogIfExists(targetDid)
+  if (logText === undefined) {
+    throw new Error(
+      `No locally stored did:${methodOf(targetDid)} found for ${targetDid}`
+    )
   }
   const log = parseDidLog(logText)
   let resolved: Awaited<ReturnType<typeof resolveDIDFromLog>>
   try {
-    resolved = await resolveDIDFromLog(log)
+    resolved = await logMethodForDid(targetDid).resolveDIDFromLog(log)
   } catch (err) {
     throw new Error(
       `Could not resolve the DID log: ${(err as Error).message}`,
@@ -244,7 +320,7 @@ export async function resolveWebvhForUpdate({
   if (resolved.meta.deactivated) {
     throw new Error(`Cannot ${action}: the DID is deactivated.`)
   }
-  if (!offline) {
+  if (!offline && logMethodForDid(targetDid).hasLocation) {
     await assertFastForward({ did: targetDid, log })
   }
   return { log, doc: resolved.doc, meta: resolved.meta }
@@ -257,7 +333,7 @@ export async function resolveWebvhForUpdate({
  * `show` should still display it; it returns `undefined` when no log is stored
  * so the caller can fall back to the stored document snapshot.
  *
- * @param did {string} the resolved did:webvh DID.
+ * @param did {string} the resolved did:webvh or did:vh DID.
  * @returns {Promise<{ doc, meta } | undefined>}
  * @throws {Error} if a log exists but fails to resolve/verify.
  */
@@ -268,13 +344,13 @@ export async function resolveStoredWebvh(did: string): Promise<
     }
   | undefined
 > {
-  let logText: string
-  try {
-    logText = await loadDidLog(did)
-  } catch {
+  const logText = await loadDidLogIfExists(did)
+  if (logText === undefined) {
     return undefined
   }
-  const { doc, meta } = await resolveDIDFromLog(parseDidLog(logText))
+  const { doc, meta } = await logMethodForDid(did).resolveDIDFromLog(
+    parseDidLog(logText)
+  )
   return { doc, meta }
 }
 
@@ -431,8 +507,9 @@ export function makeWebvhEntrySigner(keyPair: Ed25519VerificationKey) {
 }
 
 /**
- * Append a signed entry to a did:webvh history log via the library's
- * `updateDID`, passing the already-resolved `meta` as `priorMeta` to skip its
+ * Append a signed entry to a did:webvh or did:vh history log via the library's
+ * `updateDID` for the method of the DID the log names (see `logMethodForLog`),
+ * passing the already-resolved `meta` as `priorMeta` to skip its
  * internal re-resolution (a full re-verification of every log entry). The
  * library trusts `priorMeta` blindly, so it must describe this exact log's
  * head; that pairing is asserted here (an O(1) check) before signing, so a
@@ -460,7 +537,7 @@ export async function appendWebvhEntry({
       'Internal error: the resolved DID metadata does not match the log head.'
     )
   }
-  return updateDID({ ...update, priorMeta: meta })
+  return logMethodForLog(update.log).updateDID({ ...update, priorMeta: meta })
 }
 
 /**
@@ -503,7 +580,7 @@ export async function persistWebvhUpdate({
   }
   const logPath = await saveDidLog({ did: result.did, log: result.log })
   const docPath = await saveToDids({
-    method: 'webvh',
+    method: methodOf(result.did),
     did: result.did,
     data: result.doc
   })
@@ -778,8 +855,8 @@ export async function runRotateKeys(options: {
     return 1
   }
   const targetDid = resolved ?? didRef
-  if (!targetDid.startsWith('did:webvh:')) {
-    console.error('rotate-keys is only supported for did:webvh DIDs')
+  if (!isLogBackedDid(targetDid)) {
+    console.error('rotate-keys is only supported for did:webvh and did:vh DIDs')
     return 1
   }
   // Options-only validation goes before the log resolution below, which
