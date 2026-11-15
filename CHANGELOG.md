@@ -11,6 +11,22 @@
 
 ### Added
 
+- `did create vh` creates a `did:vh` DID (`did:vh:<scid>`), a did:webvh
+  without a location in the DID. It takes the did:webvh options except `--url`,
+  `--portable`, `--witness` and `--witness-threshold`. With `--save` the document, keys, history log, update keys
+  and metadata are stored under `dids/vh/`. Follows the did:vh Editors Draft,
+  so it may change.
+- `did webvh rotate-keys`, `replace-key` and `set-purpose`, and
+  `did add-service` / `remove-service`, accept did:vh DIDs. `did vh` is an
+  alias of the `did webvh` group. No fast-forward check runs for did:vh,
+  because the DID names no served location.
+- `did show` resolves a stored did:vh from its history log.
+- `did get` resolves a did:vh from its locally stored log. A DID URL with the
+  `src` parameter (`did:vh:<scid>?src=<https url>`) is retrieved from
+  `<src>/did.jsonl` instead. Resolution fails when entries at the end of the
+  log do not verify.
+- `vc issue` signs with a saved did:vh DID. `vc verify` resolves a did:vh
+  issuer whose log is in local storage.
 - `did create peer` creates a `did:peer` numalgo 4 DID. It supports
   `--type ed25519` (seed-derivable) and `--type ecdsa`. The new
   `--key-agreement` option also derives an X25519 `keyAgreement` key from the
@@ -36,6 +52,8 @@
 delegate` moved into one helper module (`src/keys/stored-key.ts`).
 - Added the `@interop/did-method-peer` dependency and bumped the other
   `@interop/*` dependencies.
+- `rotate-keys`, `replace-key`, `set-purpose` and the service commands name
+  did:vh in their unsupported-method errors.
 
 ### Fixed
 

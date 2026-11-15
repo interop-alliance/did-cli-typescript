@@ -12,10 +12,10 @@ import {
   type DIDDoc,
   type VerificationMethod
 } from '@interop/did-method-webvh'
-import { loadDidKeys, saveToDids } from '../../storage.js'
+import { loadDidKeys, methodOf, saveToDids } from '../../storage.js'
 import { removeKeyDidAssociation, resolveDidRef } from '../../meta.js'
 import { parseVerificationKey, parseWebvhPurposes } from './create.js'
-import { runWebvhDocumentUpdate } from './webvh-update.js'
+import { isLogBackedDid, runWebvhDocumentUpdate } from './webvh-update.js'
 
 /**
  * The verification relationships that reference a verification method, by
@@ -108,8 +108,8 @@ export async function runReplaceKey({
     return 1
   }
   const targetDid = resolved ?? didRef
-  if (!targetDid.startsWith('did:webvh:')) {
-    console.error('replace-key is only supported for did:webvh DIDs')
+  if (!isLogBackedDid(targetDid)) {
+    console.error('replace-key is only supported for did:webvh and did:vh DIDs')
     return 1
   }
   // Options-only validation goes before the log resolution, which verifies
@@ -190,7 +190,7 @@ export async function runReplaceKey({
       }
       delete keys[oldMethodId!]
       await saveToDids({
-        method: 'webvh',
+        method: methodOf(result.did),
         did: result.did,
         suffix: 'keys',
         data: keys

@@ -9,7 +9,7 @@
 import { type ServiceEndpoint } from '@interop/did-method-webvh'
 import { loadDidDocument, saveToDids } from '../../storage.js'
 import { resolveDidRef } from '../../meta.js'
-import { runWebvhDocumentUpdate } from './webvh-update.js'
+import { isLogBackedDid, runWebvhDocumentUpdate } from './webvh-update.js'
 
 /**
  * Expand a service id to a full DID URL. A bare fragment (`files`) or a
@@ -274,7 +274,7 @@ async function runWebvhServiceUpdate({
 /**
  * Resolve a DID reference, then route a service-array transform to the right
  * per-method runner and return its exit code. did:web is a direct document
- * edit; did:webvh appends a log entry.
+ * edit; did:webvh and did:vh append a log entry.
  *
  * @param options {object}
  * @param options.ref {string} a DID or a local metadata handle.
@@ -309,7 +309,7 @@ export async function dispatchServiceUpdate({
   if (did.startsWith('did:web:')) {
     return runWebServiceUpdate({ did, transform })
   }
-  if (did.startsWith('did:webvh:')) {
+  if (isLogBackedDid(did)) {
     return runWebvhServiceUpdate({
       targetDid: did,
       transform,
@@ -319,8 +319,8 @@ export async function dispatchServiceUpdate({
     })
   }
   console.error(
-    'add-service/remove-service are only supported for did:web and ' +
-      'did:webvh DIDs'
+    'add-service/remove-service are only supported for did:web, ' +
+      'did:webvh and did:vh DIDs'
   )
   return 1
 }

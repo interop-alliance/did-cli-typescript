@@ -32,13 +32,17 @@ import { runSetPurpose } from './did/set-purpose.js'
 
 export { parseDidLog } from './did/webvh-update.js'
 
+const OFFLINE_HELP =
+  'skip the fast-forward check against the served did:webvh log (a ' +
+  'did:vh DID has no served location, so the check never runs for it)'
+
 export function makeDidCommand(): Command {
   const did = new Command('did').description('Manage DIDs')
 
   did
     .command('create [method]')
     .description(
-      'Create a new DID (method: key, web, webvh, peer) [default: key]'
+      'Create a new DID (method: key, web, webvh, vh, peer) [default: key]'
     )
     .option(
       '-t, --type <type>',
@@ -52,14 +56,18 @@ export function makeDidCommand(): Command {
     )
     .option(
       '--url <url>',
-      'HTTPS url of the DID document (required for did:web)'
+      'HTTPS url of the DID document (required for did:web and did:webvh)'
     )
     .option(
       '--prerotation',
-      'arm did:webvh key pre-rotation: stage a next update key and commit ' +
+      'arm did:webvh / did:vh key pre-rotation: stage a next update key and ' +
+        'commit ' +
         'its hash (default)'
     )
-    .option('--no-prerotation', 'create the did:webvh without key pre-rotation')
+    .option(
+      '--no-prerotation',
+      'create the did:webvh / did:vh without key pre-rotation'
+    )
     .option(
       '--portable',
       'create a portable did:webvh that can later be moved to a different ' +
@@ -73,7 +81,7 @@ export function makeDidCommand(): Command {
       '--witness <did...>',
       'declare a witness did:key DID authorized to co-sign did:webvh log ' +
         'entries (repeatable; declaration only -- witness proof generation is ' +
-        'out of scope)'
+        'out of scope; not yet supported for did:vh)'
     )
     .option(
       '--witness-threshold <n>',
@@ -82,23 +90,26 @@ export function makeDidCommand(): Command {
     )
     .option(
       '--watcher <url...>',
-      'declare a did:webvh watcher URL that monitors the DID log ' +
+      'declare a did:webvh / did:vh watcher URL that monitors the DID log ' +
         '(repeatable; https:// or http://localhost)'
     )
     .option(
       '--verification-key <publicKeyMultibase>',
-      'use this Ed25519 Multikey public key (z6Mk...) as the did:webvh ' +
+      'use this Ed25519 Multikey public key (z6Mk...) as the did:webvh / ' +
+        'did:vh ' +
         'document verification method instead of generating one (no secret ' +
         'is stored for it)'
     )
     .option(
       '--purpose <purpose...>',
-      'verification relationship(s) to wire the did:webvh document key into ' +
+      'verification relationship(s) to wire the did:webvh / did:vh document ' +
+        'key into ' +
         `(default: ${DEFAULT_VERIFICATION_PURPOSES.join(', ')})`
     )
     .option(
       '--vm-id-fragment <mode>',
-      'did:webvh verification method id fragment: short or multibase ' +
+      'did:webvh / did:vh verification method id fragment: short or ' +
+        'multibase ' +
         '(default: the library default)'
     )
     .option(
@@ -186,8 +197,9 @@ export function makeDidCommand(): Command {
   did
     .command('add-service <did>')
     .description(
-      'Add a service entry to a locally stored did:web or did:webvh DID. The ' +
-        'DID may be given as a metadata handle. For did:webvh this appends a ' +
+      'Add a service entry to a locally stored did:web, did:webvh or did:vh ' +
+        'DID. The DID may be given as a metadata handle. For did:webvh and ' +
+        'did:vh this appends a ' +
         'log entry; if pre-rotation is armed the update key is advanced as ' +
         'part of the change.'
     )
@@ -210,14 +222,12 @@ export function makeDidCommand(): Command {
     )
     .option(
       '--keep-old-key',
-      'did:webvh pre-rotation only: retain the retired update key secret in ' +
+      'did:webvh / did:vh pre-rotation only: retain the retired update key ' +
+        'secret in ' +
         'the sidecar (default: drop it)'
     )
-    .option('-y, --yes', 'skip the did:webvh confirmation prompt')
-    .option(
-      '--offline',
-      'skip the fast-forward check against the served did:webvh log'
-    )
+    .option('-y, --yes', 'skip the did:webvh / did:vh confirmation prompt')
+    .option('--offline', OFFLINE_HELP)
     .action(
       async (
         did: string,
@@ -268,8 +278,8 @@ export function makeDidCommand(): Command {
     .command('remove-service <did>')
     .description(
       'Remove a service entry (by id) from a locally stored did:web or ' +
-        'did:webvh DID. The DID may be given as a metadata handle. For ' +
-        'did:webvh this appends a log entry; if pre-rotation is armed the ' +
+        'did:webvh / did:vh DID. The DID may be given as a metadata handle. ' +
+        'For did:webvh and did:vh this appends a log entry; if pre-rotation is armed the ' +
         'update key is advanced as part of the change.'
     )
     .requiredOption(
@@ -279,14 +289,12 @@ export function makeDidCommand(): Command {
     )
     .option(
       '--keep-old-key',
-      'did:webvh pre-rotation only: retain the retired update key secret in ' +
+      'did:webvh / did:vh pre-rotation only: retain the retired update key ' +
+        'secret in ' +
         'the sidecar (default: drop it)'
     )
-    .option('-y, --yes', 'skip the did:webvh confirmation prompt')
-    .option(
-      '--offline',
-      'skip the fast-forward check against the served did:webvh log'
-    )
+    .option('-y, --yes', 'skip the did:webvh / did:vh confirmation prompt')
+    .option('--offline', OFFLINE_HELP)
     .action(
       async (
         did: string,
@@ -332,7 +340,8 @@ export function makeDidCommand(): Command {
     .aliases(['view', 'cat'])
     .description(
       'Show a locally stored DID document (no secret key material) by DID ' +
-        'or handle. For did:webvh the document is resolved from its history ' +
+        'or handle. For did:webvh and did:vh the document is resolved from its ' +
+        'history ' +
         'log -- the source of truth -- rather than the stored snapshot.'
     )
     .option('--meta', 'show the DID metadata instead of the DID document')
@@ -385,15 +394,20 @@ export function makeDidCommand(): Command {
     )
     .action((didRef: string) => runAndExit(runRemove({ didRef })))
 
-  const webvh = new Command('webvh').description(
-    'Manage did:webvh DIDs: rotate update (authorization) keys, replace the ' +
-      'document verification key'
-  )
+  // did:vh shares the did:webvh log format, so the same subcommands serve
+  // both methods; `did vh` is an alias of the group.
+  const webvh = new Command('webvh')
+    .alias('vh')
+    .description(
+      'Manage did:webvh and did:vh DIDs: rotate update (authorization) ' +
+        'keys, replace the document verification key'
+    )
 
   webvh
     .command('rotate-keys <did>')
     .description(
       'Rotate the update (authorization) key of a locally stored did:webvh ' +
+        'or did:vh ' +
         'DID. By default advances key pre-rotation -- reveals the staged next ' +
         'key and stages a fresh one -- and never touches the document ' +
         'verification methods.'
@@ -424,10 +438,7 @@ export function makeDidCommand(): Command {
         'generates (honors SECRET_KEY_SEED if set, else generated)'
     )
     .option('-y, --yes', 'skip the confirmation prompt')
-    .option(
-      '--offline',
-      'skip the fast-forward check against the served did:webvh log'
-    )
+    .option('--offline', OFFLINE_HELP)
     .action(
       (
         didRef: string,
@@ -447,7 +458,8 @@ export function makeDidCommand(): Command {
     .command('replace-key <did>')
     .description(
       'Replace the document verification method of a locally stored ' +
-        'did:webvh DID with an external Ed25519 public key. Appends a log ' +
+        'did:webvh or did:vh DID with an external Ed25519 public key. Appends ' +
+        'a log ' +
         'entry that lists the new key in place of the old one (the old ' +
         'method is dropped) under the same verification relationships; if ' +
         'pre-rotation is armed the update key is advanced as part of the ' +
@@ -469,10 +481,7 @@ export function makeDidCommand(): Command {
         'sidecar (default: drop it)'
     )
     .option('-y, --yes', 'skip the confirmation prompt')
-    .option(
-      '--offline',
-      'skip the fast-forward check against the served did:webvh log'
-    )
+    .option('--offline', OFFLINE_HELP)
     .action(
       (
         didRef: string,
@@ -490,7 +499,8 @@ export function makeDidCommand(): Command {
     .command('set-purpose <did>')
     .description(
       'Change the verification relationships of the document verification ' +
-        'method of a locally stored did:webvh DID, keeping the key and its ' +
+        'method of a locally stored did:webvh or did:vh DID, keeping the key ' +
+        'and its ' +
         'method id. Appends a log entry that lists the key under exactly ' +
         'the given relationships (the full replacement set); if ' +
         'pre-rotation is armed the update key is advanced as part of the ' +
@@ -507,10 +517,7 @@ export function makeDidCommand(): Command {
         'sidecar (default: drop it)'
     )
     .option('-y, --yes', 'skip the confirmation prompt')
-    .option(
-      '--offline',
-      'skip the fast-forward check against the served did:webvh log'
-    )
+    .option('--offline', OFFLINE_HELP)
     .action(
       (
         didRef: string,

@@ -10,7 +10,7 @@ import { type DataIntegrityProofPurpose } from '@interop/did-method-webvh'
 import { resolveDidRef } from '../../meta.js'
 import { parseWebvhPurposes } from './create.js'
 import { purposesOf, vmIdFragmentModeOf } from './replace-key.js'
-import { runWebvhDocumentUpdate } from './webvh-update.js'
+import { isLogBackedDid, runWebvhDocumentUpdate } from './webvh-update.js'
 
 /**
  * Set the verification relationships of the document verification method of
@@ -49,8 +49,8 @@ export async function runSetPurpose({
     return 1
   }
   const targetDid = resolved ?? didRef
-  if (!targetDid.startsWith('did:webvh:')) {
-    console.error('set-purpose is only supported for did:webvh DIDs')
+  if (!isLogBackedDid(targetDid)) {
+    console.error('set-purpose is only supported for did:webvh and did:vh DIDs')
     return 1
   }
   // Options-only validation goes before the log resolution, which verifies

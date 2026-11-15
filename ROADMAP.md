@@ -86,7 +86,7 @@ and chunk read/write, gated on the collection's backend advertising the
 `NotSupportedError` only when the token is absent). The remaining work is
 entirely CLI-side.
 
-## `did webvh`
+## `did webvh` and `did vh`
 
 ### CLI-3: `rotate-keys` with multiple update keys / thresholds
 
@@ -122,6 +122,39 @@ the command is the only piece that needs extending.
 
 Needed by WSS-164's `SERVER_URL` move runbook. `did create webvh` already
 defaults to `portable: true`, but nothing exposes the move.
+
+### CLI-29: Witness proofs for did:vh
+
+- status: draft
+- priority: medium
+- labels: vh, webvh
+
+discovered-from: CLI-28. `did create vh` rejects `--witness` and
+`--witness-threshold`, because the CLI neither collects nor stores witness
+proofs. The did:vh library entry
+points fetch nothing, so a witnessed did:vh would fail `did show` and every
+update with "Witness threshold not met". A did:webvh has the same gap, hidden behind the
+fetch of the served `did-witness.json`. Draft because the stored witness file
+(name and placement beside the log) and the way proofs are collected from
+witnesses are not designed yet.
+
+### CLI-30: Fast-forward check for did:vh
+
+- status: todo
+- priority: low
+- labels: vh
+- acceptance:
+  - [ ] The did:vh update commands accept a log location (for example
+        `--src <url>`) and run the fast-forward check against the log served
+        there before signing
+  - [ ] Without a location the commands behave as today (no check)
+  - [ ] Tests cover a served log that is ahead of, and one that has diverged
+        from, the local log
+
+discovered-from: CLI-28. A did:vh DID names no location, so
+`resolveWebvhForUpdate` skips `assertFastForward` for it. A controller who
+publishes the log at a known location has the same stale-local-log risk as
+did:webvh.
 
 ---
 

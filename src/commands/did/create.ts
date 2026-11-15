@@ -9,10 +9,7 @@ import type { AbstractKeyPair } from '@interop/data-integrity-core'
 import { driver } from '@interop/did-method-key'
 import * as didPeer from '@interop/did-method-peer'
 import * as didWeb from '@interop/did-web-resolver'
-import {
-  createDID,
-  type DataIntegrityProofPurpose
-} from '@interop/did-method-webvh'
+import { type DataIntegrityProofPurpose } from '@interop/did-method-webvh'
 import { Ed25519VerificationKey } from '@interop/ed25519-verification-key'
 import * as EcdsaMultikey from '@interop/ecdsa-multikey'
 import { X25519KeyAgreementKey2020 } from '@interop/x25519-key-agreement-key'
@@ -36,6 +33,7 @@ import { deriveSeed } from '../../keys/seed.js'
 import { exportUpdateKey, generateStagedKey } from '../../keys/webvh-update.js'
 import { requireSaveForMetaFlags } from '../collection-command.js'
 import {
+  logMethodFor,
   makeWebvhEntrySigner,
   persistUpdateKeysSidecar
 } from './webvh-update.js'
@@ -416,20 +414,23 @@ async function finishCreate({
 }
 
 /**
- * Create a new DID of the given method (key, web, webvh, or peer), optionally
+ * Create a new DID of the given method (key, web, webvh, vh, or peer), optionally
  * saving its document, keys, and metadata to local storage, and print it to
  * stdout.
  *
  * @param options {object}
  * @param [options.method] {string}   DID method: key (default), web, webvh,
- *   or peer.
+ *   vh, or peer. The did:webvh options below other than `url` and `portable`
+ *   apply to did:vh too.
  * @param options.type {string}   Key type (ed25519 or ecdsa).
  * @param options.curve {string}   ECDSA curve, for --type ecdsa.
  * @param [options.url] {string}   HTTPS url (required for did:web/did:webvh).
  * @param [options.prerotation] {boolean}   Arm did:webvh key pre-rotation.
  * @param [options.portable] {boolean}   Create a portable did:webvh.
  * @param [options.witness] {string[]}   did:webvh witness did:key DIDs.
+ *   Rejected for did:vh.
  * @param [options.witnessThreshold] {string}   Required witness approvals.
+ *   Rejected for did:vh.
  * @param [options.watcher] {string[]}   did:webvh watcher URLs.
  * @param [options.verificationKey] {string}   did:webvh external document key
  *   (Ed25519 `publicKeyMultibase`); no secret is generated or stored for it.
@@ -468,14 +469,28 @@ export async function runCreate(options: {
   if (!requireSaveForMetaFlags(options)) {
     return 1
   }
-  const webvh = ['webvh']
+  // The CLI cannot supply witness proofs, and a did:vh with declared witnesses
+  // does not resolve without them, so it would be unusable once created.
+  if (
+    method === 'vh' &&
+    (options.witness !== undefined || options.witnessThreshold !== undefined)
+  ) {
+    console.error(
+      '--witness and --witness-threshold are not yet supported for did:vh: ' +
+        'the CLI cannot supply witness proofs, so the DID could not be ' +
+        'resolved or updated.'
+    )
+    return 1
+  }
+  // did:vh takes the did:webvh flags except the two that name a location.
+  const webvh = ['webvh', 'vh']
   if (
     rejectFlagsOutsideMethod({
       method,
       flags: [
         { flag: '--url', value: options.url, methods: ['web', 'webvh'] },
         { flag: '--prerotation', value: options.prerotation, methods: webvh },
-        { flag: '--portable', value: options.portable, methods: webvh },
+        { flag: '--portable', value: options.portable, methods: ['webvh'] },
         { flag: '--witness', value: options.witness, methods: webvh },
         {
           flag: '--witness-threshold',
@@ -553,8 +568,11 @@ export async function runCreate(options: {
         options
       })
     }
-    case 'webvh': {
-      if (!options.url) {
+    case 'webvh':
+    case 'vh': {
+      // did:vh is did:webvh with the location removed from the DID, so it
+      // takes no --url and has no portability.
+      if (method === 'webvh' && !options.url) {
         console.error(
           'did:webvh requires --url (e.g. --url https://example.com)'
         )
@@ -564,7 +582,7 @@ export async function runCreate(options: {
       // only Ed25519 update keys are supported for now.
       if (options.type !== 'ed25519') {
         console.error(
-          `did:webvh only supports --type ed25519 (got ${options.type}); ` +
+          `did:${method} only supports --type ed25519 (got ${options.type}); ` +
             'the eddsa-jcs-2022 cryptosuite requires an Ed25519 key.'
         )
         return 1
@@ -690,12 +708,8 @@ export async function runCreate(options: {
       // hash now so the next update must reveal it.
       const stagedKey = prerotation ? await generateStagedKey() : undefined
 
-      const result = await createDID({
-        address: options.url,
+      const logOptions = {
         signer,
-        // A portable DID (the default) can later be moved to a different
-        // domain; --no-portable pins it to its origin.
-        portable,
         updateKeys: [updateKey.publicKeyMultibase],
         ...(stagedKey ? { nextKeyHashes: [stagedKey.nextKeyHash] } : {}),
         ...(witness ? { witness } : {}),
@@ -711,7 +725,17 @@ export async function runCreate(options: {
             purpose: purposes
           }
         ]
-      })
+      }
+      const logMethod = logMethodFor(method)
+      const result = logMethod.hasLocation
+        ? await logMethod.createDID({
+            ...logOptions,
+            address: options.url,
+            // A portable DID (the default) can later be moved to a
+            // different domain; --no-portable pins it to its origin.
+            portable
+          })
+        : await logMethod.createDID(logOptions)
 
       if (options.save) {
         // Persist the document key V keyed by its document verification
@@ -720,7 +744,7 @@ export async function runCreate(options: {
         const docVmId = result.doc.verificationMethod?.[0]?.id
         if (!docVmId) {
           console.error(
-            'Created did:webvh document is missing a verification method id'
+            `Created did:${method} document is missing a verification method id`
           )
           return 1
         }
@@ -733,7 +757,7 @@ export async function runCreate(options: {
         // did-method-webvh types its document as `DIDDoc`, with every field
         // optional; the created document is a full DID document.
         await saveDidArtifacts({
-          method: 'webvh',
+          method,
           didDocument: result.doc as IDidDocument,
           exportedKeys: exportedDoc ? { [docVmId]: exportedDoc } : {},
           fingerprints: [exportedDoc?.publicKeyMultibase],
@@ -799,7 +823,7 @@ export async function runCreate(options: {
     }
     default:
       console.error(
-        `Unknown method: ${method}. Supported: key, web, webvh, peer`
+        `Unknown method: ${method}. Supported: key, web, webvh, vh, peer`
       )
       return 1
   }
