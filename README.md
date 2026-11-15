@@ -700,6 +700,32 @@ library API is unstable while the spec is an Editors Draft.
 
 ```
 ./di did create vh --save --handle my-vh
+DID saved to /home/user/.config/did-cli-wallet/dids/vh/did:vh:Qm....json
+DID history log saved to /home/user/.config/did-cli-wallet/dids/vh/did:vh:Qm....jsonl
+Update keys saved to /home/user/.config/did-cli-wallet/dids/vh/did:vh:Qm....update-keys.json
+{
+  "id": "did:vh:Qm...",
+  "didDocument": {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/multikey/v1"
+    ],
+    "id": "did:vh:Qm...",
+    "controller": "did:vh:Qm...",
+    "verificationMethod": [
+      {
+        "type": "Multikey",
+        "publicKeyMultibase": "z6Mk...p4AS38gF",
+        "id": "did:vh:Qm...#p4AS38gF",
+        "controller": "did:vh:Qm..."
+      }
+    ],
+    "authentication": ["did:vh:Qm...#p4AS38gF"],
+    "assertionMethod": ["did:vh:Qm...#p4AS38gF"],
+    "capabilityDelegation": ["did:vh:Qm...#p4AS38gF"],
+    "capabilityInvocation": ["did:vh:Qm...#p4AS38gF"]
+  }
+}
 ```
 
 It takes the `did:webvh` options (`--prerotation`/`--no-prerotation`,
